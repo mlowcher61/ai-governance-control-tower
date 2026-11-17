@@ -1,0 +1,5 @@
+---
+# Connection used by infra.aap_configuration (platform gateway, token from the environment)
+aap_hostname: "{{ aigov_aap_hostname }}"
+aap_token: "{{ lookup('ansible.builtin.env', 'AAP_API_TOKEN') }}"
+aap_validate_certs: "{{ aigov_aap_validate_certs }}"

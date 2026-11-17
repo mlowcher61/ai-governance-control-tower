@@ -1,0 +1,428 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AI Governance Control Tower - governance IAM roles (discovery, remediation, demo reset)
+  and the approved least-privilege policies used by remediation. Governance tag keys are
+  fixed: aigov:managed=true opts a role into remediation; aigov:demo=true marks demo resources.
+
+Parameters:
+  TrustedPrincipalArn:
+    Type: String
+    Description: IAM principal (the AAP bootstrap credential) allowed to assume the governance roles.
+    AllowedPattern: "arn:aws[a-z-]*:iam::[0-9]{12}:(user|role)/.+"
+  DiscoveryExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: External ID required to assume AIGovDiscoveryRole.
+  RemediationExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: External ID required to assume AIGovRemediationRole.
+  DemoResetExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: External ID required to assume AIGovDemoResetRole.
+  AgentCodeBucketPrefix:
+    Type: String
+    Default: aigov-agent-code
+    Description: Prefix of the per-account/region S3 bucket that stores agent code packages.
+  ApprovedModelArnPattern:
+    Type: String
+    Default: "arn:aws:bedrock:*::foundation-model/amazon.nova-*"
+    Description: Foundation models an approved agent runtime may invoke.
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Approved policies (the only policies remediation may attach)
+  # ---------------------------------------------------------------------------
+  ApprovedAgentRuntimePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: aigov-approved-agentcore-runtime-basic
+      Path: /aigov/
+      Description: Approved least-privilege baseline for Amazon Bedrock AgentCore runtime execution roles.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RuntimeLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DescribeLogStreams
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+          - Sid: DescribeLogGroups
+            Effect: Allow
+            Action: logs:DescribeLogGroups
+            Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+          - Sid: Tracing
+            Effect: Allow
+            Action:
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+              - xray:GetSamplingRules
+              - xray:GetSamplingTargets
+            Resource: "*"
+          - Sid: RuntimeMetrics
+            Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: "*"
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: bedrock-agentcore
+          - Sid: ReadAgentCodePackage
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource: !Sub "arn:${AWS::Partition}:s3:::${AgentCodeBucketPrefix}-${AWS::AccountId}-${AWS::Region}/*"
+          - Sid: WorkloadIdentity
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:GetWorkloadAccessToken
+              - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+            Resource:
+              - !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default"
+              - !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*"
+          - Sid: InvokeApprovedModels
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource: !Ref ApprovedModelArnPattern
+
+  AgentRuntimeBoundaryPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: aigov-boundary-agentcore-runtime
+      Path: /aigov/
+      Description: Approved permissions boundary for AgentCore runtime execution roles (maximum allowed permissions).
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BoundaryMaximum
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DescribeLogStreams
+              - logs:DescribeLogGroups
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+              - xray:GetSamplingRules
+              - xray:GetSamplingTargets
+              - cloudwatch:PutMetricData
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - bedrock-agentcore:GetWorkloadAccessToken
+              - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource: "*"
+
+  # ---------------------------------------------------------------------------
+  # Discovery role: read-only. Token-issuing AgentCore "Get" actions are
+  # deliberately NOT granted (no wildcards on Get*).
+  # ---------------------------------------------------------------------------
+  DiscoveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AIGovDiscoveryRole
+      Path: /aigov/
+      Description: AI Governance Control Tower - read-only discovery, evaluation input collection and verification.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref DiscoveryExternalId
+      Policies:
+        - PolicyName: aigov-discovery-read-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AgentCoreRead
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:ListAgentRuntimes
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListAgentRuntimeEndpoints
+                  - bedrock-agentcore:GetAgentRuntimeEndpoint
+                  - bedrock-agentcore:ListAgentRuntimeVersions
+                  - bedrock-agentcore:ListGateways
+                  - bedrock-agentcore:GetGateway
+                  - bedrock-agentcore:ListGatewayTargets
+                  - bedrock-agentcore:GetGatewayTarget
+                  - bedrock-agentcore:ListWorkloadIdentities
+                  - bedrock-agentcore:GetWorkloadIdentity
+                  - bedrock-agentcore:ListPolicyEngines
+                  - bedrock-agentcore:GetPolicyEngine
+                  - bedrock-agentcore:ListPolicies
+                  - bedrock-agentcore:GetPolicy
+                  - bedrock-agentcore:ListHarnesses
+                  - bedrock-agentcore:GetHarness
+                  - bedrock-agentcore:ListMemories
+                  - bedrock-agentcore:GetMemory
+                  - bedrock-agentcore:ListTagsForResource
+                  - bedrock-agentcore:GetResourcePolicy
+                Resource: "*"
+              - Sid: BedrockAgentsClassicRead
+                Effect: Allow
+                Action:
+                  - bedrock:ListAgents
+                  - bedrock:GetAgent
+                  - bedrock:ListAgentVersions
+                  - bedrock:GetAgentVersion
+                  - bedrock:ListAgentAliases
+                  - bedrock:GetAgentAlias
+                  - bedrock:ListAgentActionGroups
+                  - bedrock:GetAgentActionGroup
+                  - bedrock:ListAgentKnowledgeBases
+                  - bedrock:GetAgentKnowledgeBase
+                  - bedrock:ListAgentCollaborators
+                  - bedrock:ListKnowledgeBases
+                  - bedrock:GetKnowledgeBase
+                  - bedrock:ListDataSources
+                  - bedrock:GetDataSource
+                  - bedrock:ListTagsForResource
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                  - bedrock:ListInferenceProfiles
+                  - bedrock:GetInferenceProfile
+                  - bedrock:ListGuardrails
+                  - bedrock:GetGuardrail
+                  - bedrock:GetModelInvocationLoggingConfiguration
+                Resource: "*"
+              - Sid: IamRead
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:ListRoles
+                  - iam:ListRoleTags
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:GetRolePolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:ListInstanceProfilesForRole
+                  - iam:SimulatePrincipalPolicy
+                  - iam:GetContextKeysForPrincipalPolicy
+                Resource: "*"
+              - Sid: TelemetryAndCostRead
+                Effect: Allow
+                Action:
+                  - cloudtrail:LookupEvents
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:ListMetrics
+                  - ce:GetCostAndUsage
+                  - s3:GetBucketTagging
+                Resource: "*"
+      Tags:
+        - Key: aigov:component
+          Value: governance
+
+  # ---------------------------------------------------------------------------
+  # Remediation role: may change ONLY roles tagged <ManagedTagKey>=true, and may
+  # attach ONLY the approved policies above. No PassRole, no role/policy creation.
+  # ---------------------------------------------------------------------------
+  RemediationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AIGovRemediationRole
+      Path: /aigov/
+      Description: AI Governance Control Tower - approved, scoped remediation of governed agent execution roles.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref RemediationExternalId
+      Policies:
+        - PolicyName: aigov-remediation-scoped
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ModifyOnlyGovernedRoles
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                  - iam:DeleteRolePermissionsBoundary
+                  - iam:DeleteRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*"
+                Condition:
+                  StringEquals:
+                    iam:ResourceTag/aigov:managed: "true"
+              - Sid: AttachOnlyApprovedPolicies
+                Effect: Deny
+                Action: iam:AttachRolePolicy
+                Resource: "*"
+                Condition:
+                  ArnNotEquals:
+                    iam:PolicyARN:
+                      - !Ref ApprovedAgentRuntimePolicy
+              - Sid: BoundaryOnlyApproved
+                Effect: Deny
+                Action: iam:PutRolePermissionsBoundary
+                Resource: "*"
+                Condition:
+                  StringNotEquals:
+                    iam:PermissionsBoundary: !Ref AgentRuntimeBoundaryPolicy
+              - Sid: ReadForPlanningAndVerification
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:ListRoleTags
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:GetRolePolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListTagsForResource
+                  - bedrock:GetAgent
+                  - bedrock:GetAgentAlias
+                  - bedrock:GetAgentActionGroup
+                  - bedrock:ListTagsForResource
+                Resource: "*"
+              - Sid: AgentContainmentAndTagging
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:TagResource
+                  - bedrock-agentcore:UntagResource
+                  - bedrock:UpdateAgentActionGroup
+                  - bedrock:PrepareAgent
+                  - bedrock:UpdateAgentAlias
+                  - bedrock:TagResource
+                  - bedrock:UntagResource
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock-agentcore:*:${AWS::AccountId}:runtime/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:agent/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:agent-alias/*"
+              - Sid: NeverEscalate
+                Effect: Deny
+                Action:
+                  - iam:PassRole
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:CreatePolicy
+                  - iam:CreatePolicyVersion
+                  - iam:SetDefaultPolicyVersion
+                  - iam:PutRolePolicy
+                  - iam:UpdateAssumeRolePolicy
+                  - bedrock-agentcore:DeleteAgentRuntime
+                  - bedrock:DeleteAgent
+                Resource: "*"
+      Tags:
+        - Key: aigov:component
+          Value: governance
+
+  # ---------------------------------------------------------------------------
+  # Demo reset role: restores the demo baseline (including re-attaching the
+  # deliberately risky policy) - limited to resources tagged <DemoTagKey>=true.
+  # ---------------------------------------------------------------------------
+  DemoResetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AIGovDemoResetRole
+      Path: /aigov/
+      Description: AI Governance Control Tower - restore the demo baseline on demo-tagged resources only.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref DemoResetExternalId
+      Policies:
+        - PolicyName: aigov-demo-reset
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: RestoreDemoRoles
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                  - iam:DeleteRolePermissionsBoundary
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*"
+                Condition:
+                  StringEquals:
+                    iam:ResourceTag/aigov:demo: "true"
+              - Sid: RestoreDemoRuntimeTags
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:TagResource
+                  - bedrock-agentcore:UntagResource
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:*:${AWS::AccountId}:runtime/*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/aigov:demo: "true"
+              - Sid: ReadDemoState
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:ListRoleTags
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListAgentRuntimes
+                  - bedrock-agentcore:ListTagsForResource
+                Resource: "*"
+              - Sid: NoPassRole
+                Effect: Deny
+                Action: iam:PassRole
+                Resource: "*"
+      Tags:
+        - Key: aigov:component
+          Value: governance
+
+Outputs:
+  DiscoveryRoleArn:
+    Value: !GetAtt DiscoveryRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DiscoveryRoleArn"
+  RemediationRoleArn:
+    Value: !GetAtt RemediationRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-RemediationRoleArn"
+  DemoResetRoleArn:
+    Value: !GetAtt DemoResetRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DemoResetRoleArn"
+  ApprovedAgentRuntimePolicyArn:
+    Value: !Ref ApprovedAgentRuntimePolicy
+    Export:
+      Name: !Sub "${AWS::StackName}-ApprovedAgentRuntimePolicyArn"
+  AgentRuntimeBoundaryPolicyArn:
+    Value: !Ref AgentRuntimeBoundaryPolicy
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentRuntimeBoundaryPolicyArn"

@@ -1,0 +1,69 @@
+---
+# AI Governance - Deploy AWS Governance Roles (task T0.07)
+# Creates/updates the CloudFormation stack with AIGovDiscoveryRole, AIGovRemediationRole,
+# AIGovDemoResetRole and the approved policies. External IDs come from the AI Governance
+# role credentials attached to the job template (never from files in Git).
+- name: AI Governance - deploy the AWS governance roles stack
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_governance_template: "{{ playbook_dir }}/../../aws/cloudformation/aigov-governance-roles.yaml"
+  tasks:
+    - name: Verify the governance role credentials are attached to this job template
+      ansible.builtin.assert:
+        that:
+          - aigov_discovery_external_id is defined
+          - aigov_remediation_external_id is defined
+          - aigov_demo_reset_external_id is defined
+        fail_msg: >-
+          Attach the credentials 'AI Governance - AWS Discovery Role', 'AI Governance - AWS Remediation Role'
+          and 'AI Governance - AWS Demo Reset Role' to this job template.
+        quiet: true
+
+    - name: Identify the bootstrap principal that will be trusted by the governance roles
+      amazon.aws.aws_caller_info:
+        region: "{{ aigov_aws_region }}"
+      register: aigov_caller
+
+    - name: Resolve the trusted principal ARN
+      ansible.builtin.set_fact:
+        # IAM users are trusted directly. Assumed-role sessions cannot be named in a trust
+        # policy, so the account root is trusted instead (the external ID still applies).
+        aigov_trusted_principal_arn: >-
+          {{ aigov_caller.arn if ':user/' in aigov_caller.arn
+             else 'arn:aws:iam::' ~ aigov_caller.account ~ ':root' }}
+
+    - name: Deploy the governance roles stack
+      amazon.aws.cloudformation:
+        stack_name: "{{ aigov_governance_stack_name }}"
+        state: present
+        region: "{{ aigov_aws_region }}"
+        template_body: "{{ lookup('ansible.builtin.file', aigov_governance_template) }}"
+        capabilities:
+          - CAPABILITY_NAMED_IAM
+        template_parameters:
+          TrustedPrincipalArn: "{{ aigov_trusted_principal_arn }}"
+          DiscoveryExternalId: "{{ aigov_discovery_external_id }}"
+          RemediationExternalId: "{{ aigov_remediation_external_id }}"
+          DemoResetExternalId: "{{ aigov_demo_reset_external_id }}"
+        tags:
+          aigov:component: governance
+          aigov:managed-by: ai-governance-control-tower
+      register: aigov_governance_stack
+      no_log: true  # template parameters contain the external IDs
+
+    - name: Show the governance stack outputs
+      ansible.builtin.debug:
+        msg:
+          stack: "{{ aigov_governance_stack_name }}"
+          trusted_principal: "{{ aigov_trusted_principal_arn }}"
+          changed: "{{ aigov_governance_stack.changed }}"
+          outputs: "{{ aigov_governance_stack.stack_outputs }}"
+
+    - name: Publish the governance stack outputs as job artifacts
+      ansible.builtin.set_stats:
+        data:
+          aigov_governance_stack_outputs: "{{ aigov_governance_stack.stack_outputs }}"
+        per_host: false

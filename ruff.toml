@@ -1,0 +1,15 @@
+line-length = 160
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "W", "B", "I", "N", "A", "RUF", "UP"]
+ignore = [
+  "UP009",                    # utf-8 coding header is conventional in Ansible modules
+  "UP030", "UP031", "UP032",  # str.format() kept for ansible-test / older controller compatibility
+]
+
+[lint.per-file-ignores]
+"collections/**/plugins/modules/*.py" = ["E402"]  # Ansible DOCUMENTATION blocks precede imports
+
+[lint.isort]
+known-first-party = ["ansible_collections"]

@@ -1,0 +1,54 @@
+---
+aigov_jt_defaults: &aigov_jt_defaults
+  organization: "{{ aigov_organization }}"
+  project: "{{ aigov_project_name }}"
+  inventory: AI Governance - Localhost
+  execution_environment: "{{ aigov_execution_environment }}"
+  job_type: run
+  verbosity: 0
+
+aigov_base_templates:
+  - name: AI Governance - Check Environment
+    description: "T0.01 - read-only check of the execution environment, AWS identity and AgentCore availability"
+    playbook: playbooks/platform/environment_check.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+    ask_credential_on_launch: true
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+aigov_aws_templates:
+  - name: AI Governance - Deploy AWS Governance Roles
+    description: "T0.07 - deploy the discovery, remediation and demo reset roles and approved policies (CloudFormation)"
+    playbook: playbooks/aws/deploy_governance_roles.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - AWS Remediation Role
+      - AI Governance - AWS Demo Reset Role
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Deploy Demo Agents
+    description: "T0.07 - deploy the four demo Amazon Bedrock AgentCore runtimes (CloudFormation, direct code deployment)"
+    playbook: playbooks/demo/deploy_demo_agents.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Verify AWS Baseline
+    description: "T0.07 acceptance - least-privilege negative tests with the IAM policy simulator, run as the discovery role"
+    playbook: playbooks/aws/verify_aws_baseline.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+controller_templates: >-
+  {{ aigov_base_templates + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else []) }}

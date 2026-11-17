@@ -1,0 +1,12 @@
+---
+controller_inventories:
+  - name: AI Governance - Localhost
+    description: API-driven governance automation runs on the execution node itself
+    organization: "{{ aigov_organization }}"
+
+controller_hosts:
+  - name: localhost
+    inventory: AI Governance - Localhost
+    variables:
+      ansible_connection: local
+      ansible_python_interpreter: !unsafe "{{ ansible_playbook_python }}"

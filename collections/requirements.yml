@@ -1,0 +1,16 @@
+---
+# Collections installed by AAP project sync (from the private automation hub
+# configured as the organization's Galaxy credentials). Versions are pinned to
+# the certified/validated content verified on the hub (see docs/plan/06).
+collections:
+  - name: amazon.aws
+    version: "11.5.0"
+  - name: amazon.ai
+    version: "1.0.1"
+  - name: ansible.utils
+    version: "6.1.1"
+  - name: kubernetes.core
+    version: "6.6.0"
+  # Project collection (custom read-only/gap modules), installed from this repo
+  - name: ./collections/ansible_collections/mlowcher61/ai_governance
+    type: dir

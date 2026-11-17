@@ -1,0 +1,95 @@
+---
+# AI Governance - Deploy Demo Agents (task T0.07)
+# Creates the demo artifact bucket, packages the standard-library demo agent, uploads it,
+# and deploys four Amazon Bedrock AgentCore runtimes (direct code deployment) whose
+# execution roles represent the governance scenarios used in the customer demo.
+- name: AI Governance - deploy the demo AgentCore runtimes
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_artifacts_stack_name: aigov-demo-artifacts
+    aigov_demo_stack_name: aigov-demo-agents
+    aigov_cfn_dir: "{{ playbook_dir }}/../../aws/cloudformation"
+    aigov_demo_agent_dir: "{{ playbook_dir }}/../../demo/agentcore_agent"
+    aigov_build_dir: /tmp/aigov-demo-build
+  tasks:
+    - name: Deploy the demo artifact bucket stack
+      amazon.aws.cloudformation:
+        stack_name: "{{ aigov_artifacts_stack_name }}"
+        state: present
+        region: "{{ aigov_aws_region }}"
+        template_body: "{{ lookup('ansible.builtin.file', aigov_cfn_dir ~ '/aigov-demo-artifacts.yaml') }}"
+        tags:
+          aigov:component: demo
+          aigov:managed-by: ai-governance-control-tower
+      register: aigov_artifacts_stack
+
+    - name: Fingerprint the demo agent source
+      ansible.builtin.stat:
+        path: "{{ aigov_demo_agent_dir }}/main.py"
+        checksum_algorithm: sha256
+      register: aigov_agent_source
+
+    - name: Create the build directory
+      ansible.builtin.file:
+        path: "{{ aigov_build_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Package the demo agent for direct code deployment
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - zipfile
+          - -c
+          - "{{ aigov_build_dir }}/agent.zip"
+          - main.py
+        chdir: "{{ aigov_demo_agent_dir }}"
+      changed_when: false  # local build artifact; the S3 key below is content-addressed
+
+    - name: Set the content-addressed package key
+      ansible.builtin.set_fact:
+        aigov_code_bucket: "{{ aigov_artifacts_stack.stack_outputs.AgentCodeBucketName }}"
+        aigov_code_key: "demo-agent/{{ aigov_agent_source.stat.checksum[:16] }}/agent.zip"
+
+    - name: Upload the demo agent package
+      amazon.aws.s3_object:
+        bucket: "{{ aigov_code_bucket }}"
+        object: "{{ aigov_code_key }}"
+        src: "{{ aigov_build_dir }}/agent.zip"
+        mode: put
+        overwrite: never
+        encrypt: true
+        region: "{{ aigov_aws_region }}"
+
+    - name: Deploy the demo agents stack (AgentCore runtimes and execution roles)
+      amazon.aws.cloudformation:
+        stack_name: "{{ aigov_demo_stack_name }}"
+        state: present
+        region: "{{ aigov_aws_region }}"
+        template_body: "{{ lookup('ansible.builtin.file', aigov_cfn_dir ~ '/aigov-demo-agents.yaml') }}"
+        capabilities:
+          - CAPABILITY_NAMED_IAM
+        template_parameters:
+          GovernanceStackName: "{{ aigov_governance_stack_name }}"
+          CodeBucketName: "{{ aigov_code_bucket }}"
+          CodeKey: "{{ aigov_code_key }}"
+        tags:
+          aigov:component: demo
+          aigov:managed-by: ai-governance-control-tower
+      register: aigov_demo_stack
+
+    - name: Show the demo runtimes
+      ansible.builtin.debug:
+        msg:
+          code_package: "s3://{{ aigov_code_bucket }}/{{ aigov_code_key }}"
+          outputs: "{{ aigov_demo_stack.stack_outputs }}"
+
+    - name: Publish the demo stack outputs as job artifacts
+      ansible.builtin.set_stats:
+        data:
+          aigov_demo_stack_outputs: "{{ aigov_demo_stack.stack_outputs }}"
+        per_host: false

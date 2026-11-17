@@ -1,0 +1,199 @@
+---
+# AI Governance - Verify AWS Baseline (task T0.07 acceptance)
+# Proves least privilege with the IAM policy simulator, running as the read-only discovery
+# role (which is also how remediation verification works later):
+#   * the discovery role is read-only (no IAM writes, no AgentCore tokens/changes)
+#   * the remediation role can change ONLY roles tagged aigov:managed=true, can attach ONLY
+#     the approved policy, and can never escalate (PassRole, CreateRole, DeleteAgentRuntime...)
+#   * the demo reset role is limited to resources tagged aigov:demo=true
+# It also lists the demo AgentCore runtimes through the discovery role.
+- name: AI Governance - verify the AWS governance baseline
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_demo_stack_name: aigov-demo-agents
+  tasks:
+    - name: Verify the discovery role credential is attached to this job template
+      ansible.builtin.assert:
+        that:
+          - aigov_discovery_role_arn is defined
+          - aigov_discovery_external_id is defined
+        fail_msg: Attach the credential 'AI Governance - AWS Discovery Role' to this job template.
+        quiet: true
+
+    - name: Read the governance and demo stack outputs
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ item }}"
+        region: "{{ aigov_aws_region }}"
+      loop:
+        - "{{ aigov_governance_stack_name }}"
+        - "{{ aigov_demo_stack_name }}"
+      register: aigov_stacks
+
+    - name: Collect stack outputs
+      ansible.builtin.set_fact:
+        aigov_gov: "{{ aigov_stacks.results[0].cloudformation[aigov_governance_stack_name].stack_outputs }}"
+        aigov_demo: "{{ aigov_stacks.results[1].cloudformation[aigov_demo_stack_name].stack_outputs }}"
+
+    - name: Assume the read-only discovery role
+      amazon.aws.sts_assume_role:
+        role_arn: "{{ aigov_discovery_role_arn }}"
+        role_session_name: "aigov-verify-{{ tower_job_id | default(awx_job_id | default('local')) }}"
+        external_id: "{{ aigov_discovery_external_id }}"
+        duration_seconds: 900
+        region: "{{ aigov_aws_region }}"
+      register: aigov_discovery_session
+      no_log: true
+
+    - name: Set discovery session credentials
+      ansible.builtin.set_fact:
+        aigov_ro:
+          access_key: "{{ aigov_discovery_session.sts_creds.access_key }}"
+          secret_key: "{{ aigov_discovery_session.sts_creds.secret_key }}"
+          session_token: "{{ aigov_discovery_session.sts_creds.session_token }}"
+      no_log: true
+
+    - name: Confirm the job is now acting as the discovery role
+      amazon.aws.aws_caller_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+      register: aigov_ro_identity
+
+    - name: Set simulation targets
+      ansible.builtin.set_fact:
+        aigov_account: "{{ aigov_ro_identity.account }}"
+        aigov_governed_role: "{{ aigov_demo.QuickHelperBotRoleArn }}"
+        aigov_ungoverned_role: "arn:aws:iam::{{ aigov_ro_identity.account }}:role/aigov-example-ungoverned-role"
+        aigov_admin_policy: "arn:aws:iam::aws:policy/AdministratorAccess"
+
+    - name: Simulate the discovery role (must be read-only)
+      mlowcher61.ai_governance.iam_policy_simulation_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        policy_source_arn: "{{ aigov_gov.DiscoveryRoleArn }}"
+        checks:
+          - {description: "can list AgentCore runtimes", action: "bedrock-agentcore:ListAgentRuntimes", expected: allowed}
+          - {description: "can read IAM role policies", action: "iam:ListAttachedRolePolicies", resource: "{{ aigov_governed_role }}", expected: allowed}
+          - {description: "can run the policy simulator", action: "iam:SimulatePrincipalPolicy", expected: allowed}
+          - {description: "cannot attach IAM policies", action: "iam:AttachRolePolicy", resource: "{{ aigov_governed_role }}", expected: denied}
+          - {description: "cannot detach IAM policies", action: "iam:DetachRolePolicy", resource: "{{ aigov_governed_role }}", expected: denied}
+          - {description: "cannot tag AgentCore runtimes", action: "bedrock-agentcore:TagResource", expected: denied}
+          - {description: "cannot obtain workload access tokens", action: "bedrock-agentcore:GetWorkloadAccessToken", expected: denied}
+          - {description: "cannot delete AgentCore runtimes", action: "bedrock-agentcore:DeleteAgentRuntime", expected: denied}
+      register: aigov_sim_discovery
+
+    - name: Simulate the remediation role (scoped, approved policies only, no escalation)
+      mlowcher61.ai_governance.iam_policy_simulation_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        policy_source_arn: "{{ aigov_gov.RemediationRoleArn }}"
+        checks:
+          - description: can detach a policy from a governed (tagged) role
+            action: iam:DetachRolePolicy
+            resource: "{{ aigov_governed_role }}"
+            context: [{key: "iam:ResourceTag/aigov:managed", values: ["true"]}]
+            expected: allowed
+          - description: can attach the APPROVED policy to a governed role
+            action: iam:AttachRolePolicy
+            resource: "{{ aigov_governed_role }}"
+            context:
+              - {key: "iam:ResourceTag/aigov:managed", values: ["true"]}
+              - {key: "iam:PolicyARN", values: ["{{ aigov_gov.ApprovedAgentRuntimePolicyArn }}"]}
+            expected: allowed
+          - description: cannot attach AdministratorAccess even to a governed role
+            action: iam:AttachRolePolicy
+            resource: "{{ aigov_governed_role }}"
+            context:
+              - {key: "iam:ResourceTag/aigov:managed", values: ["true"]}
+              - {key: "iam:PolicyARN", values: ["{{ aigov_admin_policy }}"]}
+            expected: denied
+          - description: cannot modify a role that is not tagged aigov:managed=true
+            action: iam:DetachRolePolicy
+            resource: "{{ aigov_ungoverned_role }}"
+            expected: denied
+          - {description: "cannot pass roles", action: "iam:PassRole", expected: denied}
+          - {description: "cannot create roles", action: "iam:CreateRole", expected: denied}
+          - {description: "cannot write inline policies", action: "iam:PutRolePolicy", resource: "{{ aigov_governed_role }}", expected: denied}
+          - {description: "cannot delete AgentCore runtimes", action: "bedrock-agentcore:DeleteAgentRuntime", expected: denied}
+      register: aigov_sim_remediation
+
+    - name: Simulate the demo reset role (demo-tagged resources only)
+      mlowcher61.ai_governance.iam_policy_simulation_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        policy_source_arn: "{{ aigov_gov.DemoResetRoleArn }}"
+        checks:
+          - description: can restore AdministratorAccess on a demo role
+            action: iam:AttachRolePolicy
+            resource: "{{ aigov_governed_role }}"
+            context:
+              - {key: "iam:ResourceTag/aigov:demo", values: ["true"]}
+              - {key: "iam:PolicyARN", values: ["{{ aigov_admin_policy }}"]}
+            expected: allowed
+          - description: cannot change a non-demo role
+            action: iam:AttachRolePolicy
+            resource: "{{ aigov_ungoverned_role }}"
+            context: [{key: "iam:PolicyARN", values: ["{{ aigov_admin_policy }}"]}]
+            expected: denied
+          - {description: "cannot pass roles", action: "iam:PassRole", expected: denied}
+      register: aigov_sim_reset
+
+    - name: List the demo AgentCore runtimes through the discovery role
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import json, sys, boto3
+            client = boto3.client("bedrock-agentcore-control", region_name=sys.argv[1])
+            runtimes = []
+            for page in client.get_paginator("list_agent_runtimes").paginate():
+                runtimes.extend(page.get("agentRuntimes", []))
+            print(json.dumps([{"name": r["agentRuntimeName"], "id": r["agentRuntimeId"], "status": r["status"]}
+                              for r in runtimes]))
+          - "{{ aigov_aws_region }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aigov_ro.access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aigov_ro.secret_key }}"
+        AWS_SESSION_TOKEN: "{{ aigov_ro.session_token }}"
+      register: aigov_runtimes_raw
+      changed_when: false
+
+    - name: Summarize the verification
+      ansible.builtin.set_fact:
+        aigov_baseline_verification:
+          acting_as: "{{ aigov_ro_identity.arn }}"
+          discovery_role_read_only: "{{ aigov_sim_discovery.all_passed }}"
+          remediation_role_scoped: "{{ aigov_sim_remediation.all_passed }}"
+          demo_reset_role_scoped: "{{ aigov_sim_reset.all_passed }}"
+          failed_checks: >-
+            {{ aigov_sim_discovery.failed_checks + aigov_sim_remediation.failed_checks + aigov_sim_reset.failed_checks }}
+          agentcore_runtimes: "{{ aigov_runtimes_raw.stdout | from_json }}"
+
+    - name: Show the verification summary
+      ansible.builtin.debug:
+        var: aigov_baseline_verification
+
+    - name: Publish the verification summary as job artifacts
+      ansible.builtin.set_stats:
+        data:
+          aigov_baseline_verification: "{{ aigov_baseline_verification }}"
+        per_host: false
+
+    - name: Fail if any least-privilege check did not match its expectation
+      ansible.builtin.assert:
+        that:
+          - aigov_baseline_verification.failed_checks | length == 0
+          - aigov_baseline_verification.agentcore_runtimes | selectattr('status', 'equalto', 'READY') | list | length >= 4
+        fail_msg: "Baseline verification failed: {{ aigov_baseline_verification.failed_checks }}"
+        success_msg: Least-privilege baseline verified and all demo runtimes are READY.

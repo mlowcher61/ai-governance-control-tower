@@ -1,0 +1,93 @@
+---
+# AI Governance - Check Environment (task T0.01)
+# Read-only. Reports the execution environment's SDK and collection versions, the AWS
+# principal behind the attached credential, and whether Amazon Bedrock AgentCore and
+# Bedrock Agents (Classic) APIs are reachable in the target region.
+- name: AI Governance - check the execution environment and AWS identity
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_relevant_collections:
+      - amazon.aws
+      - amazon.ai
+      - ansible.utils
+      - kubernetes.core
+      - mlowcher61.ai_governance
+  tasks:
+    - name: Collect Python SDK versions available in the execution environment
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - >-
+            import json, boto3, botocore;
+            services = boto3.session.Session().get_available_services();
+            print(json.dumps({'boto3': boto3.__version__, 'botocore': botocore.__version__,
+            'bedrock_agentcore_control': 'bedrock-agentcore-control' in services,
+            'bedrock_agent': 'bedrock-agent' in services}))
+      register: aigov_sdk_raw
+      changed_when: false
+
+    - name: List installed collections
+      ansible.builtin.command:
+        argv: [ansible-galaxy, collection, list, --format, json]
+      register: aigov_collections_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Identify the AWS principal used by this job
+      amazon.aws.aws_caller_info:
+        region: "{{ aigov_aws_region }}"
+      register: aigov_caller
+
+    - name: Probe the AgentCore and Bedrock Agents control planes in the region
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import json, sys, boto3, botocore
+            region = sys.argv[1]
+            result = {}
+            for name, service, call, key in (
+                ("agentcore_runtimes", "bedrock-agentcore-control", "list_agent_runtimes", "agentRuntimes"),
+                ("bedrock_agents_classic", "bedrock-agent", "list_agents", "agentSummaries"),
+            ):
+                try:
+                    response = getattr(boto3.client(service, region_name=region), call)()
+                    result[name] = {"reachable": True, "count": len(response.get(key, []))}
+                except botocore.exceptions.ClientError as err:
+                    result[name] = {"reachable": False, "error": err.response["Error"]["Code"]}
+                except Exception as err:  # noqa: BLE001 - report any SDK/endpoint problem
+                    result[name] = {"reachable": False, "error": type(err).__name__}
+            print(json.dumps(result))
+          - "{{ aigov_aws_region }}"
+      register: aigov_probe_raw
+      changed_when: false
+
+    - name: Build the environment summary
+      ansible.builtin.set_fact:
+        aigov_environment:
+          ansible_version: "{{ ansible_version.full }}"
+          sdk: "{{ aigov_sdk_raw.stdout | from_json }}"
+          collections: >-
+            {{ (aigov_collections_raw.stdout | default('{}', true) | from_json).values()
+               | map('dict2items') | flatten
+               | selectattr('key', 'in', aigov_relevant_collections)
+               | items2dict(key_name='key', value_name='value') }}
+          aws:
+            region: "{{ aigov_aws_region }}"
+            account_id: "{{ aigov_caller.account }}"
+            principal_arn: "{{ aigov_caller.arn }}"
+          control_planes: "{{ aigov_probe_raw.stdout | from_json }}"
+
+    - name: Show the environment summary
+      ansible.builtin.debug:
+        var: aigov_environment
+
+    - name: Publish the environment summary as job artifacts
+      ansible.builtin.set_stats:
+        data:
+          aigov_environment: "{{ aigov_environment }}"
+        per_host: false

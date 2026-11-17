@@ -1,0 +1,265 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AI Governance Control Tower - four demo Amazon Bedrock AgentCore runtimes with execution roles
+  representing compliant, unauthorized (administrator role), expired-risk-assessment and
+  unknown-evidence scenarios. Demo resources only - never deploy in production accounts.
+  (CloudFormation YAML does not support anchors/aliases, so blocks are repeated.)
+
+Parameters:
+  GovernanceStackName:
+    Type: String
+    Default: aigov-governance-roles
+    Description: Stack that exports the approved agent runtime policy.
+  CodeBucketName:
+    Type: String
+    Description: Bucket that holds the demo agent code package.
+  CodeKey:
+    Type: String
+    Description: S3 object key of the demo agent code package (.zip).
+  AgentRuntimePython:
+    Type: String
+    Default: PYTHON_3_13
+    AllowedValues: [PYTHON_3_10, PYTHON_3_11, PYTHON_3_12, PYTHON_3_13, PYTHON_3_14]
+
+Resources:
+  # Execution roles: all tagged aigov:managed=true (opted into remediation) and
+  # aigov:demo=true (restorable by the demo reset role).
+  PaymentsAssistantRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aigov-demo-payments-dispute-assistant
+      Path: /aigov-agents/
+      Description: Demo - compliant agent with the approved least-privilege policy.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      ManagedPolicyArns:
+        - Fn::ImportValue: !Sub "${GovernanceStackName}-ApprovedAgentRuntimePolicyArn"
+      Tags:
+        - Key: aigov:managed
+          Value: "true"
+        - Key: aigov:demo
+          Value: "true"
+
+  QuickHelperBotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aigov-demo-quick-helper-bot
+      Path: /aigov-agents/
+      Description: Demo - UNAUTHORIZED agent whose role was given AdministratorAccess (the violation to remediate).
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess"
+      Tags:
+        - Key: aigov:managed
+          Value: "true"
+        - Key: aigov:demo
+          Value: "true"
+
+  HrFaqAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aigov-demo-hr-faq-agent
+      Path: /aigov-agents/
+      Description: Demo - registered agent whose risk assessment has expired.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      ManagedPolicyArns:
+        - Fn::ImportValue: !Sub "${GovernanceStackName}-ApprovedAgentRuntimePolicyArn"
+      Tags:
+        - Key: aigov:managed
+          Value: "true"
+        - Key: aigov:demo
+          Value: "true"
+
+  ResearchRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: aigov-demo-research-runtime
+      Path: /aigov-agents/
+      Description: Demo - registered agent with no declared foundation model (unknown evidence).
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*"
+      ManagedPolicyArns:
+        - Fn::ImportValue: !Sub "${GovernanceStackName}-ApprovedAgentRuntimePolicyArn"
+      Tags:
+        - Key: aigov:managed
+          Value: "true"
+        - Key: aigov:demo
+          Value: "true"
+
+  # AgentCore runtimes (direct code deployment). Names allow letters, digits, underscores.
+  PaymentsAssistantRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: payments_dispute_assistant
+      Description: Summarizes card dispute cases for analysts (demo).
+      RoleArn: !GetAtt PaymentsAssistantRole.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref CodeBucketName
+              Prefix: !Ref CodeKey
+          Runtime: !Ref AgentRuntimePython
+          EntryPoint:
+            - main.py
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        AGENT_NAME: payments_dispute_assistant
+      Tags:
+        Environment: production
+        Owner: payments-ml@example.com
+        DataClassification: confidential
+        CostCenter: CC-1001
+        aigov:demo: "true"
+
+  QuickHelperBotRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: quick_helper_bot
+      Description: Helper bot created outside the governance process (demo).
+      RoleArn: !GetAtt QuickHelperBotRole.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref CodeBucketName
+              Prefix: !Ref CodeKey
+          Runtime: !Ref AgentRuntimePython
+          EntryPoint:
+            - main.py
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        AGENT_NAME: quick_helper_bot
+      Tags:
+        CreatedBy: dev-sandbox
+        DataClassification: restricted
+        aigov:demo: "true"
+
+  HrFaqAgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: hr_faq_agent
+      Description: Answers HR policy questions (demo).
+      RoleArn: !GetAtt HrFaqAgentRole.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref CodeBucketName
+              Prefix: !Ref CodeKey
+          Runtime: !Ref AgentRuntimePython
+          EntryPoint:
+            - main.py
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        AGENT_NAME: hr_faq_agent
+      Tags:
+        Environment: production
+        Owner: hr-digital@example.com
+        DataClassification: internal
+        CostCenter: CC-2040
+        aigov:demo: "true"
+
+  ResearchRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: research_runtime
+      Description: Research assistant prototype (demo).
+      RoleArn: !GetAtt ResearchRuntimeRole.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref CodeBucketName
+              Prefix: !Ref CodeKey
+          Runtime: !Ref AgentRuntimePython
+          EntryPoint:
+            - main.py
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      EnvironmentVariables:
+        AGENT_NAME: research_runtime
+      Tags:
+        Environment: development
+        Owner: research-lab@example.com
+        DataClassification: internal
+        CostCenter: CC-3300
+        aigov:demo: "true"
+
+Outputs:
+  PaymentsAssistantRuntimeArn:
+    Value: !GetAtt PaymentsAssistantRuntime.AgentRuntimeArn
+  PaymentsAssistantRuntimeId:
+    Value: !GetAtt PaymentsAssistantRuntime.AgentRuntimeId
+  PaymentsAssistantRuntimeStatus:
+    Value: !GetAtt PaymentsAssistantRuntime.Status
+  QuickHelperBotRuntimeArn:
+    Value: !GetAtt QuickHelperBotRuntime.AgentRuntimeArn
+  QuickHelperBotRuntimeId:
+    Value: !GetAtt QuickHelperBotRuntime.AgentRuntimeId
+  QuickHelperBotRuntimeStatus:
+    Value: !GetAtt QuickHelperBotRuntime.Status
+  HrFaqAgentRuntimeArn:
+    Value: !GetAtt HrFaqAgentRuntime.AgentRuntimeArn
+  HrFaqAgentRuntimeId:
+    Value: !GetAtt HrFaqAgentRuntime.AgentRuntimeId
+  HrFaqAgentRuntimeStatus:
+    Value: !GetAtt HrFaqAgentRuntime.Status
+  ResearchRuntimeArn:
+    Value: !GetAtt ResearchRuntime.AgentRuntimeArn
+  ResearchRuntimeId:
+    Value: !GetAtt ResearchRuntime.AgentRuntimeId
+  ResearchRuntimeStatus:
+    Value: !GetAtt ResearchRuntime.Status
+  QuickHelperBotRoleArn:
+    Value: !GetAtt QuickHelperBotRole.Arn

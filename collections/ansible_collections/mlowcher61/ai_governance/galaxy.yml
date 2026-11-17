@@ -1,0 +1,25 @@
+---
+namespace: mlowcher61
+name: ai_governance
+version: 0.1.0
+readme: README.md
+authors:
+  - AI Governance Control Tower contributors
+description: >-
+  Roles and modules for the AI Governance Control Tower: AI agent discovery, policy evaluation,
+  approval-gated remediation, and verification on Ansible Automation Platform.
+license:
+  - GPL-3.0-or-later
+tags:
+  - ai
+  - governance
+  - aws
+  - bedrock
+  - security
+dependencies:
+  amazon.aws: ">=11.0.0"
+repository: https://github.com/mlowcher61/ai-governance-control-tower
+issues: https://github.com/mlowcher61/ai-governance-control-tower/issues
+build_ignore:
+  - tests/output
+  - "*.tar.gz"

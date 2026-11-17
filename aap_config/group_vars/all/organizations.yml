@@ -1,0 +1,8 @@
+---
+aap_organizations:
+  - name: "{{ aigov_organization }}"
+    description: AI Governance Control Tower - AI agent discovery, policy evaluation and approval-gated remediation
+    default_environment: "{{ aigov_execution_environment }}"
+    galaxy_credentials:
+      - AI Governance - Private Hub Certified
+      - AI Governance - Private Hub Validated

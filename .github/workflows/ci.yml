@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation tools
+        run: pip install ansible-core ansible-lint yamllint cfn-lint ruff pytest boto3
+
+      - name: Install collections needed for linting
+        # Galaxy equivalents of the certified content pinned in collections/requirements.yml.
+        run: ansible-galaxy collection install "amazon.aws:==11.5.0" -p ./collections
+
+      - name: yamllint
+        run: yamllint .
+
+      - name: ansible-lint (production profile)
+        run: ansible-lint
+
+      - name: cfn-lint (CloudFormation templates)
+        run: cfn-lint --regions us-west-1 -- aws/cloudformation/*.yaml
+
+      - name: ruff (Python)
+        run: ruff check demo collections/ansible_collections/mlowcher61
+
+      - name: Unit tests (project collection)
+        working-directory: collections
+        run: PYTHONPATH="$PWD" python -m pytest -q ansible_collections/mlowcher61/ai_governance/tests/unit

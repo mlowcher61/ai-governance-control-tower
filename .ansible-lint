@@ -1,0 +1,17 @@
+---
+profile: production
+offline: true
+exclude_paths:
+  - .github/
+  - docs/
+  - ao_workflows/reference/
+  - aws/cloudformation/
+  - collections/ansible_collections/amazon/
+  - collections/ansible_collections/ansible/
+  - collections/ansible_collections/infra/
+  - collections/ansible_collections/kubernetes/
+kinds:
+  - playbook: "**/playbooks/**/*.yml"
+  - playbook: "aap_config/configure_aap.yml"
+  - vars: "aap_config/group_vars/**/*.yml"
+  - vars: "aap_config/vars/*.yml"

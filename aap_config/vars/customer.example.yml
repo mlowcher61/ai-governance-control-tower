@@ -1,0 +1,34 @@
+---
+# =============================================================================
+# Copy this file to aap_config/vars/customer.yml (git-ignored) and adjust it for
+# your platform. These are the ONLY values a new user must provide.
+# Secrets are never stored here: tokens are read from environment variables.
+# =============================================================================
+
+# Platform gateway host (no scheme), e.g. aap.example.com. Defaults to $AAP_SERVER.
+aigov_aap_hostname: "{{ lookup('ansible.builtin.env', 'AAP_SERVER') }}"
+aigov_aap_validate_certs: true
+
+# Organization and project
+aigov_organization: AI Governance
+aigov_project_name: AI Governance Control Tower
+aigov_project_scm_url: https://github.com/mlowcher61/ai-governance-control-tower.git
+aigov_project_scm_branch: main
+
+# Execution environment used by the governance job templates
+aigov_execution_environment: Default execution environment
+
+# Private automation hub used for collection installs during project sync.
+# The token is read from $AIGOV_HUB_TOKEN (falls back to $AAP_API_TOKEN).
+aigov_private_hub_url: "https://{{ aigov_aap_hostname }}/api/galaxy/content"
+
+# AWS target for the demo and governance roles
+aigov_aws_region: us-west-1
+# 12-digit account ID of the governed AWS account. Leave empty on the very first run:
+# launch "AI Governance - Check Environment" to discover it, then set it and re-run.
+aigov_aws_account_id: ""
+
+# Existing AAP credential (name or numeric ID) of type "Amazon Web Services" used as the
+# bootstrap principal. It is used to deploy the governance stacks and to assume the
+# governance roles; it never performs discovery or remediation directly.
+aigov_aws_bootstrap_credential: "AI Governance - AWS Bootstrap"

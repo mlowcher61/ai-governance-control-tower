@@ -1,0 +1,68 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AI Governance Control Tower - demo artifact bucket holding AgentCore direct-code-deployment
+  packages for the demo agents (private, encrypted, versioned).
+
+Parameters:
+  AgentCodeBucketPrefix:
+    Type: String
+    Default: aigov-agent-code
+    Description: Bucket name prefix; the account ID and region are appended.
+
+Resources:
+  AgentCodeBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${AgentCodeBucketPrefix}-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldPackageVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: aigov:demo
+          Value: "true"
+        - Key: aigov:component
+          Value: demo
+
+  AgentCodeBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AgentCodeBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt AgentCodeBucket.Arn
+              - !Sub "${AgentCodeBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  AgentCodeBucketName:
+    Value: !Ref AgentCodeBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-AgentCodeBucketName"

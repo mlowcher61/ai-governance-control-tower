@@ -1,0 +1,11 @@
+---
+# Collections needed on the workstation (or in an AAP job) that applies the
+# configuration as code. Install from your private automation hub:
+#   ansible-galaxy collection install -r aap_config/requirements.yml
+collections:
+  - name: infra.aap_configuration
+    version: ">=4.7.0"
+  - name: ansible.platform
+    version: ">=2.7.20260604"
+  - name: ansible.controller
+    version: ">=4.8.0"
