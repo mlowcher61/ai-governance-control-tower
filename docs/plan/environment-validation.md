@@ -48,6 +48,18 @@
 
 ## 3. AWS
 
+**Update 2026-11-17 (implementation):**
+
+| Check | Result |
+|---|---|
+| AAP credential `AWS` (ID 18) | **Invalid**: `InvalidClientTokenId` (access key rejected by AWS) |
+| AAP credential `AWS` (ID 4, org APD) | ✅ Account **759722782548**, IAM user `open-environment-t5d26-1-admin`. Used as the bootstrap principal |
+| Region | **us-west-1**. AgentCore Runtime (microVMs and instances), Gateway, Identity and Policy are available. The managed **harness, Memory and Agent Registry are not available** in us-west-1, so demo runtimes use direct code deployment |
+| AAP `Default execution environment` | ansible-core 2.16.19, **boto3 1.38.27**, which has no `bedrock-agentcore-control` client (`UnknownServiceError`). A custom EE is required for AgentCore APIs (T0.04) |
+| Governance roles stack `aigov-governance-roles` | ✅ Deployed (AAP job 1253) |
+| Demo stacks `aigov-demo-artifacts`, `aigov-demo-agents` | ✅ Deployed (AAP job 1255). Four AgentCore runtimes **READY** |
+| Least-privilege verification | ✅ 19/19 IAM policy-simulator checks passed as `AIGovDiscoveryRole` (AAP job 1257). Runtime listing awaits the custom EE |
+
 | Check | Result |
 |---|---|
 | Bedrock Agents Classic | **The user has never used Bedrock Agents.** Under the 2026-07-30 maintenance-mode rules, `CreateAgent` will be denied (HTTP 403) in any of their accounts. **Decision: AgentCore is the demo platform** (Q-01 resolved) |

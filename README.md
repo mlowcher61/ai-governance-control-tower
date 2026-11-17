@@ -96,8 +96,8 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.02 AO reference capture | Partially done: the OpenAPI 1.3.0 spec is captured. The workflow export is blocked on AO API credentials |
 | T0.03 Repository and CI | Done |
 | T0.05 AAP config as code (Stage 0 subset) | Done: `aap_config/` |
-| T0.07 AWS governance roles and demo agents | Templates and playbooks done; deployed through AAP job templates |
-| T0.04 Execution environment | Pending: Stage 0 uses the AAP 2.7 `Default execution environment` |
+| T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed, four AgentCore runtimes READY, 19/19 least-privilege checks passed |
+| T0.04 Execution environment | Definition and build script done. **Build waits on a `registry.redhat.io` login** (base image) |
 
 ## Getting started
 

@@ -1,0 +1,13 @@
+---
+# The AI Governance EE is registered once its image has been built and pushed
+# (scripts/build_ee.sh) and aigov_custom_ee_image is set in the customer variables.
+aigov_custom_execution_environments:
+  - name: AI Governance EE
+    description: AAP 2.7 minimal EE + certified AWS collections + boto3 with AgentCore clients
+    image: "{{ aigov_custom_ee_image }}"
+    pull: missing
+    credential: AI Governance - Private Hub Registry
+    organization: "{{ aigov_organization }}"
+
+controller_execution_environments: >-
+  {{ aigov_custom_execution_environments if (aigov_custom_ee_image | length) > 0 else [] }}
