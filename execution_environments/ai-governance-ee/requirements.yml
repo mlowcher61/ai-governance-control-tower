@@ -1,0 +1,11 @@
+---
+# Certified content from the private automation hub (same pins as collections/requirements.yml)
+collections:
+  - name: amazon.aws
+    version: "11.5.0"
+  - name: amazon.ai
+    version: "1.0.1"
+  - name: ansible.utils
+    version: "6.1.0"   # 6.1.1 artifact on the private hub fails hash verification
+  - name: kubernetes.core
+    version: "6.6.0"

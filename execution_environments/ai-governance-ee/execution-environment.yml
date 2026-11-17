@@ -1,0 +1,30 @@
+---
+# AI Governance EE - ansible-builder v3 definition (task T0.04)
+# Base: supported AAP 2.7 minimal EE. Collections come from the private automation hub
+# (certified/validated content); the hub token is passed as a build argument that is only
+# used in the intermediate galaxy stage, so it never reaches the final image.
+version: 3
+
+images:
+  base_image:
+    name: registry.redhat.io/ansible-automation-platform-27/ee-minimal-rhel9:latest
+
+dependencies:
+  galaxy: requirements.yml
+  python: requirements.txt
+  system: bindep.txt
+
+additional_build_steps:
+  prepend_galaxy:
+    - ARG ANSIBLE_GALAXY_SERVER_LIST
+    - ARG ANSIBLE_GALAXY_SERVER_CERTIFIED_URL
+    - ARG ANSIBLE_GALAXY_SERVER_CERTIFIED_TOKEN
+    - ARG ANSIBLE_GALAXY_SERVER_VALIDATED_URL
+    - ARG ANSIBLE_GALAXY_SERVER_VALIDATED_TOKEN
+  append_final:
+    - LABEL org.opencontainers.image.title="AI Governance EE"
+    - LABEL org.opencontainers.image.description="Execution environment for the AI Governance Control Tower (AWS Bedrock/AgentCore governance)"
+    - LABEL org.opencontainers.image.source="https://github.com/mlowcher61/ai-governance-control-tower"
+
+options:
+  package_manager_path: /usr/bin/microdnf

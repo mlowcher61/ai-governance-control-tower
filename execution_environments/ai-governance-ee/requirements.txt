@@ -1,0 +1,5 @@
+# boto3/botocore >= 1.40 provide the bedrock-agentcore-control and bedrock-agentcore clients
+# (the AAP 2.7 supported EE ships boto3 1.38.x, which predates AgentCore).
+boto3>=1.40.0,<2.0
+botocore>=1.40.0,<2.0
+jsonschema>=4.17
