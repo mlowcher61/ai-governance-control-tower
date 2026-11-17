@@ -53,7 +53,14 @@
 | Bedrock Agents Classic | **The user has never used Bedrock Agents.** Under the 2026-07-30 maintenance-mode rules, `CreateAgent` will be denied (HTTP 403) in any of their accounts. **Decision: AgentCore is the demo platform** (Q-01 resolved) |
 | Credentials | AAP has two credentials named `AWS` (Amazon Web Services type). The account ID and Region were not inspected because the secrets cannot be read. **Which one to use, and whether governance roles and demo resources may be created in it, still needs confirming** (Q-26) |
 
-## 4. Tokens
+## 4. Private automation hub content issue
+
+| Check | Result |
+|---|---|
+| `ansible.utils` 6.1.1 (rh-certified) | **Artifact hash mismatch.** `ansible-galaxy` fails with "Mismatch artifact hash with downloaded file". Reproduced from AAP project sync and from a workstation. The project pins 6.1.0, which installs cleanly. **Action for the hub administrator:** re-sync or repair `ansible.utils` 6.1.1 |
+| `amazon.aws` 11.5.0, `amazon.ai` 1.0.1, `kubernetes.core` 6.6.0 | Install cleanly from the private hub ✅ |
+
+## 5. Tokens
 
 | Token | Result |
 |---|---|
