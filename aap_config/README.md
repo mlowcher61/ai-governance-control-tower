@@ -10,6 +10,7 @@ playbook is safe: it converges AAP to these definitions.
 |---|---|
 | Organization | `AI Governance` (uses your private automation hub for collections) |
 | Galaxy credentials | `AI Governance - Private Hub Certified`, `AI Governance - Private Hub Validated` |
+| Source Control credential | `AI Governance - GitHub` (only when `AIGOV_SCM_TOKEN`/`GITHUB_TOKEN` is set, for a private repository) |
 | Credential types | `AI Governance - AWS Discovery Role`, `AI Governance - AWS Remediation Role`, `AI Governance - AWS Demo Reset Role` |
 | Credentials | One per governance role (role ARN + randomly generated external ID, created once and never overwritten) |
 | Project | `AI Governance Control Tower` (this Git repository) |
@@ -43,6 +44,8 @@ template that only has the *discovery* type can never assume the *remediation* r
    export AAP_API_TOKEN=<your AAP token>
    # optional: a dedicated private hub token for collection installs
    export AIGOV_HUB_TOKEN=<hub token>
+   # private project repository only: a GitHub token with read access to the repo
+   export AIGOV_SCM_TOKEN=<github token>
    ```
 
 4. First run, which creates the organization, project and the `Check Environment` job template:
