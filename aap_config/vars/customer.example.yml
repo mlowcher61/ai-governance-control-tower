@@ -24,6 +24,9 @@ aigov_execution_environment: Default execution environment
 # Custom EE image in the private hub registry, e.g. "{{ aigov_aap_hostname }}/ai-governance-ee:0.1.0"
 # (empty = not registered yet). Required for AgentCore APIs (boto3 >= 1.40).
 aigov_custom_ee_image: ""
+# Container Registry credential AAP uses to pull that image (hub username/password). Use an existing
+# credential name, or export AIGOV_REGISTRY_USERNAME/PASSWORD to create "AI Governance - Private Hub Registry".
+aigov_ee_registry_credential: AI Governance - Private Hub Registry
 
 # Private automation hub used for collection installs during project sync.
 # The token is read from $AIGOV_HUB_TOKEN (falls back to $AAP_API_TOKEN).

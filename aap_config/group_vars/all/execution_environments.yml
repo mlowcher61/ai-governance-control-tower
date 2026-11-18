@@ -6,7 +6,7 @@ aigov_custom_execution_environments:
     description: AAP 2.7 minimal EE + certified AWS collections + boto3 with AgentCore clients
     image: "{{ aigov_custom_ee_image }}"
     pull: missing
-    credential: AI Governance - Private Hub Registry
+    credential: "{{ aigov_ee_registry_credential }}"
     organization: "{{ aigov_organization }}"
 
 controller_execution_environments: >-

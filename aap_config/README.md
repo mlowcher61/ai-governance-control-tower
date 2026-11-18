@@ -15,7 +15,7 @@ playbook is safe: it converges AAP to these definitions.
 | Credentials | One per governance role (role ARN + randomly generated external ID, created once and never overwritten) |
 | Project | `AI Governance Control Tower` (this Git repository) |
 | Inventory | `AI Governance - Localhost` |
-| Execution environment | `AI Governance EE` (registered once `aigov_custom_ee_image` is set, after `scripts/build_ee.sh`) |
+| Execution environment | `AI Governance EE` (registered once `aigov_custom_ee_image` is set, after `scripts/build_ee.sh`). It is pulled with `aigov_ee_registry_credential`, a hub username/password credential, because an AAP token gets only anonymous registry access |
 | Job templates | `AI Governance - Check Environment`, `- Deploy AWS Governance Roles`, `- Deploy Demo Agents`, `- Verify AWS Baseline` |
 
 Why three role credential types? AAP allows only one credential of each type on a job template, so a

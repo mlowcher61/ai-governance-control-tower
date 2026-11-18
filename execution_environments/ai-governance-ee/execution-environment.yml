@@ -7,7 +7,8 @@ version: 3
 
 images:
   base_image:
-    name: registry.redhat.io/ansible-automation-platform-27/ee-minimal-rhel9:latest
+    # AAP 2.7 images publish versioned tags only (no 'latest'). Pinned 2026-11-18 (built 2026-10-30).
+    name: registry.redhat.io/ansible-automation-platform-27/ee-minimal-rhel9:1793353171
 
 dependencies:
   galaxy: requirements.yml
