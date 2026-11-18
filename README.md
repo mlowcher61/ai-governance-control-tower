@@ -93,11 +93,11 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | Task | Status |
 |---|---|
 | T0.01 Environment validation | Done (read-only checks): see [environment-validation.md](docs/plan/environment-validation.md) |
-| T0.02 AO reference capture | Partially done: the OpenAPI 1.3.0 spec is captured. The workflow export is blocked on AO API credentials |
+| T0.02 AO reference capture | Done: OpenAPI 1.3.0 spec plus a runtime-proven reference workflow export; expression syntax resolved |
 | T0.03 Repository and CI | Done |
 | T0.05 AAP config as code (Stage 0 subset) | Done: `aap_config/` |
 | T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed, four AgentCore runtimes READY, 19/19 least-privilege checks passed |
-| T0.04 Execution environment | Definition and build script done. **Build waits on a `registry.redhat.io` login** (base image) |
+| T0.04 Execution environment | Built and pushed: `quay.io/locust61/ai-governance-ee:0.1.0` (amd64, boto3 1.43 with AgentCore). Registering it in AAP needs a registry pull credential (pending approval) |
 
 ## Getting started
 

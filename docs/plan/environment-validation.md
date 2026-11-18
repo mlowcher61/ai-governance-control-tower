@@ -44,7 +44,23 @@
 | Service accounts | `/service_accounts` with credential create, rotate, disable ✅ | Config as code can create `aigov-trigger` |
 | Webhooks | `POST /webhooks/{path}` and `POST /webhooks/eda/{path}` ✅ | Alternative EDA path |
 
-**Still open:** the execution ID as an expression (U-06), the trigger-input expression syntax (U-02), and the `http_request` response path (U-07). These need an authenticated test run.
+### 2.2 Reference workflow export (2026-11-18, AO service account `ai-service-account`)
+
+- **Access:** the AO service-account client credentials (`AO_CLIENT_ID` / `AO_CLIENT_SECRET`) work, yielding a 15-minute JWT. The service account sees 7 workflows.
+- **Export:** "Compliance as Code - Golden Image (as code)" v2 was exported via `GET /workflows/{id}/versions/2/export` (`schema_version` 2.0.0). A sanitized copy is in `ao_workflows/reference/golden-image-export.sanitized.json`.
+- **Runtime proof:** the workflow has several **completed** executions (most recently 2026-11-11), so the patterns below are proven at runtime, not just valid on paper.
+
+| Item | Finding |
+|---|---|
+| U-02 trigger input | ✅ `${trigger.<field>}` (for example `${trigger.target_hostname}`). The trigger node's ID is not used |
+| U-07 REST response | ✅ `${<node>.body.result.<field>}` and `${<node>.body.decision_id}`. Output also has `status_code`, `headers`, `elapsed` |
+| OPA gating pattern | ✅ `http_request` POST to OPA `/v1/data/.../decision` with the AI recommendation and facts in `input`; `switch` on `${opa_gate.body.result.route} == 'auto' \| 'approve' \| ...`; OPA may override the agent (`overrode_agent`) |
+| Approval output | ✅ `decision`, `decided_at`, **`decided_by`** (federated username). The approver identity can be passed directly to the audit job |
+| `aap_job_template` output | ✅ `job_id`, `job_url`, `status`, `artifacts`, timestamps |
+| `agentic` output | ✅ `result.content` plus `tokens_used`, `tools_used`, `structured_output_metadata`, `agent_trace` |
+| Skipped branches | ✅ Untaken branches are recorded with status `skipped` |
+| U-06 execution ID expression | Still not seen in any expression. Activity records carry `execution_id`, and approval `decided_by` removes the main need for it |
+| Agentic parameters in storage | `response_schema` (snake_case) is stored, although the API accepts `responseSchema`. The reference uses `tool_selection_strategy: ALL` with 2 MCP connections; this project uses `NONE` |
 
 ## 3. AWS
 

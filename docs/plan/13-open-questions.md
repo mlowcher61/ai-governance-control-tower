@@ -31,7 +31,7 @@ Items marked **🔑 DECISION** need your approval before implementation starts. 
 | **Q-21** | Are **community container images** (OPA, PostgREST, Grafana) acceptable? Is mirroring to an internal registry required? | — | Pin by digest; mirror if the cluster image policy requires it | T0.06 |
 | **Q-22** | Is **OpenTelemetry / Tempo** available on the cluster, for example the Red Hat build of OpenTelemetry and distributed tracing? | — | Treat as P1; dashboards do not depend on it | T3.09 |
 | **Q-23** | Should Stage 3 include **ServiceNow integration** (findings to incidents, evidence attachment)? | — | Optional P2; a strong message for joint customers | Roadmap |
-| **Q-25 🔑** | **AO credential for automation.** AO does not accept the AAP token (verified: 401). The workflow loader, the reference export, and EDA-triggered runs need AO API access | (a) Create an AO **service account** (client ID and secret) and export `AO_CLIENT_ID` / `AO_CLIENT_SECRET`. (b) Provide the AO admin password as `AO_PASSWORD` for the POC | **(a) service account**, scoped to the governance project. (b) is acceptable for the initial reference export only | Blocks T0.02 export, T0.08 |
+| **Q-25 ✅ RESOLVED** (service account `ai-service-account` via `AO_CLIENT_ID`/`AO_CLIENT_SECRET`) | **AO credential for automation.** AO does not accept the AAP token (verified: 401). The workflow loader, the reference export, and EDA-triggered runs need AO API access | (a) Create an AO **service account** (client ID and secret) and export `AO_CLIENT_ID` / `AO_CLIENT_SECRET`. (b) Provide the AO admin password as `AO_PASSWORD` for the POC | **(a) service account**, scoped to the governance project. (b) is acceptable for the initial reference export only | Blocks T0.02 export, T0.08 |
 | **Q-26 🔑** | **AWS account for the demo.** AAP has two `AWS` credentials. Which account and Region should be used, and may governance roles plus demo AgentCore resources be created there? | — | A dedicated sandbox account; a Region where AgentCore is available (for example us-east-1 or us-west-2) | Blocks T0.07 |
 | **Q-27** | **`llama-scout-17b` structured output.** Can it reliably return JSON matching `responseSchema`? | — | Test in the T0.02 spike. The design already tolerates AI failure: deterministic explanations remain authoritative, the AI step uses `continue_on_failure`, and invalid AI output forces approval. Fallback: a larger MaaS model if one is available | Explanation quality only |
 | **Q-24** | Should **IAM Access Analyzer** findings (unused access, custom policy checks) feed policies? Some analyzer types are paid features. | — | Defer; `SimulatePrincipalPolicy` and static analysis suffice for the POC | — |
@@ -92,12 +92,12 @@ Each item has an owner task. Items are re-checked before dependent work starts.
 | # | Item | Status | Resolved in |
 |---|---|---|---|
 | U-01 | AO workflow import/export format | ✅ **Resolved**: OpenAPI 1.3.0 `WorkflowDefinition` plus `/versions/{v}/export` | environment-validation.md |
-| U-02 | AO trigger input expression syntax (`${trigger.X}` vs `${trigger_id.X}`) | 🟡 conflicting | T0.02 |
+| U-02 | AO trigger input expression syntax | ✅ **Resolved**: `${trigger.<field>}` (runtime-proven in the reference export) | environment-validation.md §2.2 |
 | U-03 | AO OR-join semantics | ✅ **Avoided**: use an explicit `converge` node with `strategy: any` | environment-validation.md |
 | U-04 | AO behavior when an `agentic` node fails | ✅ **Mitigated**: `settings.continue_on_failure: true` on agentic nodes (OpenAPI) | environment-validation.md |
 | U-05 | AO approval timeout configurability | ✅ **Resolved**: `decision_window` (seconds) plus `fallback_decision` | environment-validation.md |
-| U-06 | AO execution ID available as an expression | ❓ | T0.02 |
-| U-07 | AO `http_request` response path (`${id.body.*}`) | 🟡 `credential_id` supported (OpenAPI); response path still to test | T0.02 |
+| U-06 | AO execution ID available as an expression | 🟡 Not found. Approval output `decided_by` and job output `job_id` cover the audit needs | environment-validation.md §2.2 |
+| U-07 | AO `http_request` response path | ✅ **Resolved**: `${<node>.body.result.*}` and `${<node>.body.decision_id}` (runtime-proven) | environment-validation.md §2.2 |
 | U-08 | AO-supported LLM providers and MCP transports | ❓ | T0.01 / T0.08 |
 | U-09 | Which AO item the Technology Preview disclaimer on the install page applies to | ❓ | T0.01 |
 | U-10 | AO GA date (sources conflict: 2026-08-21, 2026-09-18, 2026-10-14) | ❓ | Informational |

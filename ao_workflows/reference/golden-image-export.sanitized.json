@@ -1,0 +1,441 @@
+{
+  "name": "Compliance as Code - Golden Image (as code)",
+  "edges": [
+    {
+      "to": "identify",
+      "from": "trigger_patch"
+    },
+    {
+      "to": "triage_agent",
+      "from": "identify"
+    },
+    {
+      "to": "opa_gate",
+      "from": "triage_agent"
+    },
+    {
+      "to": "route_switch",
+      "from": "opa_gate"
+    },
+    {
+      "to": "enforce_auto",
+      "from": "route_switch",
+      "from_port": "case_0"
+    },
+    {
+      "to": "approval_patch",
+      "from": "route_switch",
+      "from_port": "case_1"
+    },
+    {
+      "to": "heatmap",
+      "from": "route_switch",
+      "from_port": "case_2"
+    },
+    {
+      "to": "enforce_approved",
+      "from": "approval_patch",
+      "from_port": "approved"
+    },
+    {
+      "to": "notify_rejected",
+      "from": "approval_patch",
+      "from_port": "rejected"
+    },
+    {
+      "to": "notify_auto_close",
+      "from": "enforce_auto"
+    },
+    {
+      "to": "notify_appr_close",
+      "from": "enforce_approved"
+    },
+    {
+      "to": "hold_notify",
+      "from": "route_switch",
+      "from_port": "case_3"
+    },
+    {
+      "to": "record_decision",
+      "from": "opa_gate"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "identify",
+      "name": "Golden Image Drift Check",
+      "type": "aap_job_template",
+      "position": {
+        "x": 193.0,
+        "y": 219.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "target_host": "${trigger.target_hostname}"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Golden Image Check",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "triage_agent",
+      "name": "AI Drift Triage",
+      "type": "agentic",
+      "position": {
+        "x": 349.0,
+        "y": -128.0
+      },
+      "parameters": {
+        "prompt": "You are a configuration-drift governance coordinator for a golden-image baseline. A drift check just ran on host ${trigger.target_hostname}. Read the set_stats artifacts: any_drift=${identify.artifacts.any_drift}, critical_drift=${identify.artifacts.critical_drift}, baseline_compliant=${identify.artifacts.baseline_compliant}, drifted_key=${identify.artifacts.drifted_key}. You may use the AAP Inventory MCP tools for host context. Assess whether this is a routine deviation safe to auto-roll-back, a security-relevant/critical change that should require human approval before rollback, or a case with no usable baseline that needs investigation. A policy engine makes the final routing decision; your recommendation is only an input.",
+        "llm_model_id": "<LLM_MODEL_ID>",
+        "credential_id": "<CREDENTIAL_ID>",
+        "response_schema": {
+          "type": "object",
+          "required": [
+            "route",
+            "reasoning",
+            "confidence",
+            "severity"
+          ],
+          "properties": {
+            "route": {
+              "enum": [
+                "auto_rollback",
+                "approve_rollback",
+                "investigate"
+              ],
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            "reasoning": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "number"
+            }
+          }
+        },
+        "integration_connections": [
+          {
+            "integration_id": "<INTEGRATION_ID>",
+            "credential_id": "<CREDENTIAL_ID>"
+          },
+          {
+            "integration_id": "<INTEGRATION_ID>",
+            "credential_id": "<CREDENTIAL_ID>"
+          }
+        ],
+        "tool_selection_strategy": "ALL"
+      }
+    },
+    {
+      "id": "route_switch",
+      "name": "Route",
+      "type": "switch",
+      "position": {
+        "x": 771.0,
+        "y": 238.0
+      },
+      "parameters": {
+        "cases": [
+          {
+            "port": "case_0",
+            "label": "Auto rollback",
+            "condition": "${opa_gate.body.result.route} == 'auto'"
+          },
+          {
+            "port": "case_1",
+            "label": "Approval required",
+            "condition": "${opa_gate.body.result.route} == 'approve'"
+          },
+          {
+            "port": "case_2",
+            "label": "Investigate",
+            "condition": "${opa_gate.body.result.route} == 'investigate'"
+          },
+          {
+            "port": "case_3",
+            "label": "Hold (managed change / rollback paused)",
+            "condition": "${opa_gate.body.result.route} == 'hold'"
+          }
+        ],
+        "default_port": "default"
+      }
+    },
+    {
+      "id": "approval_patch",
+      "name": "Approve Drift Rollback",
+      "type": "approval",
+      "position": {
+        "x": 1105.0,
+        "y": 308.0
+      },
+      "settings": {},
+      "parameters": {
+        "prompt": "Configuration drift on a security-relevant control was detected on ${trigger.target_hostname}. Review and approve to roll it back to the golden-image baseline.",
+        "approver_users": [
+          "<APPROVER_FEDERATED_USERNAME>"
+        ],
+        "fallback_decision": "reject"
+      }
+    },
+    {
+      "id": "heatmap",
+      "name": "Notify Help Desk (investigate)",
+      "type": "aap_job_template",
+      "position": {
+        "x": 1162.0,
+        "y": 557.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "target_host": "${trigger.target_hostname}"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Notify Help Desk",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "opa_gate",
+      "name": "Policy Decision (OPA)",
+      "type": "http_request",
+      "position": {
+        "x": 398.0,
+        "y": 752.0
+      },
+      "parameters": {
+        "url": "https://<OPA_HOST>/v1/data/aac/golden/routing/decision",
+        "body": {
+          "input": {
+            "agent": {
+              "rationale": "${triage_agent.result.content.reasoning}",
+              "recommended_route": "${triage_agent.result.content.route}"
+            },
+            "facts": {
+              "any_drift": "${identify.artifacts.any_drift}",
+              "drifted_key": "${identify.artifacts.drifted_key}",
+              "target_host": "${trigger.target_hostname}",
+              "critical_drift": "${identify.artifacts.critical_drift}",
+              "baseline_compliant": "${identify.artifacts.baseline_compliant}"
+            }
+          }
+        },
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      }
+    },
+    {
+      "id": "notify_rejected",
+      "name": "Notify Help Desk (rollback rejected)",
+      "type": "aap_job_template",
+      "position": {
+        "x": 1662.0,
+        "y": 622.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "target_host": "${trigger.target_hostname}",
+          "ticket_status": "REJECTED_MANUAL_REVIEW"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Notify Help Desk",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "notify_auto_close",
+      "name": "Notify Help Desk (close)",
+      "type": "aap_job_template",
+      "position": {
+        "x": 1536.0,
+        "y": -47.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "action": "close",
+          "target_host": "${trigger.target_hostname}"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Notify Help Desk",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "notify_appr_close",
+      "name": "Notify Help Desk (close)",
+      "type": "aap_job_template",
+      "position": {
+        "x": 1919.0,
+        "y": 262.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "action": "close",
+          "target_host": "${trigger.target_hostname}"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Notify Help Desk",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "enforce_auto",
+      "name": "Enforce via AAP Workflow (196)",
+      "type": "aap_workflow_job_template",
+      "position": {
+        "x": 1073.0,
+        "y": -58.0
+      },
+      "parameters": {
+        "extra_vars": {
+          "target_host": "${trigger.target_hostname}",
+          "auto_rollback": "true"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "organization_name": "IT Service Automation",
+        "workflow_job_template_id": 86,
+        "workflow_job_template_name": "Compliance as Code - Golden Image Enforcement"
+      }
+    },
+    {
+      "id": "enforce_approved",
+      "name": "Enforce via AAP Workflow (196)",
+      "type": "aap_workflow_job_template",
+      "position": {
+        "x": 1563.0,
+        "y": 253.0
+      },
+      "parameters": {
+        "extra_vars": {
+          "target_host": "${trigger.target_hostname}",
+          "auto_rollback": "true"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "organization_name": "IT Service Automation",
+        "workflow_job_template_id": 86,
+        "workflow_job_template_name": "Compliance as Code - Golden Image Enforcement"
+      }
+    },
+    {
+      "id": "hold_notify",
+      "name": "Record: drift held (no rollback)",
+      "type": "aap_job_template",
+      "position": {
+        "x": 841.0,
+        "y": 658.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "action": "open",
+          "target_host": "${trigger.target_hostname}",
+          "ticket_status": "HELD_MANAGED_CHANGE"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Notify Help Desk",
+        "organization_name": "IT Service Automation"
+      }
+    },
+    {
+      "id": "record_decision",
+      "name": "AAC - Record AI Decision",
+      "type": "aap_job_template",
+      "position": {
+        "x": 1375.0,
+        "y": 912.0
+      },
+      "parameters": {
+        "limit": "",
+        "diff_mode": false,
+        "extra_vars": {
+          "trace_id": "${opa_gate.body.decision_id}",
+          "gate_action": "route",
+          "decision_ref": "${opa_gate.body.decision_id}",
+          "policy_route": "${opa_gate.body.result.route}",
+          "agent_identity": "golden-image",
+          "overrode_agent": "${opa_gate.body.result.overrode_agent}",
+          "policy_reasons": "${opa_gate.body.result.reasons}",
+          "agent_reasoning": "${triage_agent.result.content.reasoning}",
+          "agent_recommended": "${triage_agent.result.content.route}",
+          "target_environment": "lab"
+        },
+        "credential_id": "<CREDENTIAL_ID>",
+        "integration_id": "<INTEGRATION_ID>",
+        "job_template_id": "<JOB_TEMPLATE_ID>",
+        "job_template_name": "Compliance as Code - Record AI Decision",
+        "organization_name": "IT Service Automation"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "trigger_patch",
+      "name": "Golden Image Drift",
+      "type": "manual_trigger",
+      "position": {
+        "x": -110,
+        "y": 270
+      },
+      "parameters": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "target_hostname"
+          ],
+          "properties": {
+            "cve_ids": {
+              "type": "string",
+              "default": ""
+            },
+            "dry_run": {
+              "type": "string",
+              "default": "yes"
+            },
+            "target_hostname": {
+              "type": "string",
+              "default": "demo-rhel9"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "description": "AAC - Golden Image (governed drift, lab AAP)",
+  "schema_version": "2.0.0"
+}
