@@ -96,8 +96,8 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.02 AO reference capture | Done: OpenAPI 1.3.0 spec plus a runtime-proven reference workflow export; expression syntax resolved |
 | T0.03 Repository and CI | Done |
 | T0.05 AAP config as code (Stage 0 subset) | Done: `aap_config/` |
-| T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed, four AgentCore runtimes READY, 19/19 least-privilege checks passed |
-| T0.04 Execution environment | Built and pushed: `quay.io/locust61/ai-governance-ee:0.1.0` (amd64, boto3 1.43 with AgentCore). Registering it in AAP needs a registry pull credential (pending approval) |
+| T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed. Full verification on the new EE (AAP job 1271): 19/19 least-privilege checks passed, and all 4 AgentCore runtimes are listed READY through the read-only discovery role |
+| T0.04 Execution environment | Done: `quay.io/locust61/ai-governance-ee:0.1.0` (public; amd64; boto3 1.43 with AgentCore clients), registered in AAP as `ai-governance-ee` and used by all governance job templates |
 
 ## Getting started
 

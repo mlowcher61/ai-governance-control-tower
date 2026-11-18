@@ -74,7 +74,7 @@
 | AAP `Default execution environment` | ansible-core 2.16.19, **boto3 1.38.27**, which has no `bedrock-agentcore-control` client (`UnknownServiceError`). A custom EE is required for AgentCore APIs (T0.04) |
 | Governance roles stack `aigov-governance-roles` | ✅ Deployed (AAP job 1253) |
 | Demo stacks `aigov-demo-artifacts`, `aigov-demo-agents` | ✅ Deployed (AAP job 1255). Four AgentCore runtimes **READY** |
-| Least-privilege verification | ✅ 19/19 IAM policy-simulator checks passed as `AIGovDiscoveryRole` (AAP job 1257). Runtime listing awaits the custom EE |
+| Least-privilege verification | ✅ 19/19 IAM policy-simulator checks passed as `AIGovDiscoveryRole` (AAP job 1257). ✅ **Full verification on `ai-governance-ee` (AAP job 1271, 2026-11-18): all 4 AgentCore runtimes listed READY through the discovery role** |
 
 | Check | Result |
 |---|---|
