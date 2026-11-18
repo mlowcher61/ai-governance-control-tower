@@ -1,0 +1,54 @@
+# PostgREST - the Governance Inventory API. Cluster-internal; callers are AAP job pods and the AO worker.
+apiVersion: v1
+kind: Service
+metadata:
+  name: governance-api
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-api'}) | to_json }}
+spec:
+  selector: {app.kubernetes.io/name: governance-api}
+  ports:
+    - {name: http, port: 3000, targetPort: 3000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: governance-api
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-api'}) | to_json }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: governance-api}
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-api', 'aigov/db-client': 'true'}) | to_json }}
+      annotations:
+        aigov/secret-version: "{{ aigov_api_secret_hash }}"
+    spec:
+      containers:
+        - name: postgrest
+          image: {{ aigov_platform_images.postgrest }}
+          ports:
+            - {name: http, containerPort: 3000}
+            - {name: admin, containerPort: 3001}
+          env:
+            - name: PGRST_DB_URI
+              valueFrom: {secretKeyRef: {name: governance-api, key: db-uri}}
+            - name: PGRST_JWT_SECRET
+              valueFrom: {secretKeyRef: {name: governance-api, key: jwt-secret}}
+            - {name: PGRST_DB_SCHEMAS, value: api}
+            - {name: PGRST_DB_ANON_ROLE, value: aigov_api_anon}
+            - {name: PGRST_ADMIN_SERVER_PORT, value: "3001"}
+            - {name: PGRST_SERVER_PORT, value: "3000"}
+            - {name: PGRST_LOG_LEVEL, value: info}
+          readinessProbe:
+            httpGet: {path: /ready, port: 3001}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /live, port: 3001}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}

@@ -1,0 +1,149 @@
+---
+# Apply ONE "by name" workflow file: render → POST /workflows/validate → create or PATCH (only
+# when the stored definition differs) → publish. Called by apply_workflows.yml with
+# aigov_wf_file (path) and the lookup tables from ao_lookups.yml.
+- name: "Read the workflow file - {{ aigov_wf_file | basename }}"
+  ansible.builtin.set_fact:
+    aigov_wf: "{{ lookup('ansible.builtin.file', aigov_wf_file) | from_yaml }}"
+
+- name: "Render the workflow with this environment's IDs - {{ aigov_wf.name }}"
+  ansible.builtin.set_fact:
+    aigov_wf_rendered: "{{ aigov_wf | mlowcher61.ai_governance.ao_render_workflow(aigov_ao_lookups) }}"
+
+- name: "Check every name resolves in this environment - {{ aigov_wf.name }}"
+  ansible.builtin.assert:
+    that: aigov_wf_rendered.missing | length == 0
+    fail_msg: >-
+      {{ aigov_wf.name }} references names this environment does not have:
+      {{ aigov_wf_rendered.missing | join('; ') }}. Create them (configure_aap.yml for AAP job
+      templates; AO credentials and integrations in AO) or adjust ao_workflows/config/connections.yml.
+    quiet: true
+
+- name: "Validate the definition with AO - {{ aigov_wf.name }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/workflows/validate"
+    method: POST
+    body_format: json
+    body:
+      workflow_definition: "{{ aigov_wf_rendered.definition }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 422]
+  register: aigov_wf_validation
+
+- name: "Assert AO found no errors - {{ aigov_wf.name }}"
+  ansible.builtin.assert:
+    that: aigov_wf_validation.status == 200 and (aigov_wf_validation.json.is_valid | bool)
+    fail_msg: >-
+      AO rejected {{ aigov_wf.name }}:
+      {{ (aigov_wf_validation.json.validation_result | default(aigov_wf_validation.json)).findings | default([]) | to_json }}
+    quiet: true
+
+- name: "Find the workflow by name - {{ aigov_wf.name }}"
+  ansible.builtin.set_fact:
+    aigov_wf_existing_id: "{{ aigov_ao_workflow_ids[aigov_wf.name] | default('') }}"
+
+- name: "Stop here in validate-only mode - {{ aigov_wf.name }}"
+  when: aigov_ao_validate_only | bool
+  ansible.builtin.set_fact:
+    aigov_ao_results: "{{ aigov_ao_results + [aigov_wf.name ~ ': valid (validate-only, nothing changed)'] }}"
+
+- name: "Create or update the workflow - {{ aigov_wf.name }}"
+  when: not (aigov_ao_validate_only | bool)
+  block:
+    - name: "Create the workflow - {{ aigov_wf.name }}"
+      when: aigov_wf_existing_id | length == 0
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ aigov_wf.name }}"
+          description: "{{ aigov_wf_rendered.definition.description }}"
+          project_id: "{{ aigov_ao_projects[aigov_ao_project] }}"
+          labels:
+            managed-by: ai-governance-control-tower
+            source_file: "{{ aigov_wf_file | basename }}"
+          workflow_definition: "{{ aigov_wf_rendered.definition }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 201]
+      register: aigov_wf_created
+      changed_when: true
+
+    - name: "Read the stored workflow - {{ aigov_wf.name }}"
+      when: aigov_wf_existing_id | length > 0
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows/{{ aigov_wf_existing_id }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+      register: aigov_wf_current
+
+    - name: "Decide whether the stored definition differs - {{ aigov_wf.name }}"
+      ansible.builtin.set_fact:
+        aigov_wf_needs_update: >-
+          {{ aigov_wf_existing_id | length > 0 and
+             (aigov_wf_current.json.version.workflow_definition
+              | mlowcher61.ai_governance.ao_workflow_differs(aigov_wf_rendered.definition)) }}
+
+    - name: "Save a new version of the workflow - {{ aigov_wf.name }}"
+      when: aigov_wf_needs_update | bool
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows/{{ aigov_wf_existing_id }}"
+        method: PATCH
+        body_format: json
+        body:
+          description: "{{ aigov_wf_rendered.definition.description }}"
+          workflow_definition: "{{ aigov_wf_rendered.definition }}"
+          change_description: "Applied from ao_workflows/definitions/{{ aigov_wf_file | basename }}"
+          expected_version: "{{ aigov_wf_current.json.current_version }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+      changed_when: true
+
+    - name: "Set the workflow ID and action - {{ aigov_wf.name }}"
+      ansible.builtin.set_fact:
+        aigov_wf_id: "{{ aigov_wf_existing_id if aigov_wf_existing_id | length > 0 else aigov_wf_created.json.id }}"
+        aigov_wf_action: >-
+          {{ 'created' if aigov_wf_existing_id | length == 0
+             else ('updated' if aigov_wf_needs_update | bool else 'unchanged') }}
+
+    - name: "Read the stored workflow back - {{ aigov_wf.name }}"
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows/{{ aigov_wf_id }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+      register: aigov_wf_stored
+
+    - name: "Assert AO stored what the file defines - {{ aigov_wf.name }}"
+      ansible.builtin.assert:
+        that:
+          - not (aigov_wf_stored.json.version.workflow_definition
+                 | mlowcher61.ai_governance.ao_workflow_differs(aigov_wf_rendered.definition))
+        fail_msg: >-
+          AO's stored version {{ aigov_wf_stored.json.current_version }} of {{ aigov_wf.name }} differs from
+          the rendered file after the {{ aigov_wf_action }}. AO may have normalized a field; compare
+          GET /api/v1/workflows/{{ aigov_wf_id }} with the rendered definition.
+        quiet: true
+
+    - name: "Publish the current version - {{ aigov_wf.name }}"
+      when:
+        - aigov_wf.publish | default(true) | bool
+        - aigov_wf_stored.json.published_version_number != aigov_wf_stored.json.current_version
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows/{{ aigov_wf_id }}/versions/{{ aigov_wf_stored.json.current_version }}/publish"
+        method: POST
+        body_format: json
+        body:
+          change_description: "Published from ao_workflows/definitions/{{ aigov_wf_file | basename }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 201]
+      changed_when: true
+
+    - name: "Record the result - {{ aigov_wf.name }}"
+      ansible.builtin.set_fact:
+        aigov_ao_results: >-
+          {{ aigov_ao_results + [aigov_wf.name ~ ': ' ~ aigov_wf_action ~ ' (id ' ~ aigov_wf_id ~ ', version '
+             ~ aigov_wf_stored.json.current_version ~ ', '
+             ~ ('published' if aigov_wf.publish | default(true) | bool else 'draft') ~ ')'] }}

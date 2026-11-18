@@ -1,0 +1,54 @@
+---
+# Authenticate to automation orchestrator with service-account client credentials and set
+# aigov_ao_api (base URL) and aigov_ao_headers (bearer token, 15-minute lifetime).
+- name: Resolve the AO connection settings
+  ansible.builtin.set_fact:
+    aigov_ao_api: "{{ (aigov_ao_url | default(lookup('ansible.builtin.env', 'AO_URL'), true) | regex_replace('/+$', '')) ~ '/api/v1' }}"
+    aigov_ao_cid: "{{ aigov_ao_client_id | default(lookup('ansible.builtin.env', 'AO_CLIENT_ID'), true) }}"
+    aigov_ao_secret: "{{ aigov_ao_client_secret | default(lookup('ansible.builtin.env', 'AO_CLIENT_SECRET'), true) }}"
+  no_log: true
+
+- name: Check the AO connection settings are present
+  ansible.builtin.assert:
+    that:
+      - aigov_ao_api is match('^https?://[^/]+')
+      - aigov_ao_cid | length > 0
+      - aigov_ao_secret | length > 0
+    fail_msg: >-
+      Attach the AAP credential 'AI Governance - Automation Orchestrator' to this job template,
+      or export AO_URL, AO_CLIENT_ID and AO_CLIENT_SECRET when running from a workstation.
+    quiet: true
+
+- name: Request an AO access token (client credentials)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/auth/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: client_credentials
+      client_id: "{{ aigov_ao_cid }}"
+      client_secret: "{{ aigov_ao_secret }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: 200
+  register: aigov_ao_token
+  no_log: true
+
+- name: Set the AO request headers
+  ansible.builtin.set_fact:
+    aigov_ao_headers:
+      Authorization: "Bearer {{ aigov_ao_token.json.access_token }}"
+  no_log: true
+
+- name: Read the AO identity and version
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/{{ item }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  loop: [auth/me, version]
+  register: aigov_ao_whoami
+
+- name: Show the AO identity and API version
+  ansible.builtin.debug:
+    msg: >-
+      Connected to AO API {{ aigov_ao_whoami.results[1].json.info_version }} as
+      {{ aigov_ao_whoami.results[0].json.username }}.

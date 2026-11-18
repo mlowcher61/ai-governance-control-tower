@@ -1,0 +1,66 @@
+---
+# AI Governance - Apply AO Workflows (task T0.08)
+#
+# Loads the "by name" workflow files in ao_workflows/definitions/ into automation orchestrator:
+# render with this environment's IDs → POST /workflows/validate → create, or save a new
+# version only when the stored definition differs → publish. Idempotent: an unchanged file
+# creates no new version.
+#
+#   export AO_URL=https://<ao-route-host> AO_CLIENT_ID=... AO_CLIENT_SECRET=...
+#   ansible-playbook ao_workflows/apply_workflows.yml                       # all definitions
+#   ansible-playbook ao_workflows/apply_workflows.yml -e aigov_ao_workflows=[t0_loader_test.yml]
+#   ansible-playbook ao_workflows/apply_workflows.yml -e aigov_ao_validate_only=true
+- name: AI Governance - apply automation orchestrator workflows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - config/connections.yml
+    - config/approvers.yml
+  vars:
+    aigov_ao_workflows: []          # file names in definitions/; empty = all
+    aigov_ao_validate_only: false
+    aigov_ao_results: []
+  tasks:
+    - name: Log in to automation orchestrator
+      ansible.builtin.include_tasks: tasks/ao_login.yml
+
+    - name: Resolve AO and AAP names to IDs
+      ansible.builtin.include_tasks: tasks/ao_lookups.yml
+
+    - name: Read the existing workflows
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/workflows?limit=100"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+      register: aigov_ao_wf_list
+
+    - name: Index the existing workflows by name
+      ansible.builtin.set_fact:
+        aigov_ao_workflow_ids: >-
+          {{ aigov_ao_wf_list.json.resources | rejectattr('is_builtin') | items2dict(key_name='name', value_name='id') }}
+
+    - name: Select the workflow files
+      ansible.builtin.set_fact:
+        aigov_ao_files: >-
+          {{ (aigov_ao_workflows | map('regex_replace', '^', playbook_dir ~ '/definitions/') | list)
+             if aigov_ao_workflows | length > 0
+             else (query('ansible.builtin.fileglob', playbook_dir ~ '/definitions/*.yml') | sort) }}
+
+    - name: Warn when no approver has logged in to AO yet
+      when: aigov_ao_lookups.approvers | length == 0
+      ansible.builtin.debug:
+        msg: >-
+          No AO user matches the approvers {{ aigov_ao_approvers }} (nobody has logged in through AAP SSO yet,
+          or this AO identity cannot list users). Approval nodes will accept any authorized AO user.
+
+    - name: Apply each workflow file
+      ansible.builtin.include_tasks: tasks/apply_one.yml
+      loop: "{{ aigov_ao_files }}"
+      loop_control:
+        loop_var: aigov_wf_file
+        label: "{{ aigov_wf_file | basename }}"
+
+    - name: Report the results
+      ansible.builtin.debug:
+        msg: "{{ aigov_ao_results }}"

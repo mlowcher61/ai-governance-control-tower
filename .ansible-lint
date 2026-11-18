@@ -13,5 +13,9 @@ exclude_paths:
 kinds:
   - playbook: "**/playbooks/**/*.yml"
   - playbook: "aap_config/configure_aap.yml"
+  - playbook: "ao_workflows/*.yml"
+  - tasks: "ao_workflows/tasks/*.yml"
+  - vars: "ao_workflows/config/*.yml"
+  - yaml: "ao_workflows/definitions/*.yml"
   - vars: "aap_config/group_vars/**/*.yml"
   - vars: "aap_config/vars/*.yml"

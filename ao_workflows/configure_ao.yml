@@ -1,0 +1,179 @@
+---
+# AI Governance - Configure automation orchestrator (task T0.08, config as code)
+#
+# Converges automation orchestrator (AO) to what the governance workflows need, by NAME
+# (ao_workflows/config/connections.yml):
+#   1. the AO project, AAP integration and LLM integration exist and are healthy (the LLM
+#      integration's model list includes aigov_ao_llm_model);
+#   2. the AO credentials used by the workflows exist;
+#   3. the trigger service account (aigov-trigger) exists - created when permitted;
+#   4. the SSRF allowlist (APP_INTEGRATION_URL_ALLOWED_HOSTS) contains the OPA, Inventory API
+#      and AAP hosts - updated when permitted.
+# Items the AO identity is not authorized to change are reported as ACTION REQUIRED for an AO
+# administrator instead of failing, so the playbook is safe to run with a project-scoped
+# service account. Set aigov_ao_strict=true to fail on any open item.
+#
+#   export AO_URL=https://<ao-route-host> AO_CLIENT_ID=... AO_CLIENT_SECRET=...
+#   ansible-playbook ao_workflows/configure_ao.yml
+- name: AI Governance - configure automation orchestrator
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - config/connections.yml
+    - config/approvers.yml
+  vars:
+    aigov_ao_strict: false
+    aigov_ao_actions: []
+  tasks:
+    - name: Log in to automation orchestrator
+      ansible.builtin.include_tasks: tasks/ao_login.yml
+
+    - name: Resolve AO and AAP names to IDs
+      ansible.builtin.include_tasks: tasks/ao_lookups.yml
+
+    # ---- 1. Integrations -------------------------------------------------------------
+    - name: Check the AAP and LLM integrations exist
+      ansible.builtin.set_fact:
+        aigov_ao_actions: >-
+          {{ aigov_ao_actions + ['Create the AO integration "' ~ item ~ '"'] }}
+      when: item not in aigov_ao_integrations
+      loop:
+        - "{{ aigov_ao_aap_integration }}"
+        - "{{ aigov_ao_llm_integration }}"
+
+    - name: Report integrations that fail validation
+      ansible.builtin.set_fact:
+        aigov_ao_actions: >-
+          {{ aigov_ao_actions + ['AO integration "' ~ item.name ~ '" is in status ' ~ item.validation_status
+             ~ ': ' ~ (item.validation_error | default('', true)) ~ '. Fix its credential and re-validate it in AO.'] }}
+      when:
+        - item.name in [aigov_ao_aap_integration, aigov_ao_llm_integration]
+        - item.validation_status != 'available'
+      loop: "{{ aigov_ao_integration_objs }}"
+      loop_control:
+        label: "{{ item.name }}: {{ item.validation_status }}"
+
+    - name: Check the LLM model is enabled on the LLM integration
+      ansible.builtin.set_fact:
+        aigov_ao_actions: >-
+          {{ aigov_ao_actions + ['Enable model "' ~ aigov_ao_llm_model ~ '" on the AO integration "'
+             ~ aigov_ao_llm_integration ~ '" (enabled: ' ~ (aigov_ao_lookups.models[aigov_ao_llm_integration] | default({}) | list) ~ ')'] }}
+      when: aigov_ao_llm_model not in (aigov_ao_lookups.models[aigov_ao_llm_integration] | default({}))
+
+    # ---- 2. Credentials --------------------------------------------------------------
+    - name: Check the AO credentials used by the workflows exist
+      ansible.builtin.set_fact:
+        aigov_ao_actions: "{{ aigov_ao_actions + ['Create the AO credential \"' ~ item ~ '\"'] }}"
+      when: item not in aigov_ao_credentials
+      loop:
+        - "{{ aigov_ao_aap_credential }}"
+        - "{{ aigov_ao_llm_credential }}"
+
+    # ---- 3. Trigger service account --------------------------------------------------
+    - name: Read the AO service accounts
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/service_accounts"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 403]
+      register: aigov_ao_sas
+
+    - name: Create the trigger service account
+      when:
+        - aigov_ao_sas.status == 200
+        - aigov_ao_trigger_service_account not in (aigov_ao_sas.json.resources | map(attribute='name') | list)
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/service_accounts"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ aigov_ao_trigger_service_account }}"
+          description: AI Governance Control Tower - start governance workflows and read executions and approvals
+          project_id: "{{ aigov_ao_projects[aigov_ao_project] }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 201, 403]
+      register: aigov_ao_sa_created
+      changed_when: aigov_ao_sa_created.status in [200, 201]
+
+    - name: Report a trigger service account this identity may not create
+      when: >-
+        aigov_ao_sas.status == 403 or
+        (aigov_ao_sa_created.status | default(0)) == 403
+      ansible.builtin.set_fact:
+        aigov_ao_actions: >-
+          {{ aigov_ao_actions + ['Create the AO service account "' ~ aigov_ao_trigger_service_account
+             ~ '" in project "' ~ aigov_ao_project ~ '", add a client credential, and store its client ID and secret'
+             ~ ' in the AAP credential "AI Governance - Automation Orchestrator" (this identity is not allowed to)'] }}
+
+    - name: Issue the trigger service account credential into AAP
+      when: aigov_ao_sas.status == 200 and (aigov_ao_sa_created.status | default(200)) != 403
+      ansible.builtin.include_tasks: tasks/issue_trigger_credential.yml
+
+    # ---- 4. SSRF allowlist -----------------------------------------------------------
+    - name: Read the AO SSRF allowlist setting
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/settings/APP_INTEGRATION_URL_ALLOWED_HOSTS"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 403, 404]
+      register: aigov_ao_allow
+
+    - name: Compute the allowlist hosts that are missing
+      when: aigov_ao_allow.status == 200
+      ansible.builtin.set_fact:
+        aigov_ao_allow_current: "{{ aigov_ao_allow_list }}"
+        aigov_ao_allow_missing: "{{ aigov_ao_required_allowed_hosts | select | difference(aigov_ao_allow_list) }}"
+        aigov_ao_allow_is_string: "{{ aigov_ao_allow.json.value is string }}"
+      vars:
+        aigov_ao_allow_list: >-
+          {{ (aigov_ao_allow.json.value.split(',') if aigov_ao_allow.json.value is string
+              else (aigov_ao_allow.json.value | default([], true))) | map('trim') | select | list }}
+
+    - name: Add the missing hosts to the AO SSRF allowlist
+      when:
+        - aigov_ao_allow.status == 200
+        - aigov_ao_allow_missing | length > 0
+      ansible.builtin.uri:
+        url: "{{ aigov_ao_api }}/settings/APP_INTEGRATION_URL_ALLOWED_HOSTS"
+        method: PATCH
+        body_format: json
+        body:
+          value: >-
+            {{ ((aigov_ao_allow_current + aigov_ao_allow_missing) | join(','))
+               if aigov_ao_allow_is_string | bool else (aigov_ao_allow_current + aigov_ao_allow_missing) }}
+          expected_version: "{{ aigov_ao_allow.json.version | default(omit) }}"
+        headers: "{{ aigov_ao_headers }}"
+        validate_certs: "{{ aigov_ao_validate_certs }}"
+        status_code: [200, 403]
+      register: aigov_ao_allow_patch
+      changed_when: aigov_ao_allow_patch.status == 200
+
+    - name: Report an SSRF allowlist this identity may not read or change
+      when: >-
+        aigov_ao_allow.status != 200 or
+        (aigov_ao_allow_patch.status | default(200)) == 403
+      ansible.builtin.set_fact:
+        aigov_ao_actions: >-
+          {{ aigov_ao_actions + ['Ensure the AO setting APP_INTEGRATION_URL_ALLOWED_HOSTS contains '
+             ~ (aigov_ao_required_allowed_hosts | select | join(', '))
+             ~ ' and that it reaches the ao-worker pods as well as ao-backend (this identity cannot '
+             ~ ('read' if aigov_ao_allow.status != 200 else 'change') ~ ' AO settings)'] }}
+
+    # ---- Summary ---------------------------------------------------------------------
+    - name: Summarize the automation orchestrator configuration
+      ansible.builtin.debug:
+        msg:
+          project: "{{ aigov_ao_project }} ({{ aigov_ao_projects[aigov_ao_project] }})"
+          aap_integration: "{{ aigov_ao_aap_integration }}"
+          llm: "{{ aigov_ao_llm_integration }} / {{ aigov_ao_llm_model }}"
+          governance_job_templates_visible_to_ao: "{{ aigov_ao_lookups.job_templates | list }}"
+          action_required: "{{ aigov_ao_actions if aigov_ao_actions | length > 0 else 'none' }}"
+
+    - name: Fail on open items in strict mode
+      when: aigov_ao_strict | bool
+      ansible.builtin.assert:
+        that: aigov_ao_actions | length == 0
+        fail_msg: "{{ aigov_ao_actions | length }} automation orchestrator item(s) need an AO administrator."
+        quiet: true

@@ -1,0 +1,329 @@
+---
+# AI Governance - Deploy Platform Services (task T0.06)
+#
+# Deploys the governance platform services into one OpenShift namespace with certified
+# kubernetes.core: PostgreSQL 16 (Red Hat image), PostgREST (Inventory API), OPA 1.x and
+# Grafana OSS, a default-deny NetworkPolicy set, and a Route for Grafana only.
+#
+# Credentials: the AAP credential type "OpenShift or Kubernetes API Bearer Token" injects
+# K8S_AUTH_HOST / K8S_AUTH_API_KEY / K8S_AUTH_VERIFY_SSL, which kubernetes.core reads.
+# Secrets (DB passwords, PostgREST JWT secret, Grafana admin) are generated on the first run,
+# kept in Kubernetes Secrets, and never overwritten or printed.
+#
+# Acceptance checks (the job fails when one is not met):
+#   * all workloads ready; OPA GET /health OK; PostgREST GET /rpc/health OK; Grafana /api/health OK
+#   * a pod WITH the db-client label reaches PostgreSQL; a pod WITHOUT it is blocked (NetworkPolicy)
+- name: AI Governance - deploy the governance platform services
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_platform_namespace: ai-governance
+    # Namespaces whose pods may call OPA and the Inventory API (AAP job pods, AO worker)
+    aigov_platform_trusted_namespaces: [aap, automation-orchestrator]
+    aigov_platform_images:
+      postgresql: registry.redhat.io/rhel9/postgresql-16:1-1794513854
+      postgrest: docker.io/postgrest/postgrest:v16.6
+      opa: docker.io/openpolicyagent/opa:1.22.4-static
+      grafana: docker.io/grafana/grafana:13.3.1
+    aigov_db_name: aigov
+    aigov_db_owner: aigov_owner
+    aigov_db_storage: 5Gi
+    aigov_opa_replicas: 2
+    # Also call OPA and PostgREST directly from this job (proves AAP job pods can reach them)
+    aigov_platform_check_from_job: true
+    aigov_platform_labels:
+      app.kubernetes.io/part-of: ai-governance
+      app.kubernetes.io/managed-by: ai-governance-control-tower
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_tpl: "{{ aigov_repo_root }}/platform/templates"
+  tasks:
+    - name: Check the OpenShift credential is attached
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+        fail_msg: >-
+          Attach an AAP credential of type "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential
+          in aap_config/vars/customer.yml) to this job template.
+        quiet: true
+
+    - name: Create the governance namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels }}"
+
+    # ---- Secrets: generated once, never overwritten ------------------------------------------
+    - name: Read the existing platform secrets
+      kubernetes.core.k8s_info:
+        kind: Secret
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ item }}"
+      loop: [governance-db, governance-api, grafana-admin]
+      register: aigov_existing_secrets
+      no_log: true
+
+    - name: Decode the existing secret values
+      ansible.builtin.set_fact:
+        aigov_cur: >-
+          {%- set out = [] -%}
+          {%- for r in aigov_existing_secrets.results -%}
+          {%-   set d = {} -%}
+          {%-   for k, v in ((r.resources | first | default({})).data | default({}, true)).items() -%}
+          {%-     set _ = d.update({k: v | b64decode}) -%}
+          {%-   endfor -%}
+          {%-   set _ = out.append(d) -%}
+          {%- endfor -%}
+          {{ out }}
+      no_log: true
+
+    - name: Fill in any missing secret values with new random ones
+      ansible.builtin.set_fact:
+        aigov_db_secret: >-
+          {{ {'admin-password': lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']),
+              'owner-password': lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']),
+              'authenticator-password': lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']),
+              'grafana-password': lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits'])}
+             | combine(aigov_cur[0]) }}
+        aigov_jwt_secret: >-
+          {{ aigov_cur[1]['jwt-secret'] | default(lookup('ansible.builtin.password', '/dev/null', length=64,
+             chars=['ascii_letters', 'digits'])) }}
+        aigov_grafana_secret: >-
+          {{ {'admin-user': 'admin',
+              'admin-password': lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits'])}
+             | combine(aigov_cur[2]) }}
+      no_log: true
+
+    - name: Store the platform secrets
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: Opaque
+          metadata:
+            name: "{{ item.name }}"
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels }}"
+          stringData: "{{ item.data }}"
+      loop:
+        - name: governance-db
+          data: "{{ aigov_db_secret }}"
+        - name: governance-api
+          data:
+            jwt-secret: "{{ aigov_jwt_secret }}"
+            db-uri: >-
+              postgres://aigov_authenticator:{{ aigov_db_secret['authenticator-password'] }}@governance-db:5432/{{ aigov_db_name }}
+        - name: grafana-admin
+          data: "{{ aigov_grafana_secret }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: Fingerprint the secrets so dependent pods restart when they change
+      ansible.builtin.set_fact:
+        aigov_api_secret_hash: "{{ (aigov_jwt_secret ~ aigov_db_secret['authenticator-password']) | hash('sha256') | truncate(12, True, '', 0) }}"
+        aigov_bootstrap_hash: >-
+          {{ (lookup('ansible.builtin.file', aigov_repo_root ~ '/database/bootstrap/platform_roles.sql')
+              ~ aigov_db_secret['authenticator-password'] ~ aigov_db_secret['grafana-password'])
+             | hash('sha256') | truncate(10, True, '', 0) }}
+        aigov_run_suffix: "{{ tower_job_id | default(awx_job_id) | default(now(utc=true, fmt='%Y%m%d%H%M%S'), true) }}"
+        aigov_grafana_config_hash: "{{ lookup('ansible.builtin.file', aigov_tpl ~ '/grafana.yml.j2') | hash('sha256') | truncate(12, True, '', 0) }}"
+      no_log: true
+
+    # ---- Network policies first, so nothing is ever reachable without them --------------
+    - name: Apply the NetworkPolicies
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/networkpolicies.yml.j2') | ansible.builtin.from_yaml_all | list }}"
+
+    # ---- PostgreSQL --------------------------------------------------------------------------
+    - name: Deploy PostgreSQL
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/governance-db.yml.j2') | ansible.builtin.from_yaml_all | list }}"
+
+    - name: Wait for PostgreSQL to be ready
+      kubernetes.core.k8s_info:
+        kind: StatefulSet
+        namespace: "{{ aigov_platform_namespace }}"
+        name: governance-db
+      register: aigov_db_sts
+      until: (aigov_db_sts.resources[0].status.readyReplicas | default(0)) >= 1
+      retries: 40
+      delay: 10
+
+    - name: Publish the bootstrap SQL as a ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: governance-db-bootstrap
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels }}"
+          data:
+            platform_roles.sql: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/database/bootstrap/platform_roles.sql') }}"
+
+    - name: Run the database bootstrap Job (roles, schemas, health RPC)
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/db-bootstrap-job.yml.j2') | ansible.builtin.from_yaml }}"
+        wait: true
+        wait_condition:
+          type: Complete
+          status: "True"
+        wait_timeout: 300
+      vars:
+        aigov_bootstrap_job: "governance-db-bootstrap-{{ aigov_bootstrap_hash }}"
+
+    # ---- OPA ---------------------------------------------------------------------------------
+    - name: Check whether a policy bundle has already been published
+      kubernetes.core.k8s_info:
+        kind: ConfigMap
+        namespace: "{{ aigov_platform_namespace }}"
+        name: opa-policies
+      register: aigov_opa_cm
+
+    - name: Create the bootstrap OPA policy ConfigMap (only when none exists)
+      when: aigov_opa_cm.resources | length == 0
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: opa-policies
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels }}"
+            annotations:
+              aigov/bundle-revision: bootstrap
+          data:
+            bootstrap.rego: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/platform/opa/bootstrap.rego') }}"
+
+    - name: Deploy OPA
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/opa.yml.j2') | ansible.builtin.from_yaml_all | list }}"
+
+    # ---- PostgREST and Grafana ---------------------------------------------------------------
+    - name: Deploy PostgREST (Inventory API)
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/governance-api.yml.j2') | ansible.builtin.from_yaml_all | list }}"
+
+    - name: Create the Grafana dashboards ConfigMap (only when none exists; dashboards arrive in T1.12)
+      kubernetes.core.k8s:
+        state: present
+        apply: false
+        force: false
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: grafana-dashboards
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels }}"
+
+    - name: Deploy Grafana
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/grafana.yml.j2') | ansible.builtin.from_yaml_all | list }}"
+
+    - name: Wait for OPA, PostgREST and Grafana to be available
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ item }}"
+        wait: true
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+      loop: [opa, governance-api, grafana]
+
+    # ---- Acceptance checks -------------------------------------------------------------------
+    - name: Read the Grafana route
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aigov_platform_namespace }}"
+        name: grafana
+      register: aigov_grafana_route
+
+    - name: Check Grafana is reachable through its route
+      ansible.builtin.uri:
+        url: "https://{{ aigov_grafana_route.resources[0].spec.host }}/api/health"
+        validate_certs: false
+      register: aigov_grafana_health
+      until: aigov_grafana_health.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Check OPA and PostgREST from this job
+      when: aigov_platform_check_from_job | bool
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        return_content: true
+      loop:
+        - "http://opa.{{ aigov_platform_namespace }}.svc:8181/health"
+        - "http://opa.{{ aigov_platform_namespace }}.svc:8181/v1/data/governance/platform/info"
+        - "http://governance-api.{{ aigov_platform_namespace }}.svc:3000/rpc/health"
+      register: aigov_service_checks
+      until: aigov_service_checks.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Probe PostgreSQL from a pod with and without the db-client label
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/db-check-job.yml.j2') | ansible.builtin.from_yaml }}"
+      vars:
+        aigov_check_name: "{{ item.name }}"
+        aigov_check_labels: "{{ item.labels }}"
+      loop:
+        - {name: "netpol-allowed-{{ aigov_run_suffix }}", labels: {aigov/db-client: "true"}}
+        - {name: "netpol-blocked-{{ aigov_run_suffix }}", labels: {}}
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Wait for both probes to finish
+      kubernetes.core.k8s_info:
+        kind: Job
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ item }}"
+      register: aigov_probe_jobs
+      until: >-
+        (aigov_probe_jobs.resources[0].status.succeeded | default(0)) > 0 or
+        (aigov_probe_jobs.resources[0].status.failed | default(0)) > 0
+      retries: 30
+      delay: 5
+      loop:
+        - "netpol-allowed-{{ aigov_run_suffix }}"
+        - "netpol-blocked-{{ aigov_run_suffix }}"
+
+    - name: Assert the NetworkPolicy allows labelled clients and blocks everything else
+      ansible.builtin.assert:
+        that:
+          - (aigov_probe_jobs.results[0].resources[0].status.succeeded | default(0)) > 0
+          - (aigov_probe_jobs.results[1].resources[0].status.failed | default(0)) > 0
+        fail_msg: >-
+          NetworkPolicy check failed: labelled pod succeeded={{ aigov_probe_jobs.results[0].resources[0].status.succeeded | default(0) }},
+          unlabelled pod failed={{ aigov_probe_jobs.results[1].resources[0].status.failed | default(0) }} (expected 1 and 1).
+        success_msg: A labelled pod reached PostgreSQL and an unlabelled pod was blocked.
+
+    - name: Summarize the platform services
+      ansible.builtin.debug:
+        msg:
+          namespace: "{{ aigov_platform_namespace }}"
+          grafana_url: "https://{{ aigov_grafana_route.resources[0].spec.host }}"
+          grafana_admin: "user 'admin'; password in Secret {{ aigov_platform_namespace }}/grafana-admin"
+          grafana_version: "{{ aigov_grafana_health.json.version | default('?') }}"
+          opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+          inventory_api_url: "http://governance-api.{{ aigov_platform_namespace }}.svc:3000"
+          inventory_api_health: "{{ (aigov_service_checks.results[2].json | default({})) if aigov_platform_check_from_job | bool else 'not checked' }}"
+          opa_bundle: "{{ (aigov_service_checks.results[1].json.result | default({})) if aigov_platform_check_from_job | bool else 'not checked' }}"

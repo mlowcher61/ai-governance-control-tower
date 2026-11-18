@@ -43,3 +43,15 @@ aigov_aws_account_id: ""
 # bootstrap principal. It is used to deploy the governance stacks and to assume the
 # governance roles; it never performs discovery or remediation directly.
 aigov_aws_bootstrap_credential: "AI Governance - AWS Bootstrap"
+
+# Governance platform services (T0.06) on OpenShift. Name (or numeric ID) of an EXISTING AAP credential of
+# type "OpenShift or Kubernetes API Bearer Token" whose token may manage the namespace below
+# (empty = skip the Deploy Platform Services job template).
+aigov_openshift_credential: ""
+aigov_platform_namespace: ai-governance
+# Namespaces whose pods may call OPA and the Inventory API (AAP job pods and the AO worker).
+aigov_platform_trusted_namespaces: [aap, automation-orchestrator]
+
+# automation orchestrator (T0.08). AO route URL, e.g. https://ao.apps.example.com (empty = skip the AO
+# credential and job templates). See ao_workflows/README.md.
+aigov_ao_url: ""

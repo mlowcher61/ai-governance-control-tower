@@ -1,0 +1,113 @@
+# Grafana OSS - governance dashboards (provisioned from Git; dashboards arrive in T1.12).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'grafana'}) | to_json }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: AI Governance
+        uid: aigov-postgres
+        type: grafana-postgresql-datasource
+        access: proxy
+        url: governance-db:5432
+        user: grafana_ro
+        isDefault: true
+        jsonData:
+          database: {{ aigov_db_name }}
+          sslmode: disable
+          postgresVersion: 1600
+        secureJsonData:
+          password: $GRAFANA_RO_PASSWORD
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: AI Governance
+        folder: AI Governance
+        type: file
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'grafana'}) | to_json }}
+spec:
+  selector: {app.kubernetes.io/name: grafana}
+  ports:
+    - {name: http, port: 3000, targetPort: 3000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'grafana'}) | to_json }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: grafana}
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'grafana', 'aigov/db-client': 'true'}) | to_json }}
+      annotations:
+        aigov/provisioning-version: "{{ aigov_grafana_config_hash }}"
+    spec:
+      containers:
+        - name: grafana
+          image: {{ aigov_platform_images.grafana }}
+          ports:
+            - {name: http, containerPort: 3000}
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom: {secretKeyRef: {name: grafana-admin, key: admin-user}}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: grafana-admin, key: admin-password}}
+            - name: GRAFANA_RO_PASSWORD
+              valueFrom: {secretKeyRef: {name: governance-db, key: grafana-password}}
+            - {name: GF_PATHS_DATA, value: /var/lib/grafana}
+            - {name: GF_PATHS_PROVISIONING, value: /etc/grafana/provisioning}
+            - {name: GF_ANALYTICS_REPORTING_ENABLED, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false"}
+            - {name: GF_USERS_ALLOW_SIGN_UP, value: "false"}
+          readinessProbe:
+            httpGet: {path: /api/health, port: 3000}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health, port: 3000}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/grafana}
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/datasources/datasources.yaml, subPath: datasources.yaml}
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml, subPath: dashboards.yaml}
+            - {name: dashboards, mountPath: /var/lib/grafana-dashboards, readOnly: true}
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: provisioning
+          configMap: {name: grafana-provisioning}
+        - name: dashboards
+          configMap: {name: grafana-dashboards}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: grafana
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'grafana'}) | to_json }}
+spec:
+  to: {kind: Service, name: grafana}
+  port: {targetPort: http}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

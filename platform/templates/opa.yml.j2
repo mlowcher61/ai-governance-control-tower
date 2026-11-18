@@ -1,0 +1,59 @@
+# Open Policy Agent 1.x - governance policies. Cluster-internal. Policies come from the
+# opa-policies ConfigMap (created once here; replaced by the policy publish job, T1.08) and are
+# reloaded with --watch.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa'}) | to_json }}
+spec:
+  selector: {app.kubernetes.io/name: opa}
+  ports:
+    - {name: http, port: 8181, targetPort: 8181}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa'}) | to_json }}
+spec:
+  replicas: {{ aigov_opa_replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: opa}
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa'}) | to_json }}
+    spec:
+      containers:
+        - name: opa
+          image: {{ aigov_platform_images.opa }}
+          # OPA 1.x listens on localhost by default: bind explicitly.
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - --diagnostic-addr=0.0.0.0:8282
+            - --disable-telemetry
+            - --log-level=info
+            - --watch
+            - /policies
+          ports:
+            - {name: http, containerPort: 8181}
+            - {name: diag, containerPort: 8282}
+          readinessProbe:
+            httpGet: {path: /health?bundles, port: 8282}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8282}
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: policies, mountPath: /policies, readOnly: true}
+      volumes:
+        - name: policies
+          configMap: {name: opa-policies}

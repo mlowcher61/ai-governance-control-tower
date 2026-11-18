@@ -1,0 +1,86 @@
+# Default-deny ingress for the governance namespace, then one allow rule per service
+# (docs/plan/02-solution-architecture.md section 4.2).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | to_json }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Kubelet health probes come from the host network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-host-network-probes
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | to_json }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {policy-group.network.openshift.io/host-network: ""}
+---
+# PostgreSQL: only pods labelled aigov/db-client=true (PostgREST, Grafana, migration Jobs).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-db-clients
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | to_json }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: governance-db}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {aigov/db-client: "true"}
+      ports:
+        - {protocol: TCP, port: 5432}
+---
+# Inventory API and OPA: AAP job pods and the AO worker (trusted namespaces), plus in-namespace
+# pods labelled aigov/api-client=true (smoke tests).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-and-opa-clients
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | to_json }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [governance-api, opa]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - {key: kubernetes.io/metadata.name, operator: In, values: {{ aigov_platform_trusted_namespaces | to_json }}}
+        - podSelector:
+            matchLabels: {aigov/api-client: "true"}
+      ports:
+        - {protocol: TCP, port: 3000}
+        - {protocol: TCP, port: 8181}
+---
+# Grafana: only through the OpenShift router (Route).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-ingress
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | to_json }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: grafana}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {policy-group.network.openshift.io/ingress: ""}
+      ports:
+        - {protocol: TCP, port: 3000}

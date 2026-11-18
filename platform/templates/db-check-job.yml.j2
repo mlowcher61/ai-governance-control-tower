@@ -1,0 +1,23 @@
+# One-shot connectivity probe to PostgreSQL. Used twice by the deploy playbook: once WITH the
+# aigov/db-client label (must connect) and once WITHOUT it (NetworkPolicy must block it).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ aigov_check_name }}
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'aigov/check': 'netpol'}) | to_json }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine(aigov_check_labels) | to_json }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: {{ aigov_platform_images.postgresql }}
+          command: [pg_isready, -h, governance-db, -p, "5432", -t, "10"]
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}

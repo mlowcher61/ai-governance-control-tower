@@ -50,5 +50,42 @@ aigov_aws_templates:
       aigov_aws_region: "{{ aigov_aws_region }}"
     <<: *aigov_jt_defaults
 
+# T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
+# "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
+aigov_platform_templates:
+  - name: AI Governance - Deploy Platform Services
+    description: "T0.06 - deploy PostgreSQL, PostgREST, OPA and Grafana with NetworkPolicies into the governance namespace"
+    playbook: playbooks/platform/deploy_services.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+    extra_vars:
+      aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+      aigov_platform_trusted_namespaces: "{{ aigov_platform_trusted_namespaces }}"
+    <<: *aigov_jt_defaults
+
+# T0.08: automation orchestrator config as code and the workflow loader.
+aigov_ao_templates:
+  - name: AI Governance - Configure Automation Orchestrator
+    description: "T0.08 - check AO integrations, credentials, trigger service account and SSRF allowlist (reports admin actions)"
+    playbook: ao_workflows/configure_ao.yml
+    credentials:
+      - AI Governance - Automation Orchestrator
+    extra_vars:
+      aigov_aap_hostname: "{{ aigov_aap_hostname }}"
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Apply AO Workflows
+    description: "T0.08 - render, validate, create/update and publish the governance workflows in ao_workflows/definitions/"
+    playbook: ao_workflows/apply_workflows.yml
+    credentials:
+      - AI Governance - Automation Orchestrator
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_ao_validate_only: false
+    <<: *aigov_jt_defaults
+
 controller_templates: >-
-  {{ aigov_base_templates + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else []) }}
+  {{ aigov_base_templates
+     + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else [])
+     + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else []) }}

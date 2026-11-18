@@ -1,0 +1,47 @@
+---
+# =============================================================================
+# automation orchestrator (AO) connection settings, by NAME.
+#
+# Workflow files never embed AO or AAP IDs. They name things, and the loader
+# resolves each name to this environment's ID at load time. Adjust the names
+# below to match your AO (or override them with extra vars).
+#
+# Secrets are never stored here. The AO URL and service-account client ID and
+# secret come from the AAP credential "AI Governance - Automation Orchestrator"
+# (extra vars aigov_ao_url, aigov_ao_client_id, aigov_ao_client_secret), or,
+# when run from a workstation, from $AO_URL, $AO_CLIENT_ID and $AO_CLIENT_SECRET.
+# =============================================================================
+
+aigov_ao_validate_certs: false
+
+# AO project that holds the governance workflows and credentials
+aigov_ao_project: default
+
+# AAP integration and the AO credential (type "Ansible Automation Platform") used by
+# aap_job_template nodes. Both must already exist in AO.
+aigov_ao_aap_integration: Ansible Automation Platform
+aigov_ao_aap_credential: AAP Admin
+
+# LLM integration, AO credential (type "LLM Provider") and model used by agentic nodes
+aigov_ao_llm_integration: LiteMaaS
+aigov_ao_llm_credential: LiteMaaS API Key
+aigov_ao_llm_model: llama-scout-17b
+
+# AAP organization that owns the governance job templates
+aigov_ao_organization: AI Governance
+
+# AO service account that AAP jobs use to start governance workflows and read
+# executions and approvals. configure_ao.yml creates it when the AO identity it runs
+# as is allowed to; otherwise an AO administrator creates it once (see ao_workflows/README.md).
+aigov_ao_trigger_service_account: aigov-trigger
+
+# Name of the AAP credential (type "AI Governance - Automation Orchestrator") that receives the trigger
+# service account's client ID and secret when configure_ao.yml issues them.
+aigov_ao_aap_credential_name: AI Governance - Automation Orchestrator
+
+# Hosts AO REST steps and integrations must reach (setting APP_INTEGRATION_URL_ALLOWED_HOSTS).
+# The setting must also reach the ao-worker pods, not only ao-backend.
+aigov_ao_required_allowed_hosts:
+  - "{{ aigov_aap_hostname | default(lookup('ansible.builtin.env', 'AAP_SERVER'), true) }}"
+  - opa.ai-governance.svc
+  - governance-api.ai-governance.svc

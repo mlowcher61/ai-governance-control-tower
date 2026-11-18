@@ -1,0 +1,31 @@
+---
+# T0.08 acceptance: the smallest workflow that proves the loader end to end.
+# A manual trigger starts the read-only "AI Governance - Check Environment" AAP job
+# template through the AO AAP integration. Names, not IDs: the loader resolves them.
+name: AI Governance - Loader Test (as code)
+description: >-
+  Loader smoke test (T0.08). Runs the read-only AI Governance - Check Environment job template.
+  Managed by ai-governance-control-tower; edit ao_workflows/definitions/t0_loader_test.yml, not the canvas.
+publish: true
+triggers:
+  - id: trigger_manual
+    name: Start
+    type: manual_trigger
+    position: {x: 0, y: 200}
+    parameters:
+      input_schema:
+        type: object
+        properties:
+          governance_run_id: {type: string, default: loader-test}
+nodes:
+  - id: activity_check_environment
+    name: Check Environment
+    type: aap_job_template
+    position: {x: 320, y: 200}
+    job_template: AI Governance - Check Environment
+    extra_vars:
+      governance_run_id: "${trigger.governance_run_id}"
+    settings:
+      timeout: 900
+edges:
+  - {from: trigger_manual, to: activity_check_environment}

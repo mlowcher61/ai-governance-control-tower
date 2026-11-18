@@ -1,0 +1,65 @@
+---
+# Build name → ID maps for this AO environment (aigov_ao_lookups), used by the loader and
+# configure_ao.yml. Requires ao_login.yml first.
+- name: Read AO projects, integrations, credentials and users
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/{{ item }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 403]
+  loop: [projects, integrations, credentials, users]
+  register: aigov_ao_lists
+
+- name: Index AO objects by name
+  ansible.builtin.set_fact:
+    aigov_ao_projects: "{{ aigov_ao_lists.results[0].json.resources | items2dict(key_name='name', value_name='id') }}"
+    aigov_ao_integration_objs: "{{ aigov_ao_lists.results[1].json.resources }}"
+    aigov_ao_integrations: "{{ aigov_ao_lists.results[1].json.resources | items2dict(key_name='name', value_name='id') }}"
+    aigov_ao_credentials: "{{ aigov_ao_lists.results[2].json.resources | items2dict(key_name='name', value_name='id') }}"
+    aigov_ao_users: >-
+      {{ (aigov_ao_lists.results[3].json.resources | default([]) | map(attribute='username') | list)
+         if aigov_ao_lists.results[3].status == 200 else [] }}
+
+- name: Check the AO project exists
+  ansible.builtin.assert:
+    that: aigov_ao_project in aigov_ao_projects
+    fail_msg: "AO project '{{ aigov_ao_project }}' not found. Available: {{ aigov_ao_projects.keys() | list }}"
+    quiet: true
+
+- name: Read the LLM integration models
+  when: aigov_ao_llm_integration in aigov_ao_integrations
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/integrations/{{ aigov_ao_integrations[aigov_ao_llm_integration] }}/models"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: aigov_ao_models
+
+# AAP job templates are listed through AO's AAP proxy, so the IDs are the ones AO will launch.
+- name: Read AAP job templates and workflow job templates through the AO proxy
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/proxies/aap/{{ item }}?page_size=200&organization={{ aigov_ao_organization | urlencode }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  loop: [job_templates, workflow_job_templates]
+  register: aigov_ao_aap
+
+- name: Assemble the lookup tables
+  ansible.builtin.set_fact:
+    aigov_ao_lookups:
+      credentials: "{{ aigov_ao_credentials }}"
+      integrations: "{{ aigov_ao_integrations }}"
+      job_templates: "{{ aigov_ao_aap.results[0].json.results | items2dict(key_name='name', value_name='id') }}"
+      workflow_job_templates: "{{ aigov_ao_aap.results[1].json.results | items2dict(key_name='name', value_name='id') }}"
+      models: >-
+        {{ {aigov_ao_llm_integration: (aigov_ao_models.json.resources | selectattr('enabled')
+            | items2dict(key_name='name', value_name='id'))}
+           if aigov_ao_models.json is defined else {} }}
+      approvers: >-
+        {{ aigov_ao_users | select('match', '^(' ~ (aigov_ao_approvers | map('regex_escape') | join('|')) ~ ')-[0-9a-f]+$') | list }}
+      defaults:
+        aap_integration: "{{ aigov_ao_aap_integration }}"
+        aap_credential: "{{ aigov_ao_aap_credential }}"
+        llm_integration: "{{ aigov_ao_llm_integration }}"
+        llm_credential: "{{ aigov_ao_llm_credential }}"
+        llm_model: "{{ aigov_ao_llm_model }}"
+        organization: "{{ aigov_ao_organization }}"

@@ -1,0 +1,8 @@
+---
+# AAP usernames allowed to decide governance approvals in AO.
+# AO names a federated user <aap-username>-<hash> after their first SSO login. The loader
+# matches these names against AO users; if nobody has logged in yet (or the AO identity
+# running the loader cannot list users), approvals accept any authorized AO user and the
+# loader prints a warning.
+aigov_ao_approvers:
+  - admin

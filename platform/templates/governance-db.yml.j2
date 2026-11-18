@@ -1,0 +1,59 @@
+# PostgreSQL 16 (Red Hat image) - governance system of record. Cluster-internal only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: governance-db
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db'}) | to_json }}
+spec:
+  selector: {app.kubernetes.io/name: governance-db}
+  ports:
+    - {name: postgres, port: 5432, targetPort: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: governance-db
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db'}) | to_json }}
+spec:
+  serviceName: governance-db
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: governance-db}
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db'}) | to_json }}
+    spec:
+      containers:
+        - name: postgresql
+          image: {{ aigov_platform_images.postgresql }}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          env:
+            - {name: POSTGRESQL_DATABASE, value: {{ aigov_db_name }}}
+            - {name: POSTGRESQL_USER, value: {{ aigov_db_owner }}}
+            - name: POSTGRESQL_PASSWORD
+              valueFrom: {secretKeyRef: {name: governance-db, key: owner-password}}
+            - name: POSTGRESQL_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: governance-db, key: admin-password}}
+          readinessProbe:
+            exec: {command: [/usr/libexec/check-container]}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: [/usr/libexec/check-container, --live]}
+            initialDelaySeconds: 120
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/pgsql/data}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: {{ aigov_db_storage }}}

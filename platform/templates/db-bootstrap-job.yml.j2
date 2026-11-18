@@ -1,0 +1,41 @@
+# Applies database/bootstrap/platform_roles.sql (idempotent). The Job name carries the SQL and
+# secret hash, so an unchanged bootstrap is not re-run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ aigov_bootstrap_job }}
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db-bootstrap'}) | to_json }}
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db-bootstrap', 'aigov/db-client': 'true'}) | to_json }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: {{ aigov_platform_images.postgresql }}
+          command:
+            - /bin/bash
+            - -c
+            - >-
+              until pg_isready -h governance-db -p 5432 -t 5; do sleep 3; done;
+              psql -h governance-db -U postgres -d {{ aigov_db_name }}
+              -v db={{ aigov_db_name }} -v owner={{ aigov_db_owner }}
+              -v auth_pw="$AUTH_PW" -v grafana_pw="$GRAFANA_PW"
+              -f /sql/platform_roles.sql
+          env:
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: governance-db, key: admin-password}}
+            - name: AUTH_PW
+              valueFrom: {secretKeyRef: {name: governance-db, key: authenticator-password}}
+            - name: GRAFANA_PW
+              valueFrom: {secretKeyRef: {name: governance-db, key: grafana-password}}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+          volumeMounts:
+            - {name: sql, mountPath: /sql, readOnly: true}
+      volumes:
+        - name: sql
+          configMap: {name: governance-db-bootstrap}
