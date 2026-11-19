@@ -1,0 +1,11 @@
+{
+  "explanations": [
+    {
+      "finding_id": "f1d00000-0000-4000-8000-000000000101",
+      "headline": "An unregistered AI agent can act as a full AWS administrator",
+      "risk_explanation": "If this agent is manipulated through prompt injection or a compromised tool, it could create users, change permissions, and read any data in the account.",
+      "business_impact": "Potential account takeover and exposure of restricted customer exports.",
+      "recommended_next_step": "Replace AdministratorAccess with the approved least-privilege policy after owner confirmation."
+    }
+  ]
+}

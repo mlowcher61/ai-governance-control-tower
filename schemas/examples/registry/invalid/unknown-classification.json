@@ -1,0 +1,104 @@
+{
+  "owners": [
+    {
+      "id": "own-payments-ml",
+      "name": "Payments ML",
+      "email": "payments-ml@example.com",
+      "approved": true,
+      "approved_by": "ciso-office",
+      "approved_at": "2026-08-15"
+    },
+    {
+      "id": "own-hr-digital",
+      "name": "HR Digital",
+      "email": "hr-digital@example.com",
+      "approved": true,
+      "approved_by": "ciso-office",
+      "approved_at": "2026-03-02"
+    },
+    {
+      "id": "own-research-lab",
+      "name": "Research Lab",
+      "email": "research-lab@example.com",
+      "approved": true,
+      "approved_by": "ciso-office",
+      "approved_at": "2026-10-20"
+    }
+  ],
+  "registrations": [
+    {
+      "registration_id": "REG-0001",
+      "owner_id": "own-payments-ml",
+      "match_keys": {
+        "provider": "aws",
+        "platform": "aws.bedrock_agentcore_runtime",
+        "account_ref": "111122223333",
+        "region": "us-west-1",
+        "name": "payments_dispute_assistant"
+      },
+      "business_purpose": "Summarize card dispute cases for analysts",
+      "environment": "production",
+      "data_classification": "secret",
+      "declared_model": "amazon.nova-pro-v1:0",
+      "approved_tools": [],
+      "risk_assessment": {
+        "status": "complete",
+        "reference": "RA-2026-014",
+        "completed_at": "2026-09-01",
+        "expires_at": "2027-09-01"
+      },
+      "sensitive_data_approval": {
+        "reference": "DA-2026-031",
+        "approved_by": "ciso-office",
+        "approved_at": "2026-09-05",
+        "expires_at": "2027-09-05"
+      }
+    },
+    {
+      "registration_id": "REG-0002",
+      "owner_id": "own-hr-digital",
+      "match_keys": {
+        "provider": "aws",
+        "platform": "aws.bedrock_agentcore_runtime",
+        "account_ref": "111122223333",
+        "region": "us-west-1",
+        "name": "hr_faq_agent"
+      },
+      "business_purpose": "Answer employee HR policy questions",
+      "environment": "production",
+      "data_classification": "internal",
+      "declared_model": "amazon.nova-pro-v1:0",
+      "approved_tools": [],
+      "risk_assessment": {
+        "status": "complete",
+        "reference": "RA-2025-102",
+        "completed_at": "2025-06-01",
+        "expires_at": "2026-06-01"
+      },
+      "sensitive_data_approval": null
+    },
+    {
+      "registration_id": "REG-0003",
+      "owner_id": "own-research-lab",
+      "match_keys": {
+        "provider": "aws",
+        "platform": "aws.bedrock_agentcore_runtime",
+        "account_ref": "111122223333",
+        "region": "us-west-1",
+        "name": "research_runtime"
+      },
+      "business_purpose": "Evaluate research assistant prototypes",
+      "environment": "development",
+      "data_classification": "internal",
+      "declared_model": null,
+      "approved_tools": [],
+      "risk_assessment": {
+        "status": "complete",
+        "reference": "RA-2026-077",
+        "completed_at": "2026-10-25",
+        "expires_at": "2027-10-25"
+      },
+      "sensitive_data_approval": null
+    }
+  ]
+}

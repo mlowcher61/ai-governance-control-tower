@@ -1,0 +1,8 @@
+{
+  "governance_run_id": "6f1c0000-0000-4000-8000-0000000000aa",
+  "discovery_run_id": "d15c0000-0000-4000-8000-0000000000bb",
+  "agents_discovered": 4,
+  "agents_changed": 0,
+  "agents_missing": 0,
+  "discovery_status": "succeeded"
+}

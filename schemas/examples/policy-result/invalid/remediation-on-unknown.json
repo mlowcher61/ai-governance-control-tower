@@ -1,0 +1,27 @@
+{
+  "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+  "policy_id": "AIGOV-MDL-001",
+  "policy_version": "1.0.0",
+  "title": "Agents may use only approved foundation models",
+  "decision": "unknown",
+  "severity": "medium",
+  "explanation": "The foundation model cannot be determined: model evidence is not_supported and the agent is not registered.",
+  "evidence": [
+    {
+      "path": "evidence.model",
+      "value": "not_supported"
+    }
+  ],
+  "assumptions": [],
+  "remediation": {
+    "summary": "Replace administrator-equivalent policies on the execution role with the approved least-privilege policy for this agent class.",
+    "action_types": [
+      "iam_replace_managed_policy",
+      "iam_apply_permissions_boundary"
+    ],
+    "automatable": true
+  },
+  "controls": [
+    "ENT-AI-MODEL-APPROVAL"
+  ]
+}

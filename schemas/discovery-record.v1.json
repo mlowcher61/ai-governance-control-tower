@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/discovery-record.v1.json",
+  "title": "Discovery record, version 1",
+  "description": "One AI agent as normalized by a discovery adapter (docs/plan/03 section 3). Batches of these are sent to the Inventory API function api.record_discovery. Every adapter (AgentCore, Bedrock Agents Classic, later Azure and GCP) produces this shape.",
+  "type": "object",
+  "required": ["provider", "platform", "account_ref", "region", "external_id", "resource_ref", "name", "evidence_status"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "provider": {"$ref": "common.v1.json#/$defs/provider"},
+    "platform": {"$ref": "common.v1.json#/$defs/platform"},
+    "account_ref": {"$ref": "common.v1.json#/$defs/non_empty_string", "description": "AWS account ID, Azure subscription or GCP project."},
+    "account_alias": {"type": ["string", "null"]},
+    "region": {"type": ["string", "null"]},
+    "external_id": {"$ref": "common.v1.json#/$defs/non_empty_string", "description": "agentId or agentRuntimeId."},
+    "resource_ref": {"$ref": "common.v1.json#/$defs/non_empty_string", "description": "ARN or resource URI."},
+    "name": {"$ref": "common.v1.json#/$defs/non_empty_string"},
+    "status": {"type": ["string", "null"]},
+    "environment": {"$ref": "common.v1.json#/$defs/environment"},
+    "tags": {"$ref": "common.v1.json#/$defs/tags"},
+    "attributes": {"type": "object", "description": "Platform-specific details (guardrail, network mode, protocol, version, ...)."},
+    "evidence_status": {"$ref": "common.v1.json#/$defs/evidence_status"},
+    "source_created_at": {"oneOf": [{"$ref": "common.v1.json#/$defs/timestamp"}, {"type": "null"}]},
+    "source_updated_at": {"oneOf": [{"$ref": "common.v1.json#/$defs/timestamp"}, {"type": "null"}]},
+    "collected_at": {"$ref": "common.v1.json#/$defs/timestamp"},
+    "content_hash": {"type": "string", "description": "Ignored on input: the Inventory API computes it."},
+    "foundation_model": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["model_id"],
+          "additionalProperties": false,
+          "properties": {
+            "model_id": {"$ref": "common.v1.json#/$defs/non_empty_string"},
+            "model_arn": {"type": ["string", "null"]},
+            "vendor": {"type": ["string", "null"]}
+          }
+        }
+      ]
+    },
+    "identity": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["principal_ref"],
+          "additionalProperties": false,
+          "properties": {
+            "principal_ref": {"$ref": "common.v1.json#/$defs/non_empty_string", "description": "Execution role ARN."},
+            "permissions_boundary_ref": {"type": ["string", "null"]},
+            "trust_policy": {"type": ["object", "null"]},
+            "tags": {"$ref": "common.v1.json#/$defs/tags"},
+            "simulation": {"$ref": "common.v1.json#/$defs/simulation"},
+            "policies": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/identity_policy"}},
+            "collected_at": {"$ref": "common.v1.json#/$defs/timestamp"}
+          }
+        }
+      ]
+    },
+    "tools": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/tool"}},
+    "data_sources": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/data_source"}}
+  },
+  "allOf": [
+    {
+      "description": "When identity evidence was collected, the identity and its policies must be present.",
+      "if": {"properties": {"evidence_status": {"properties": {"identity": {"const": "collected"}}, "required": ["identity"]}}},
+      "then": {"properties": {"identity": {"type": "object", "required": ["principal_ref", "policies"]}}, "required": ["identity"]}
+    }
+  ]
+}

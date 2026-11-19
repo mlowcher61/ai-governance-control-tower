@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/artifacts.v1.json",
+  "title": "AAP job artifacts used by automation orchestrator, version 1",
+  "description": "What each governance job template publishes with ansible.builtin.set_stats. automation orchestrator reads these as ${<node_id>.artifacts.<name>} (docs/plan/03 section 9.2). Pick the definition for a job with $defs/<job>. AO passes values between nodes as text, so numbers may arrive as strings; jobs must accept both.",
+  "$defs": {
+    "count": {
+      "description": "A count. A string of digits is accepted because AO may pass numbers as text.",
+      "oneOf": [{"type": "integer", "minimum": 0}, {"type": "string", "pattern": "^\\d+$"}]
+    },
+    "discover": {
+      "title": "AI Governance - Discover AI Agents",
+      "type": "object",
+      "required": ["governance_run_id", "discovery_run_id", "agents_discovered", "discovery_status"],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
+        "discovery_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
+        "agents_discovered": {"$ref": "#/$defs/count"},
+        "agents_changed": {"$ref": "#/$defs/count"},
+        "agents_missing": {"$ref": "#/$defs/count"},
+        "discovery_status": {"enum": ["succeeded", "partial", "failed"]}
+      }
+    },
+    "evaluate": {
+      "title": "AI Governance - Evaluate Governance Policies",
+      "type": "object",
+      "required": ["governance_run_id", "noncompliant_count", "unknown_count", "explain_count", "findings_for_explanation"],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
+        "evaluated_count": {"$ref": "#/$defs/count"},
+        "compliant_count": {"$ref": "#/$defs/count"},
+        "noncompliant_count": {"$ref": "#/$defs/count"},
+        "unknown_count": {"$ref": "#/$defs/count"},
+        "explain_count": {"$ref": "#/$defs/count"},
+        "findings_for_explanation": {
+          "type": "string",
+          "description": "JSON text of a findings-for-explanation.v1.json array (at most 10 findings)."
+        },
+        "bundle_revision": {"type": "string"}
+      }
+    },
+    "record_explanations": {
+      "title": "AI Governance - Record AI Explanations",
+      "type": "object",
+      "required": ["recorded"],
+      "additionalProperties": false,
+      "properties": {
+        "recorded": {"$ref": "#/$defs/count"},
+        "skipped": {"$ref": "#/$defs/count"}
+      }
+    },
+    "summary": {
+      "title": "AI Governance - Publish Assessment Summary",
+      "type": "object",
+      "required": ["summary"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "object",
+          "required": ["governance_run_id", "agents", "compliant", "noncompliant", "unknown", "open_findings"],
+          "additionalProperties": false,
+          "properties": {
+            "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
+            "agents": {"type": "integer", "minimum": 0},
+            "compliant": {"type": "integer", "minimum": 0},
+            "noncompliant": {"type": "integer", "minimum": 0},
+            "unknown": {"type": "integer", "minimum": 0},
+            "open_findings": {"type": "integer", "minimum": 0},
+            "critical_findings": {"type": "integer", "minimum": 0},
+            "grafana_url": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

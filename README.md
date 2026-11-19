@@ -2,11 +2,12 @@
 
 ### Powered by Red Hat Ansible Automation Platform automation orchestrator
 
-> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) in progress. T1.01 and T1.02 are done.** The plan was approved on 2026-11-17. The current environment is cluster **mk6hb**. It was rebuilt from config as code only. Implemented so far:
+> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) in progress. T1.01–T1.03 are done.** The plan was approved on 2026-11-17. The current environment is cluster **mk6hb**. It was rebuilt from config as code only. Implemented so far:
 > - AAP config as code (`aap_config/`)
 > - AWS governance roles and demo AgentCore runtimes (CloudFormation)
 > - Governance platform services on OpenShift: PostgreSQL, the Inventory API (PostgREST), OPA, and Grafana (`playbooks/platform/`, `platform/`)
 > - Database schema (V001) and the Inventory API layer (V002): role-scoped RPC functions and views, with one JWT per role stored in AAP credentials
+> - Data contracts (JSON Schemas) and reference fixtures for the four demo agents (`schemas/`, `policies/fixtures/`)
 > - automation orchestrator config as code and the workflow loader (`ao_workflows/`)
 > - Environment check and least-privilege verification playbooks
 > - CI: lint, unit tests, SQL tests, and HTTP tests through PostgREST
@@ -103,6 +104,7 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.06 Governance platform services | Done (AAP job 1289): PostgreSQL 16, PostgREST v16.6, OPA 1.22.4 (2 replicas), and Grafana 13.3.1 in namespace `ai-governance`. Default-deny NetworkPolicies are proven (a labelled pod reaches the database; an unlabelled pod is blocked). AAP job pods reach OPA and the Inventory API |
 | T1.01 Database schema and migrations | Done: `database/migrations/V001__baseline.sql`, applied by **AI Governance - Apply Database Migrations** (t5d26: jobs 1295/1297; mk6hb: job 49, re-run job 51 `changed=0`). Hash-chained, append-only audit log. SQL tests run in CI (`database/tests/run_local.sh` runs them locally) |
 | T1.02 Inventory API layer | Done: `database/migrations/V002__api_stage1.sql` adds the Stage 1 `api` functions: discovery runs and records, registry load, evaluation inputs and results, the finding lifecycle, AI explanations, and audit append. It also adds the read-only views. Each function can be run only by its own PostgreSQL role. **AI Governance - Issue API Tokens** signs one JWT per role and stores it in the AAP credential *AI Governance - Inventory API (&lt;role&gt;)*. On mk6hb: V002 applied (job 55); tokens issued and checked (job 56, 15/15 HTTP checks). See [The Inventory API](#the-inventory-api) |
+| T1.03 Contracts | Done: nine versioned JSON Schemas in [`schemas/`](schemas/README.md) cover discovery records, the registry, policy inputs and results, evaluation results, the findings sent to the AI, AI explanations, and job artifacts. Key rules are written into the schemas themselves: no silent compliance, explicit evidence, and the AI cannot set decisions. `policies/fixtures/` holds the four demo agents (discovery records, registry, policy inputs). CI validates every fixture and example (56 tests), and a database test proves the Inventory API turns the discovery fixtures into exactly the policy-input fixtures |
 | T0.08 AO config as code and loader | Done. On mk6hb: `configure_ao.yml` created `aigov-trigger` (`project-user`) and stored its credential in AAP; **Apply AO Workflows** (job 62) published both workflows; the loader test (execution `fed0b761`, which ran AAP job 65) and the LLM smoke test (`63ba65dd`) completed. AO administrator items are listed in [ao_workflows/README.md](ao_workflows/README.md#items-only-an-ao-administrator-can-do) |
 
 ### Open items (2026-11-19, cluster mk6hb)

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/common.v1.json",
+  "title": "AI Governance shared definitions, version 1",
+  "description": "Building blocks referenced by the other v1 contracts. Not a document type on its own.",
+  "$defs": {
+    "timestamp": {
+      "description": "RFC 3339 timestamp, for example 2026-11-16T22:40:00Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "non_empty_string": {"type": "string", "minLength": 1},
+    "provider": {"enum": ["aws", "azure", "gcp", "generic"]},
+    "platform": {
+      "description": "<provider>.<platform>, for example aws.bedrock_agentcore_runtime.",
+      "type": "string",
+      "pattern": "^(aws|azure|gcp|generic)\\.[a-z0-9_]+$"
+    },
+    "environment": {
+      "description": "Lowercase environment name, or null when it cannot be derived (policies then assume production).",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "tags": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "evidence_value": {
+      "description": "docs/plan/03 section 3.3. Anything other than 'collected' makes dependent policies return 'unknown'.",
+      "enum": ["collected", "not_collected", "access_denied", "not_supported", "error"]
+    },
+    "evidence_status": {
+      "description": "Evidence domain -> evidence value.",
+      "type": "object",
+      "propertyNames": {"enum": ["agent", "tags", "identity", "identity_simulation", "tools", "data_sources", "model", "registration"]},
+      "additionalProperties": {"$ref": "#/$defs/evidence_value"}
+    },
+    "simulation": {
+      "description": "IAM policy simulator result per probe action.",
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-zA-Z0-9-]+:[a-zA-Z0-9*]+$"},
+      "additionalProperties": {"enum": ["allowed", "denied"]}
+    },
+    "policy_statement": {
+      "description": "One normalized IAM statement: string-or-list fields are always lists.",
+      "type": "object",
+      "required": ["effect", "actions", "resources"],
+      "additionalProperties": false,
+      "properties": {
+        "sid": {"type": "string"},
+        "effect": {"enum": ["Allow", "Deny"]},
+        "actions": {"type": "array", "items": {"type": "string"}},
+        "not_actions": {"type": "array", "items": {"type": "string"}},
+        "resources": {"type": "array", "items": {"type": "string"}},
+        "not_resources": {"type": "array", "items": {"type": "string"}},
+        "has_conditions": {"type": "boolean"}
+      }
+    },
+    "identity_policy": {
+      "type": "object",
+      "required": ["type", "ref", "statements"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["aws_managed", "customer_managed", "inline", "boundary"]},
+        "ref": {"$ref": "#/$defs/non_empty_string", "description": "Policy ARN, or the inline policy name."},
+        "name": {"type": ["string", "null"]},
+        "default_version": {"type": ["string", "null"]},
+        "statements": {"type": "array", "items": {"$ref": "#/$defs/policy_statement"}}
+      }
+    },
+    "tool": {
+      "type": "object",
+      "required": ["type", "external_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["action_group", "collaborator", "gateway_target", "mcp_server"]},
+        "external_id": {"$ref": "#/$defs/non_empty_string"},
+        "name": {"type": ["string", "null"]},
+        "state": {"type": ["string", "null"]},
+        "executor_ref": {"type": ["string", "null"]},
+        "parent_signature": {"type": ["string", "null"]},
+        "schema_hash": {"type": ["string", "null"]},
+        "attributes": {"type": "object"}
+      }
+    },
+    "data_source": {
+      "type": "object",
+      "required": ["type", "external_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["knowledge_base", "s3_data_source", "database", "other"]},
+        "external_id": {"$ref": "#/$defs/non_empty_string"},
+        "name": {"type": ["string", "null"]},
+        "state": {"type": ["string", "null"]},
+        "storage_ref": {"type": ["string", "null"]},
+        "classification": {"type": ["string", "null"]},
+        "classification_source": {"enum": ["s3_tag", "registry", "none", null]},
+        "attributes": {"type": "object"}
+      }
+    },
+    "decision": {"enum": ["pass", "fail", "unknown", "not_applicable", "error"]},
+    "severity": {"enum": ["critical", "high", "medium", "low", "info"]},
+    "overall_status": {"enum": ["compliant", "noncompliant", "unknown", "error"]},
+    "risk_category": {"enum": ["critical", "high", "medium", "low"]},
+    "policy_id": {"type": "string", "pattern": "^AIGOV-[A-Z]+-\\d{3}$"},
+    "purpose": {"enum": ["assessment", "pre_remediation", "verification"]}
+  }
+}

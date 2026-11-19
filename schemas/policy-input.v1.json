@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/policy-input.v1.json",
+  "title": "Policy input, version 1",
+  "description": "The OPA input for one agent (docs/plan/03 section 6.2): POST /v1/data/governance/evaluate with {\"input\": <this>}. The Inventory API view api.evaluation_inputs returns everything except 'evaluation', which the Evaluate job adds.",
+  "type": "object",
+  "required": ["schema_version", "evaluation", "agent", "identity", "tools", "data_sources", "registration", "evidence"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "evaluation": {
+      "type": "object",
+      "required": ["governance_run_id", "evaluated_at", "purpose"],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
+        "evaluated_at": {"$ref": "common.v1.json#/$defs/timestamp", "description": "Policies compare expiry dates with this, never with the current time."},
+        "purpose": {"$ref": "common.v1.json#/$defs/purpose"}
+      }
+    },
+    "agent": {
+      "type": "object",
+      "required": ["id", "provider", "platform", "external_id", "resource_ref", "name", "account_ref", "region", "environment", "tags"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "common.v1.json#/$defs/uuid"},
+        "provider": {"$ref": "common.v1.json#/$defs/provider"},
+        "platform": {"$ref": "common.v1.json#/$defs/platform"},
+        "external_id": {"type": "string"},
+        "resource_ref": {"type": "string"},
+        "name": {"type": "string"},
+        "account_ref": {"type": "string"},
+        "region": {"type": ["string", "null"]},
+        "environment": {"$ref": "common.v1.json#/$defs/environment"},
+        "status": {"type": ["string", "null"]},
+        "foundation_model": {"type": ["string", "null"], "description": "Discovered model ID; null when not discovered (see evidence.model)."},
+        "tags": {"$ref": "common.v1.json#/$defs/tags"},
+        "guardrail": {"type": ["object", "null"]},
+        "attributes": {"type": "object"},
+        "source_created_at": {"oneOf": [{"$ref": "common.v1.json#/$defs/timestamp"}, {"type": "null"}]},
+        "source_updated_at": {"oneOf": [{"$ref": "common.v1.json#/$defs/timestamp"}, {"type": "null"}]}
+      }
+    },
+    "identity": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["principal_ref", "policies", "simulation"],
+          "additionalProperties": false,
+          "properties": {
+            "principal_ref": {"type": "string"},
+            "permissions_boundary_ref": {"type": ["string", "null"]},
+            "policies": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/identity_policy"}},
+            "simulation": {"$ref": "common.v1.json#/$defs/simulation"}
+          }
+        }
+      ]
+    },
+    "tools": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/tool"}},
+    "data_sources": {"type": "array", "items": {"$ref": "common.v1.json#/$defs/data_source"}},
+    "registration": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["registered", "unregistered", "retired"]},
+        "registration_id": {"type": "string"},
+        "owner": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["id", "name", "approved"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "approved": {"type": "boolean"},
+                "approved_by": {"type": ["string", "null"]},
+                "approved_at": {"oneOf": [{"$ref": "common.v1.json#/$defs/timestamp"}, {"type": "null"}]}
+              }
+            }
+          ]
+        },
+        "business_purpose": {"type": ["string", "null"]},
+        "environment": {"$ref": "common.v1.json#/$defs/environment"},
+        "data_classification": {"type": ["string", "null"]},
+        "declared_model": {"type": ["string", "null"]},
+        "approved_tools": {"type": "array", "items": {"type": "string"}},
+        "risk_assessment": {"$ref": "#/$defs/dated_approval"},
+        "sensitive_data_approval": {"$ref": "#/$defs/dated_approval"}
+      },
+      "if": {"properties": {"status": {"const": "registered"}}},
+      "then": {"required": ["registration_id", "owner"]}
+    },
+    "evidence": {
+      "allOf": [
+        {"$ref": "common.v1.json#/$defs/evidence_status"},
+        {"required": ["agent", "tags", "identity", "identity_simulation", "tools", "data_sources", "model", "registration"]}
+      ]
+    }
+  },
+  "$defs": {
+    "dated_approval": {
+      "description": "A registry approval. Dates are RFC 3339 timestamps (normalized by api.evaluation_inputs).",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "status": {"type": "string"},
+            "reference": {"type": "string"},
+            "approved_by": {"type": "string"},
+            "completed_at": {"$ref": "common.v1.json#/$defs/timestamp"},
+            "approved_at": {"$ref": "common.v1.json#/$defs/timestamp"},
+            "expires_at": {"$ref": "common.v1.json#/$defs/timestamp"}
+          }
+        }
+      ]
+    }
+  }
+}

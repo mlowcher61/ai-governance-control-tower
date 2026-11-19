@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0",
+  "evaluation": {
+    "governance_run_id": "6f1c0000-0000-4000-8000-0000000000aa",
+    "evaluated_at": "2026-11-17T15:04:05Z",
+    "purpose": "assessment"
+  },
+  "agent": {
+    "id": "0b7a0000-0000-4000-8000-000000000001",
+    "provider": "aws",
+    "platform": "aws.bedrock_agentcore_runtime",
+    "external_id": "payments_dispute_assistant-Pd7Qm2Xa9L",
+    "resource_ref": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/payments_dispute_assistant-Pd7Qm2Xa9L",
+    "name": "payments_dispute_assistant",
+    "account_ref": "111122223333",
+    "region": "us-west-1",
+    "environment": "production",
+    "status": "READY",
+    "foundation_model": null,
+    "tags": {
+      "Environment": "production",
+      "Owner": "payments-ml@example.com",
+      "DataClassification": "confidential",
+      "CostCenter": "CC-1001",
+      "aigov:demo": "true"
+    },
+    "guardrail": null,
+    "attributes": {
+      "description": "Summarizes card dispute cases for analysts (demo).",
+      "agent_runtime_version": "1",
+      "network_mode": "PUBLIC",
+      "protocol": "HTTP",
+      "code_runtime": "PYTHON_3_13",
+      "authorizer": null
+    },
+    "source_created_at": "2026-11-10T09:12:00Z",
+    "source_updated_at": "2026-11-16T22:40:00Z"
+  },
+  "identity": {
+    "principal_ref": "arn:aws:iam::111122223333:role/aigov-agents/aigov-demo-payments-dispute-assistant",
+    "permissions_boundary_ref": null,
+    "policies": [
+      {
+        "type": "customer_managed",
+        "ref": "arn:aws:iam::111122223333:policy/aigov/aigov-approved-agentcore-runtime-basic",
+        "name": "aigov-approved-agentcore-runtime-basic",
+        "statements": [
+          {
+            "sid": "RuntimeLogs",
+            "effect": "Allow",
+            "actions": [
+              "logs:CreateLogGroup",
+              "logs:DescribeLogStreams",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:logs:us-west-1:111122223333:log-group:/aws/bedrock-agentcore/runtimes/*",
+              "arn:aws:logs:us-west-1:111122223333:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "DescribeLogGroups",
+            "effect": "Allow",
+            "actions": [
+              "logs:DescribeLogGroups"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:logs:us-west-1:111122223333:log-group:*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "Tracing",
+            "effect": "Allow",
+            "actions": [
+              "xray:PutTraceSegments",
+              "xray:PutTelemetryRecords",
+              "xray:GetSamplingRules",
+              "xray:GetSamplingTargets"
+            ],
+            "not_actions": [],
+            "resources": [
+              "*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "RuntimeMetrics",
+            "effect": "Allow",
+            "actions": [
+              "cloudwatch:PutMetricData"
+            ],
+            "not_actions": [],
+            "resources": [
+              "*"
+            ],
+            "has_conditions": true
+          },
+          {
+            "sid": "ReadAgentCodePackage",
+            "effect": "Allow",
+            "actions": [
+              "s3:GetObject",
+              "s3:GetObjectVersion"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:s3:::aigov-agent-code-111122223333-us-west-1/*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "WorkloadIdentity",
+            "effect": "Allow",
+            "actions": [
+              "bedrock-agentcore:GetWorkloadAccessToken",
+              "bedrock-agentcore:GetWorkloadAccessTokenForJWT"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:bedrock-agentcore:us-west-1:111122223333:workload-identity-directory/default",
+              "arn:aws:bedrock-agentcore:us-west-1:111122223333:workload-identity-directory/default/workload-identity/*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "InvokeApprovedModels",
+            "effect": "Allow",
+            "actions": [
+              "bedrock:InvokeModel",
+              "bedrock:InvokeModelWithResponseStream"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:bedrock:*::foundation-model/amazon.nova-*"
+            ],
+            "has_conditions": false
+          }
+        ]
+      }
+    ],
+    "simulation": {
+      "iam:CreateUser": "denied",
+      "iam:AttachRolePolicy": "denied",
+      "iam:PutRolePolicy": "denied",
+      "secretsmanager:GetSecretValue": "denied"
+    }
+  },
+  "tools": [],
+  "data_sources": [],
+  "registration": {
+    "status": "registered",
+    "registration_id": "REG-0001",
+    "owner": {
+      "id": "own-payments-ml",
+      "name": "Payments ML",
+      "approved": true,
+      "approved_by": "ciso-office",
+      "approved_at": "2026-08-15T00:00:00Z"
+    },
+    "business_purpose": "Summarize card dispute cases for analysts",
+    "environment": "production",
+    "data_classification": "confidential",
+    "declared_model": "amazon.nova-pro-v1:0",
+    "approved_tools": [],
+    "risk_assessment": {
+      "status": "complete",
+      "reference": "RA-2026-014",
+      "completed_at": "2026-09-01T00:00:00Z",
+      "expires_at": "2027-09-01"
+    },
+    "sensitive_data_approval": {
+      "reference": "DA-2026-031",
+      "approved_by": "ciso-office",
+      "approved_at": "2026-09-05T00:00:00Z",
+      "expires_at": "2027-09-05T00:00:00Z"
+    }
+  },
+  "evidence": {
+    "agent": "collected",
+    "tags": "collected",
+    "identity": "collected",
+    "identity_simulation": "collected",
+    "tools": "not_supported",
+    "data_sources": "not_supported",
+    "model": "not_supported",
+    "registration": "collected"
+  }
+}

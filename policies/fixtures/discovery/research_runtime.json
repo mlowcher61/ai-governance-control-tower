@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "provider": "aws",
+  "platform": "aws.bedrock_agentcore_runtime",
+  "account_ref": "111122223333",
+  "region": "us-west-1",
+  "external_id": "research_runtime-Rr9Yx4Kd6C",
+  "resource_ref": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/research_runtime-Rr9Yx4Kd6C",
+  "name": "research_runtime",
+  "status": "READY",
+  "environment": "development",
+  "tags": {
+    "Environment": "development",
+    "Owner": "research-lab@example.com",
+    "DataClassification": "internal",
+    "CostCenter": "CC-3300",
+    "aigov:demo": "true"
+  },
+  "attributes": {
+    "description": "Experimental research assistant runtime (demo).",
+    "agent_runtime_version": "1",
+    "network_mode": "PUBLIC",
+    "protocol": "HTTP",
+    "code_runtime": "PYTHON_3_13",
+    "authorizer": null
+  },
+  "evidence_status": {
+    "agent": "collected",
+    "tags": "collected",
+    "identity": "collected",
+    "identity_simulation": "collected",
+    "tools": "not_supported",
+    "data_sources": "not_supported",
+    "model": "not_supported"
+  },
+  "source_created_at": "2026-11-10T09:12:00Z",
+  "source_updated_at": "2026-11-16T22:40:00Z",
+  "collected_at": "2026-11-17T15:00:00Z",
+  "foundation_model": null,
+  "identity": {
+    "principal_ref": "arn:aws:iam::111122223333:role/aigov-agents/aigov-demo-research-runtime",
+    "permissions_boundary_ref": null,
+    "trust_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "bedrock-agentcore.amazonaws.com"
+          },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": {
+              "aws:SourceAccount": "111122223333"
+            },
+            "ArnLike": {
+              "aws:SourceArn": "arn:aws:bedrock-agentcore:us-west-1:111122223333:*"
+            }
+          }
+        }
+      ]
+    },
+    "tags": {
+      "aigov:managed": "true",
+      "aigov:demo": "true"
+    },
+    "simulation": {
+      "iam:CreateUser": "denied",
+      "iam:AttachRolePolicy": "denied",
+      "iam:PutRolePolicy": "denied",
+      "secretsmanager:GetSecretValue": "denied"
+    },
+    "policies": [
+      {
+        "type": "customer_managed",
+        "ref": "arn:aws:iam::111122223333:policy/aigov/aigov-approved-agentcore-runtime-basic",
+        "name": "aigov-approved-agentcore-runtime-basic",
+        "default_version": "v1",
+        "statements": [
+          {
+            "sid": "RuntimeLogs",
+            "effect": "Allow",
+            "actions": [
+              "logs:CreateLogGroup",
+              "logs:DescribeLogStreams",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:logs:us-west-1:111122223333:log-group:/aws/bedrock-agentcore/runtimes/*",
+              "arn:aws:logs:us-west-1:111122223333:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "DescribeLogGroups",
+            "effect": "Allow",
+            "actions": [
+              "logs:DescribeLogGroups"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:logs:us-west-1:111122223333:log-group:*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "Tracing",
+            "effect": "Allow",
+            "actions": [
+              "xray:PutTraceSegments",
+              "xray:PutTelemetryRecords",
+              "xray:GetSamplingRules",
+              "xray:GetSamplingTargets"
+            ],
+            "not_actions": [],
+            "resources": [
+              "*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "RuntimeMetrics",
+            "effect": "Allow",
+            "actions": [
+              "cloudwatch:PutMetricData"
+            ],
+            "not_actions": [],
+            "resources": [
+              "*"
+            ],
+            "has_conditions": true
+          },
+          {
+            "sid": "ReadAgentCodePackage",
+            "effect": "Allow",
+            "actions": [
+              "s3:GetObject",
+              "s3:GetObjectVersion"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:s3:::aigov-agent-code-111122223333-us-west-1/*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "WorkloadIdentity",
+            "effect": "Allow",
+            "actions": [
+              "bedrock-agentcore:GetWorkloadAccessToken",
+              "bedrock-agentcore:GetWorkloadAccessTokenForJWT"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:bedrock-agentcore:us-west-1:111122223333:workload-identity-directory/default",
+              "arn:aws:bedrock-agentcore:us-west-1:111122223333:workload-identity-directory/default/workload-identity/*"
+            ],
+            "has_conditions": false
+          },
+          {
+            "sid": "InvokeApprovedModels",
+            "effect": "Allow",
+            "actions": [
+              "bedrock:InvokeModel",
+              "bedrock:InvokeModelWithResponseStream"
+            ],
+            "not_actions": [],
+            "resources": [
+              "arn:aws:bedrock:*::foundation-model/amazon.nova-*"
+            ],
+            "has_conditions": false
+          }
+        ]
+      }
+    ],
+    "collected_at": "2026-11-17T15:00:00Z"
+  },
+  "tools": [],
+  "data_sources": []
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/ai-explanation.v1.json",
+  "title": "AI explanations, version 1",
+  "description": "Structured output of the WF-01 AI task agent (docs/plan/03 section 9.3), recorded with api.record_explanations. Advisory only: it has no decision, severity or risk fields, so it cannot change them. The AO node's responseSchema is the same shape without the length limits.",
+  "type": "object",
+  "required": ["explanations"],
+  "additionalProperties": false,
+  "properties": {
+    "explanations": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "headline", "risk_explanation", "business_impact", "recommended_next_step"],
+        "additionalProperties": false,
+        "properties": {
+          "finding_id": {"$ref": "common.v1.json#/$defs/uuid"},
+          "headline": {"type": "string", "minLength": 1, "maxLength": 200},
+          "risk_explanation": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "business_impact": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "recommended_next_step": {"type": "string", "minLength": 1, "maxLength": 2000}
+        }
+      }
+    }
+  }
+}

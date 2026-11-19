@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "provider": "aws",
+  "platform": "aws.bedrock_agentcore_runtime",
+  "account_ref": "111122223333",
+  "region": "us-west-1",
+  "external_id": "quick_helper_bot-Qh3Zk8Lm1N",
+  "resource_ref": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/quick_helper_bot-Qh3Zk8Lm1N",
+  "name": "quick_helper_bot",
+  "status": "READY",
+  "environment": null,
+  "tags": {
+    "CreatedBy": "dev-sandbox",
+    "DataClassification": "restricted",
+    "aigov:demo": "true"
+  },
+  "attributes": {
+    "description": "Helper bot created outside the governance process (demo).",
+    "agent_runtime_version": "1",
+    "network_mode": "PUBLIC",
+    "protocol": "HTTP",
+    "code_runtime": "PYTHON_3_13",
+    "authorizer": null
+  },
+  "evidence_status": {
+    "agent": "collected",
+    "tags": "collected",
+    "identity": "access_denied",
+    "identity_simulation": "collected",
+    "tools": "not_supported",
+    "data_sources": "not_supported",
+    "model": "not_supported"
+  },
+  "source_created_at": "2026-11-10T09:12:00Z",
+  "source_updated_at": "2026-11-16T22:40:00Z",
+  "collected_at": "2026-11-17T15:00:00Z",
+  "foundation_model": null,
+  "identity": {
+    "principal_ref": "arn:aws:iam::111122223333:role/aigov-agents/aigov-demo-quick-helper-bot"
+  },
+  "tools": [],
+  "data_sources": []
+}

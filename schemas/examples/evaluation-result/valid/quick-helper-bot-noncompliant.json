@@ -1,0 +1,119 @@
+{
+  "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+  "overall_status": "noncompliant",
+  "risk": {
+    "score": 100,
+    "category": "critical",
+    "factors": [
+      {
+        "factor": "admin_permissions",
+        "points": 40
+      },
+      {
+        "factor": "unregistered_agent",
+        "points": 15
+      },
+      {
+        "factor": "sensitive_data_without_approval",
+        "points": 20
+      },
+      {
+        "factor": "no_approved_owner",
+        "points": 10
+      },
+      {
+        "factor": "production_environment",
+        "points": 10
+      },
+      {
+        "factor": "sensitive_data_present",
+        "points": 10
+      },
+      {
+        "factor": "insufficient_evidence",
+        "points": 5
+      }
+    ]
+  },
+  "results": [
+    {
+      "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+      "policy_id": "AIGOV-IAM-001",
+      "policy_version": "1.0.0",
+      "title": "Agents must not have unrestricted administrative permissions",
+      "decision": "fail",
+      "severity": "critical",
+      "explanation": "Execution role aigov-demo-quick-helper-bot grants administrator-equivalent access via arn:aws:iam::aws:policy/AdministratorAccess, and policy simulation confirms iam:CreateUser is allowed.",
+      "evidence": [
+        {
+          "path": "identity.policies[0].ref",
+          "value": "arn:aws:iam::aws:policy/AdministratorAccess"
+        },
+        {
+          "path": "identity.simulation.iam:CreateUser",
+          "value": "allowed"
+        }
+      ],
+      "assumptions": [
+        "environment_assumed_production"
+      ],
+      "remediation": {
+        "summary": "Replace administrator-equivalent policies on the execution role with the approved least-privilege policy for this agent class.",
+        "action_types": [
+          "iam_replace_managed_policy",
+          "iam_apply_permissions_boundary"
+        ],
+        "automatable": true
+      },
+      "controls": [
+        "NIST-AI-RMF:MANAGE",
+        "NIST-AI-RMF:GOVERN",
+        "ISO42001:A.6",
+        "ENT-IAM-LEAST-PRIVILEGE"
+      ]
+    },
+    {
+      "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+      "policy_id": "AIGOV-MDL-001",
+      "policy_version": "1.0.0",
+      "title": "Agents may use only approved foundation models",
+      "decision": "unknown",
+      "severity": "medium",
+      "explanation": "The foundation model cannot be determined: model evidence is not_supported and the agent is not registered.",
+      "evidence": [
+        {
+          "path": "evidence.model",
+          "value": "not_supported"
+        }
+      ],
+      "assumptions": [],
+      "remediation": null,
+      "controls": [
+        "ENT-AI-MODEL-APPROVAL"
+      ]
+    },
+    {
+      "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+      "policy_id": "AIGOV-GRD-001",
+      "policy_version": "1.0.0",
+      "title": "Production Bedrock Agents Classic agents must have a guardrail attached",
+      "decision": "not_applicable",
+      "severity": "medium",
+      "explanation": "Applies only to Bedrock Agents Classic agents.",
+      "evidence": [],
+      "assumptions": [],
+      "remediation": null,
+      "controls": []
+    }
+  ],
+  "summary": {
+    "pass": 0,
+    "fail": 1,
+    "unknown": 1,
+    "not_applicable": 1,
+    "error": 0
+  },
+  "bundle_revision": "a1b2c3d",
+  "evaluated_at": "2026-11-17T15:04:05Z",
+  "input_errors": []
+}

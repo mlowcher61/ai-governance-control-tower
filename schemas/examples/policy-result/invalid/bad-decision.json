@@ -1,0 +1,36 @@
+{
+  "agent_id": "0b7a0000-0000-4000-8000-000000000002",
+  "policy_id": "AIGOV-IAM-001",
+  "policy_version": "1.0.0",
+  "title": "Agents must not have unrestricted administrative permissions",
+  "decision": "compliant",
+  "severity": "critical",
+  "explanation": "Execution role aigov-demo-quick-helper-bot grants administrator-equivalent access via arn:aws:iam::aws:policy/AdministratorAccess, and policy simulation confirms iam:CreateUser is allowed.",
+  "evidence": [
+    {
+      "path": "identity.policies[0].ref",
+      "value": "arn:aws:iam::aws:policy/AdministratorAccess"
+    },
+    {
+      "path": "identity.simulation.iam:CreateUser",
+      "value": "allowed"
+    }
+  ],
+  "assumptions": [
+    "environment_assumed_production"
+  ],
+  "remediation": {
+    "summary": "Replace administrator-equivalent policies on the execution role with the approved least-privilege policy for this agent class.",
+    "action_types": [
+      "iam_replace_managed_policy",
+      "iam_apply_permissions_boundary"
+    ],
+    "automatable": true
+  },
+  "controls": [
+    "NIST-AI-RMF:MANAGE",
+    "NIST-AI-RMF:GOVERN",
+    "ISO42001:A.6",
+    "ENT-IAM-LEAST-PRIVILEGE"
+  ]
+}

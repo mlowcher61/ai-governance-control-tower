@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/findings-for-explanation.v1.json",
+  "title": "Findings sent to the AI task agent, version 1",
+  "description": "The sanitized findings the Evaluate job hands to WF-01's AI step (artifact findings_for_explanation, a JSON string of this array). Only deterministic, structured fields are allowed: no tags, descriptions or other free text that an agent owner controls, which keeps prompt-injection text out of the prompt (docs/plan/08).",
+  "type": "array",
+  "maxItems": 10,
+  "items": {
+    "type": "object",
+    "required": ["finding_id", "policy_id", "finding_type", "severity", "deterministic_explanation", "agent", "allowed_next_steps"],
+    "additionalProperties": false,
+    "properties": {
+      "finding_id": {"$ref": "common.v1.json#/$defs/uuid"},
+      "policy_id": {"$ref": "common.v1.json#/$defs/policy_id"},
+      "finding_type": {"enum": ["violation", "insufficient_evidence"]},
+      "severity": {"$ref": "common.v1.json#/$defs/severity"},
+      "deterministic_explanation": {"type": "string", "maxLength": 1000},
+      "agent": {
+        "type": "object",
+        "required": ["name", "platform", "environment"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,100}$", "description": "Restricted characters: agent names are owner-controlled."},
+          "platform": {"$ref": "common.v1.json#/$defs/platform"},
+          "environment": {"$ref": "common.v1.json#/$defs/environment"},
+          "risk_category": {"$ref": "common.v1.json#/$defs/risk_category"}
+        }
+      },
+      "allowed_next_steps": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 200}}
+    }
+  }
+}

@@ -26,3 +26,5 @@ secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
   -e PGRST_DB_ANON_ROLE=aigov_api_anon -e PGRST_JWT_SECRET="$secret" docker.io/postgrest/postgrest:v16.6 >/dev/null
 for _ in $(seq 30); do curl -sf "http://127.0.0.1:$port/rpc/health" >/dev/null && break; sleep 1; done
 AIGOV_API_URL="http://127.0.0.1:$port" AIGOV_JWT_SECRET="$secret" python3 database/tests/test_api_http.py
+# Contract test: discovery fixtures in -> policy-input fixtures out (needs jsonschema).
+AIGOV_API_URL="http://127.0.0.1:$port" AIGOV_JWT_SECRET="$secret" "${AIGOV_PYTHON:-python3}" database/tests/test_contracts_api.py

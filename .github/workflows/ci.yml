@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install validation tools
-        run: pip install ansible-core ansible-lint yamllint cfn-lint ruff pytest boto3
+        run: pip install ansible-core ansible-lint yamllint cfn-lint ruff pytest boto3 "jsonschema>=4.18" check-jsonschema
 
       - name: Install collections needed for linting
         # Galaxy equivalents of the certified content pinned in collections/requirements.yml.
@@ -38,7 +38,13 @@ jobs:
         run: cfn-lint --regions us-west-1 -- aws/cloudformation/*.yaml
 
       - name: ruff (Python)
-        run: ruff check demo collections/ansible_collections/mlowcher61 database/tests
+        run: ruff check demo collections/ansible_collections/mlowcher61 database/tests schemas/tests
+
+      - name: Contracts - schemas are valid JSON Schema 2020-12
+        run: check-jsonschema --check-metaschema schemas/*.v1.json
+
+      - name: Contracts - fixtures and examples match the schemas
+        run: python -m pytest -q schemas/tests
 
       - name: Unit tests (project collection)
         working-directory: collections
@@ -92,4 +98,10 @@ jobs:
             -e PGRST_DB_ANON_ROLE=aigov_api_anon -e PGRST_JWT_SECRET="$secret" docker.io/postgrest/postgrest:v16.6
           for _ in $(seq 30); do curl -sf http://127.0.0.1:3000/rpc/health >/dev/null && break; sleep 1; done
           AIGOV_API_URL=http://127.0.0.1:3000 AIGOV_JWT_SECRET="$secret" python3 database/tests/test_api_http.py
+          echo "$secret" > /tmp/jwt_secret
+
+      - name: Contract test - discovery fixtures in, policy-input fixtures out
+        run: |
+          pip install "jsonschema>=4.18"
+          AIGOV_API_URL=http://127.0.0.1:3000 AIGOV_JWT_SECRET="$(cat /tmp/jwt_secret)" python3 database/tests/test_contracts_api.py
 

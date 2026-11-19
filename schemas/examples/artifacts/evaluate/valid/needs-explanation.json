@@ -1,0 +1,10 @@
+{
+  "governance_run_id": "6f1c0000-0000-4000-8000-0000000000aa",
+  "evaluated_count": 4,
+  "compliant_count": 1,
+  "noncompliant_count": 2,
+  "unknown_count": 1,
+  "explain_count": 1,
+  "findings_for_explanation": "[{\"finding_id\": \"f1d00000-0000-4000-8000-000000000101\", \"policy_id\": \"AIGOV-IAM-001\", \"finding_type\": \"violation\", \"severity\": \"critical\", \"deterministic_explanation\": \"Execution role aigov-demo-quick-helper-bot grants administrator-equivalent access via arn:aws:iam::aws:policy/AdministratorAccess, and policy simulation confirms iam:CreateUser is allowed.\", \"agent\": {\"name\": \"quick_helper_bot\", \"platform\": \"aws.bedrock_agentcore_runtime\", \"environment\": null, \"risk_category\": \"critical\"}, \"allowed_next_steps\": [\"Replace the administrator policy with the approved least-privilege policy\", \"Register the agent and assign an owner\"]}]",
+  "bundle_revision": "a1b2c3d"
+}

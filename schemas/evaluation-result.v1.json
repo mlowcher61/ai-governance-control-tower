@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/evaluation-result.v1.json",
+  "title": "Aggregate evaluation result, version 1",
+  "description": "The OPA decision for one agent: POST /v1/data/governance/evaluate/result (docs/plan/03 section 6.4). Sent unchanged to api.record_evaluation.",
+  "type": "object",
+  "required": [
+    "agent_id",
+    "overall_status",
+    "risk",
+    "results",
+    "summary",
+    "bundle_revision",
+    "evaluated_at",
+    "input_errors"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "$ref": "common.v1.json#/$defs/uuid"
+    },
+    "overall_status": {
+      "$ref": "common.v1.json#/$defs/overall_status"
+    },
+    "risk": {
+      "type": "object",
+      "required": [
+        "score",
+        "category",
+        "factors"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "category": {
+          "$ref": "common.v1.json#/$defs/risk_category"
+        },
+        "factors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "factor",
+              "points"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "factor": {
+                "type": "string",
+                "pattern": "^[a-z_]+$"
+              },
+              "points": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "policy-result.v1.json"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pass": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_applicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "bundle_revision": {
+      "$ref": "common.v1.json#/$defs/non_empty_string",
+      "description": "Git SHA of the published policy bundle."
+    },
+    "evaluated_at": {
+      "$ref": "common.v1.json#/$defs/timestamp"
+    },
+    "input_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "Invalid input always means status error (docs/plan/03 section 6.5 rule 5).",
+      "if": {
+        "properties": {
+          "input_errors": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "overall_status": {
+            "const": "error"
+          }
+        }
+      }
+    },
+    {
+      "description": "Any failing policy makes the agent noncompliant (rule 5).",
+      "if": {
+        "properties": {
+          "results": {
+            "contains": {
+              "properties": {
+                "decision": {
+                  "const": "fail"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "then": {
+        "properties": {
+          "overall_status": {
+            "enum": [
+              "noncompliant",
+              "error"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "An agent is compliant only when no policy failed, was unknown or errored (rule 5).",
+      "if": {
+        "properties": {
+          "overall_status": {
+            "const": "compliant"
+          }
+        },
+        "required": [
+          "overall_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "properties": {
+                "decision": {
+                  "enum": [
+                    "pass",
+                    "not_applicable"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Risk category boundaries (docs/plan/03 section 6.6).",
+      "oneOf": [
+        {
+          "properties": {
+            "risk": {
+              "properties": {
+                "score": {
+                  "minimum": 70
+                },
+                "category": {
+                  "const": "critical"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "risk": {
+              "properties": {
+                "score": {
+                  "minimum": 45,
+                  "maximum": 69
+                },
+                "category": {
+                  "const": "high"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "risk": {
+              "properties": {
+                "score": {
+                  "minimum": 20,
+                  "maximum": 44
+                },
+                "category": {
+                  "const": "medium"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "risk": {
+              "properties": {
+                "score": {
+                  "maximum": 19
+                },
+                "category": {
+                  "const": "low"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

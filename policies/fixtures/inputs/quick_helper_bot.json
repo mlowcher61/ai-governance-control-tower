@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "evaluation": {
+    "governance_run_id": "6f1c0000-0000-4000-8000-0000000000aa",
+    "evaluated_at": "2026-11-17T15:04:05Z",
+    "purpose": "assessment"
+  },
+  "agent": {
+    "id": "0b7a0000-0000-4000-8000-000000000002",
+    "provider": "aws",
+    "platform": "aws.bedrock_agentcore_runtime",
+    "external_id": "quick_helper_bot-Qh3Zk8Lm1N",
+    "resource_ref": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/quick_helper_bot-Qh3Zk8Lm1N",
+    "name": "quick_helper_bot",
+    "account_ref": "111122223333",
+    "region": "us-west-1",
+    "environment": null,
+    "status": "READY",
+    "foundation_model": null,
+    "tags": {
+      "CreatedBy": "dev-sandbox",
+      "DataClassification": "restricted",
+      "aigov:demo": "true"
+    },
+    "guardrail": null,
+    "attributes": {
+      "description": "Helper bot created outside the governance process (demo).",
+      "agent_runtime_version": "1",
+      "network_mode": "PUBLIC",
+      "protocol": "HTTP",
+      "code_runtime": "PYTHON_3_13",
+      "authorizer": null
+    },
+    "source_created_at": "2026-11-10T09:12:00Z",
+    "source_updated_at": "2026-11-16T22:40:00Z"
+  },
+  "identity": {
+    "principal_ref": "arn:aws:iam::111122223333:role/aigov-agents/aigov-demo-quick-helper-bot",
+    "permissions_boundary_ref": null,
+    "policies": [
+      {
+        "type": "aws_managed",
+        "ref": "arn:aws:iam::aws:policy/AdministratorAccess",
+        "name": "AdministratorAccess",
+        "statements": [
+          {
+            "sid": "",
+            "effect": "Allow",
+            "actions": [
+              "*"
+            ],
+            "not_actions": [],
+            "resources": [
+              "*"
+            ],
+            "has_conditions": false
+          }
+        ]
+      }
+    ],
+    "simulation": {
+      "iam:CreateUser": "allowed",
+      "iam:AttachRolePolicy": "allowed",
+      "iam:PutRolePolicy": "allowed",
+      "secretsmanager:GetSecretValue": "allowed"
+    }
+  },
+  "tools": [],
+  "data_sources": [],
+  "registration": {
+    "status": "unregistered"
+  },
+  "evidence": {
+    "agent": "collected",
+    "tags": "collected",
+    "identity": "collected",
+    "identity_simulation": "collected",
+    "tools": "not_supported",
+    "data_sources": "not_supported",
+    "model": "not_supported",
+    "registration": "collected"
+  }
+}

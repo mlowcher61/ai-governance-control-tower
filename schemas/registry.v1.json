@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/registry.v1.json",
+  "title": "Governance registry, version 1",
+  "description": "Owners and agent registrations, as sent to api.load_registry. The registry in Git is authoritative: anything not listed is removed. A registration matches an agent when every key in match_keys equals the agent's value; the most specific match wins.",
+  "type": "object",
+  "required": ["owners", "registrations"],
+  "additionalProperties": false,
+  "properties": {
+    "owners": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "name": {"$ref": "common.v1.json#/$defs/non_empty_string"},
+          "email": {"type": ["string", "null"]},
+          "approved": {"type": "boolean"},
+          "approved_by": {"type": ["string", "null"]},
+          "approved_at": {"oneOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}
+        }
+      }
+    },
+    "registrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["registration_id", "match_keys"],
+        "additionalProperties": false,
+        "properties": {
+          "registration_id": {"type": "string", "pattern": "^REG-\\d{4,}$"},
+          "match_keys": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "provider": {"$ref": "common.v1.json#/$defs/provider"},
+              "platform": {"$ref": "common.v1.json#/$defs/platform"},
+              "account_ref": {"type": "string"},
+              "region": {"type": "string"},
+              "name": {"type": "string"},
+              "external_id": {"type": "string"},
+              "resource_ref": {"type": "string"}
+            }
+          },
+          "owner_id": {"type": ["string", "null"]},
+          "business_purpose": {"type": ["string", "null"]},
+          "environment": {"$ref": "common.v1.json#/$defs/environment"},
+          "data_classification": {"enum": ["public", "internal", "confidential", "restricted", null]},
+          "declared_model": {"type": ["string", "null"]},
+          "approved_tools": {"type": "array", "items": {"type": "string"}},
+          "risk_assessment": {"$ref": "#/$defs/dated_approval"},
+          "sensitive_data_approval": {"$ref": "#/$defs/dated_approval"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "dated_approval": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {"enum": ["complete", "in_progress", "not_started"]},
+            "reference": {"type": "string"},
+            "approved_by": {"type": "string"},
+            "completed_at": {"$ref": "#/$defs/date"},
+            "approved_at": {"$ref": "#/$defs/date"},
+            "expires_at": {"$ref": "#/$defs/date"}
+          }
+        }
+      ]
+    }
+  }
+}
