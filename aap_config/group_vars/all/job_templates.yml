@@ -72,6 +72,21 @@ aigov_platform_templates:
       aigov_platform_namespace: "{{ aigov_platform_namespace }}"
     <<: *aigov_jt_defaults
 
+# T1.02: Inventory API tokens. Also needs an existing AAP credential of type "Red Hat Ansible Automation
+# Platform" (aigov_aap_credential) that may update the Inventory API credentials.
+aigov_api_templates:
+  - name: AI Governance - Issue API Tokens
+    description: "T1.02 - sign one Inventory API JWT per PostgreSQL role, test them, and store them in the AAP credentials"
+    playbook: playbooks/platform/issue_api_tokens.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+      - "{{ aigov_aap_credential }}"
+    extra_vars:
+      aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+      aigov_organization: "{{ aigov_organization }}"
+      aigov_api_token_ttl_days: "{{ aigov_api_token_ttl_days | default(90) }}"
+    <<: *aigov_jt_defaults
+
 # T0.08: automation orchestrator config as code and the workflow loader.
 aigov_ao_templates:
   - name: AI Governance - Configure Automation Orchestrator
@@ -97,4 +112,6 @@ controller_templates: >-
   {{ aigov_base_templates
      + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else [])
      + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_api_templates if (aigov_openshift_credential | default('') | string | length) > 0
+                               and (aigov_aap_credential | default('') | string | length) > 0 else [])
      + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else []) }}

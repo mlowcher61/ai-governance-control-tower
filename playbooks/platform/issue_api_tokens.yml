@@ -1,0 +1,166 @@
+---
+# AI Governance - Issue API Tokens (task T1.02)
+#
+# Issues one JWT per Governance Inventory API role, signed with the PostgREST secret that
+# "Deploy Platform Services" generated (Kubernetes Secret <namespace>/governance-api). Then:
+#   * proves every token switches PostgREST to its own PostgreSQL role (rpc/whoami);
+#   * runs the read-only HTTP acceptance tests (database/tests/test_api_http.py);
+#   * writes each token into its AAP credential "AI Governance - Inventory API (<role>)"
+#     (credential type "AI Governance - Inventory API"), which job templates attach.
+#
+# Tokens are never printed (no_log). Rotation: re-run this job (tokens are re-issued with a new
+# expiry; the old ones stay valid until they expire). To revoke every token at once, delete the
+# jwt-secret key from the Secret, re-run Deploy Platform Services, then re-run this job.
+#
+# Credentials: "OpenShift or Kubernetes API Bearer Token" (reads the Secret) and
+# "Red Hat Ansible Automation Platform" (updates the AAP credentials).
+- name: AI Governance - issue the Inventory API tokens
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_platform_namespace: ai-governance
+    aigov_organization: AI Governance
+    aigov_api_url: "http://governance-api.{{ aigov_platform_namespace }}.svc:3000"
+    aigov_api_token_ttl_days: 90
+    aigov_api_credential_type: AI Governance - Inventory API
+    aigov_api_token_roles: [discovery, registry, evaluator, remediator, reader, auditor]
+    aigov_api_run_http_tests: true
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+  tasks:
+    - name: Check the OpenShift and AAP credentials are attached
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+          - lookup('ansible.builtin.env', 'CONTROLLER_HOST') | length > 0
+        fail_msg: >-
+          Attach an "OpenShift or Kubernetes API Bearer Token" credential (aigov_openshift_credential) and a
+          "Red Hat Ansible Automation Platform" credential (aigov_aap_credential) to this job template.
+        quiet: true
+
+    - name: Read the PostgREST JWT secret
+      kubernetes.core.k8s_info:
+        kind: Secret
+        namespace: "{{ aigov_platform_namespace }}"
+        name: governance-api
+      register: aigov_api_secret
+      no_log: true
+
+    - name: Check the secret exists
+      ansible.builtin.assert:
+        that: aigov_api_secret.resources | length == 1
+        fail_msg: Secret {{ aigov_platform_namespace }}/governance-api not found. Run "AI Governance - Deploy Platform Services" first.
+        quiet: true
+
+    - name: Sign one token per API role
+      mlowcher61.ai_governance.jwt_hs256:
+        secret: "{{ aigov_api_secret.resources[0].data['jwt-secret'] | b64decode }}"
+        claims:
+          role: "aigov_{{ item }}"
+          sub: "aap-aigov-{{ item }}"
+          iss: ai-governance-control-tower
+        ttl_seconds: "{{ (aigov_api_token_ttl_days | int) * 86400 }}"
+      loop: "{{ aigov_api_token_roles }}"
+      register: aigov_api_tokens
+      no_log: true
+
+    - name: Check each token runs as its own role (rpc/whoami)
+      ansible.builtin.uri:
+        url: "{{ aigov_api_url }}/rpc/whoami"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ item.token }}"
+        body_format: json
+        body: {}
+      loop: "{{ aigov_api_tokens.results }}"
+      loop_control:
+        label: "aigov_{{ item.item }}"
+      register: aigov_api_whoami
+      failed_when: aigov_api_whoami.status != 200 or aigov_api_whoami.json.role != 'aigov_' ~ item.item
+      no_log: true
+
+    - name: Run the read-only API acceptance tests
+      when: aigov_api_run_http_tests | bool
+      block:
+        - name: Run database/tests/test_api_http.py against the cluster API
+          ansible.builtin.command:
+            cmd: python3 {{ aigov_repo_root }}/database/tests/test_api_http.py
+          environment:
+            AIGOV_API_URL: "{{ aigov_api_url }}"
+            AIGOV_JWT_SECRET: "{{ aigov_api_secret.resources[0].data['jwt-secret'] | b64decode }}"
+            AIGOV_API_READONLY: "1"
+          register: aigov_api_http
+          changed_when: false
+          failed_when: false
+
+        - name: Show the API acceptance test results
+          ansible.builtin.debug:
+            msg: "{{ aigov_api_http.stdout_lines }}"
+
+        - name: Fail when an API acceptance test failed
+          ansible.builtin.assert:
+            that: aigov_api_http.rc == 0
+            fail_msg: "API acceptance tests failed: {{ aigov_api_http.stderr_lines | default([]) }}"
+            quiet: true
+
+    - name: Resolve the AAP connection from the attached credential
+      ansible.builtin.set_fact:
+        aigov_aap_url: >-
+          {{ (lookup('ansible.builtin.env', 'CONTROLLER_HOST') is match('^https?://'))
+             | ternary('', 'https://') ~ (lookup('ansible.builtin.env', 'CONTROLLER_HOST') | regex_replace('/+$', '')) }}
+        aigov_aap_token: "{{ lookup('ansible.builtin.env', 'CONTROLLER_OAUTH_TOKEN') }}"
+        aigov_aap_user: "{{ lookup('ansible.builtin.env', 'CONTROLLER_USERNAME') }}"
+        aigov_aap_password: "{{ lookup('ansible.builtin.env', 'CONTROLLER_PASSWORD') }}"
+        aigov_aap_verify: "{{ lookup('ansible.builtin.env', 'CONTROLLER_VERIFY_SSL') | default('true', true) | bool }}"
+      no_log: true
+
+    - name: Find the Inventory API credentials (created by aap_config/configure_aap.yml)
+      ansible.builtin.uri:
+        url: "{{ aigov_aap_url }}/api/controller/v2/credentials/?name={{ ('AI Governance - Inventory API (' ~ item ~ ')') | urlencode }}"
+        headers: "{{ (aigov_aap_token | length > 0) | ternary({'Authorization': 'Bearer ' ~ aigov_aap_token}, omit) }}"
+        url_username: "{{ (aigov_aap_token | length == 0) | ternary(aigov_aap_user, omit) }}"
+        url_password: "{{ (aigov_aap_token | length == 0) | ternary(aigov_aap_password, omit) }}"
+        force_basic_auth: "{{ aigov_aap_token | length == 0 }}"
+        validate_certs: "{{ aigov_aap_verify }}"
+      loop: "{{ aigov_api_token_roles }}"
+      register: aigov_api_creds
+      no_log: true
+
+    - name: Check every Inventory API credential exists
+      ansible.builtin.assert:
+        that: aigov_api_creds.results | rejectattr('json.count', 'equalto', 1) | list | length == 0
+        fail_msg: >-
+          Missing AAP credentials:
+          {{ aigov_api_creds.results | rejectattr('json.count', 'equalto', 1) | map(attribute='item')
+             | map('regex_replace', '^(.*)$', 'AI Governance - Inventory API (\\1)') | join(', ') }}.
+          Re-run aap_config/configure_aap.yml, which creates them.
+        quiet: true
+
+    - name: Write each token into its AAP credential
+      ansible.builtin.uri:
+        url: "{{ aigov_aap_url }}/api/controller/v2/credentials/{{ item.1.json.results[0].id }}/"
+        method: PATCH
+        body_format: json
+        body:
+          inputs:
+            api_url: "{{ aigov_api_url }}"
+            role: "aigov_{{ item.0.item }}"
+            token: "{{ item.0.token }}"
+        headers: "{{ (aigov_aap_token | length > 0) | ternary({'Authorization': 'Bearer ' ~ aigov_aap_token}, omit) }}"
+        url_username: "{{ (aigov_aap_token | length == 0) | ternary(aigov_aap_user, omit) }}"
+        url_password: "{{ (aigov_aap_token | length == 0) | ternary(aigov_aap_password, omit) }}"
+        force_basic_auth: "{{ aigov_aap_token | length == 0 }}"
+        validate_certs: "{{ aigov_aap_verify }}"
+      loop: "{{ aigov_api_tokens.results | zip(aigov_api_creds.results) | list }}"
+      loop_control:
+        label: "AI Governance - Inventory API ({{ item.0.item }})"
+      changed_when: true
+      no_log: true
+
+    - name: Report the issued tokens
+      ansible.builtin.debug:
+        msg: >-
+          Issued {{ aigov_api_tokens.results | length }} Inventory API tokens for {{ aigov_api_url }}, valid until
+          {{ '%Y-%m-%d %H:%M UTC' | strftime(aigov_api_tokens.results[0].expires_at, utc=true) }}:
+          {{ aigov_api_token_roles | map('regex_replace', '^', 'AI Governance - Inventory API (') | map('regex_replace', '$', ')') | join(', ') }}.
+          Re-run this job before then to rotate them.

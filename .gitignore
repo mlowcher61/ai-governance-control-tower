@@ -1,7 +1,8 @@
 # Local secrets and environment files (never commit)
 *.env
 .env*
-aap_config/vars/customer.yml
+aap_config/vars/customer*.yml
+!aap_config/vars/customer.example.yml
 *.retry
 
 # Build artifacts

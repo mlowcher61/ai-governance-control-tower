@@ -52,6 +52,12 @@ aigov_platform_namespace: ai-governance
 # Namespaces whose pods may call OPA and the Inventory API (AAP job pods and the AO worker).
 aigov_platform_trusted_namespaces: [aap, automation-orchestrator]
 
+# Inventory API tokens (T1.02). Name (or numeric ID) of an EXISTING AAP credential of type
+# "Red Hat Ansible Automation Platform" that may update credentials in the organization above. The job
+# template "AI Governance - Issue API Tokens" uses it to store the signed tokens (empty = skip it).
+aigov_aap_credential: ""
+aigov_api_token_ttl_days: 90
+
 # automation orchestrator (T0.08). AO route URL, e.g. https://ao.apps.example.com (empty = skip the AO
 # credential and job templates). See ao_workflows/README.md.
 aigov_ao_url: ""

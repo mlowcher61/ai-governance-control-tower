@@ -38,7 +38,7 @@ jobs:
         run: cfn-lint --regions us-west-1 -- aws/cloudformation/*.yaml
 
       - name: ruff (Python)
-        run: ruff check demo collections/ansible_collections/mlowcher61
+        run: ruff check demo collections/ansible_collections/mlowcher61 database/tests
 
       - name: Unit tests (project collection)
         working-directory: collections
@@ -80,7 +80,16 @@ jobs:
           echo "-- edited" >> /tmp/tampered/V001__baseline.sql
           if bash database/migrate.sh /tmp/tampered; then echo "edited migration was accepted"; exit 1; fi
 
-      - name: SQL tests
-        env: {PGUSER: aigov_owner, PGPASSWORD: owner, PGDATABASE: aigov}
+      - name: SQL tests (as the superuser; they switch to each API role like PostgREST)
+        env: {PGUSER: postgres, PGPASSWORD: postgres, PGDATABASE: aigov}
         run: for t in database/tests/test_*.sql; do psql -X -q -v ON_ERROR_STOP=1 -f "$t"; done
+
+      - name: HTTP tests through PostgREST (same image as the cluster)
+        run: |
+          secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+          docker run -d --name postgrest --network host \
+            -e PGRST_DB_URI="postgres://aigov_authenticator:auth@localhost:5432/aigov" -e PGRST_DB_SCHEMAS=api \
+            -e PGRST_DB_ANON_ROLE=aigov_api_anon -e PGRST_JWT_SECRET="$secret" docker.io/postgrest/postgrest:v16.6
+          for _ in $(seq 30); do curl -sf http://127.0.0.1:3000/rpc/health >/dev/null && break; sleep 1; done
+          AIGOV_API_URL=http://127.0.0.1:3000 AIGOV_JWT_SECRET="$secret" python3 database/tests/test_api_http.py
 
