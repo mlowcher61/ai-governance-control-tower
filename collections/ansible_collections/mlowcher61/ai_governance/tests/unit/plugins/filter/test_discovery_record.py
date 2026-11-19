@@ -40,7 +40,7 @@ def test_rebuilds_the_demo_fixture_exactly(name):
 
 def test_identity_access_denied_keeps_role_and_marks_evidence():
     fixture = json.loads((FIXTURES / "quick_helper_bot.json").read_text())
-    runtime, role, sim = module_outputs(fixture)
+    runtime = module_outputs(fixture)[0]
     role = {"identity": {"principal_ref": None, "policies": []}, "evidence_status": "access_denied", "errors": [{"code": "AccessDenied"}]}
     record = agentcore_discovery_record(runtime, "111122223333", "us-west-1", identity=role,
                                         simulation={"simulation": {}, "evidence_status": "access_denied"})
