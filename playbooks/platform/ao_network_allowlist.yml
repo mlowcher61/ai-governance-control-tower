@@ -99,17 +99,18 @@
     - name: Merge the governance hosts into the allowlist
       vars:
         aigov_cur_data: "{{ (aigov_ao_settings.resources | first | default({})).data | default({}) }}"
-        aigov_cur_raw: "{{ aigov_cur_data.APP_INTEGRATION_URL_ALLOWED_HOSTS | default('') | trim }}"
-        # The value is a JSON list; a comma-separated string is accepted too.
+        aigov_cur_raw: "{{ aigov_cur_data.APP_INTEGRATION_URL_ALLOWED_HOSTS | default('') }}"
+        # The value is a JSON list (Ansible may already have parsed it); a comma-separated string is accepted too.
         aigov_cur_hosts: >-
-          {{ (aigov_cur_raw | from_json) if aigov_cur_raw.startswith('[')
+          {{ aigov_cur_raw if (aigov_cur_raw is sequence and aigov_cur_raw is not string)
+             else (aigov_cur_raw | trim | from_json) if (aigov_cur_raw | trim).startswith('[')
              else (aigov_cur_raw.split(',') | map('trim') | select | list) }}
       ansible.builtin.set_fact:
         aigov_ao_current_hosts: "{{ aigov_cur_hosts }}"
         aigov_ao_merged_hosts: "{{ aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) }}"
         aigov_ao_settings_data: "{{ aigov_cur_data }}"
         # Restart only when the value the pods load is different (they read envFrom only at start).
-        aigov_ao_restart_needed: "{{ aigov_cur_raw != (aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) | to_json) }}"
+        aigov_ao_restart_needed: "{{ aigov_cur_hosts != (aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list)) }}"
 
     - name: Write the allowlist into the settings ConfigMap
       kubernetes.core.k8s:
