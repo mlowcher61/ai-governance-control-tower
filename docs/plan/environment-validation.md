@@ -95,3 +95,29 @@
 | `$AAP_API_TOKEN` | Valid ✅ |
 | `$GITHUB_TOKEN` | Present (not exercised; it will be used to create the repository after approval) |
 | `$VALIDATED_HUB_TOKEN` | **Rejected by Red Hat SSO** (`invalid_grant: Offline user session not found`). The offline token appears expired or revoked; regenerate it at console.redhat.com → Automation Hub → API token. Not blocking, because the private hub already syncs certified and validated content |
+
+## 6. Governance platform services (T0.06, 2026-11-18)
+
+| Check | Result |
+|---|---|
+| AAP credential | `OpenShift Credential` (ID 5, org APD), cluster `api.cluster-t5d26`. Its token can create namespaces, NetworkPolicies, Routes, StatefulSets, and Jobs ✅ |
+| Namespace | `ai-governance` ✅ |
+| Images | `registry.redhat.io/rhel9/postgresql-16:1-1794513854`, `postgrest/postgrest:v16.6`, `openpolicyagent/opa:1.22.4-static`, `grafana/grafana:13.3.1`. The cluster pulls from registry.redhat.io and docker.io without a mirror ✅ |
+| Deploy job | **AAP job 1289 successful.** Job 1287 (the first run) timed out waiting for Grafana on its first start; the re-run converged |
+| Health | OPA `/health` OK, and `GET /v1/data/governance/platform/info` returns the bootstrap policy; PostgREST `GET /rpc/health` reports PostgreSQL 16.15; Grafana `/api/health` reports 13.3.1 through its route ✅ |
+| NetworkPolicy | A pod with `aigov/db-client=true` reaches `governance-db:5432`; a pod without it is blocked ✅ |
+| AAP job pods → services | The deploy job called OPA and PostgREST by service DNS, so AAP job pods run in a trusted namespace (`aap`) ✅. The AO worker namespace (`automation-orchestrator`) is assumed from the AO route name and will be proven by the first AO `http_request` to OPA (Stage 2) |
+
+## 7. automation orchestrator config as code (T0.08, 2026-11-18)
+
+| Check | Result |
+|---|---|
+| Validate endpoint | `POST /workflows/validate` takes `{"workflow_definition": {...}}` and returns 422 with `validation_result.findings` when the definition is invalid ✅ |
+| Loader | `ao_workflows/apply_workflows.yml` created "AI Governance - Loader Test (as code)" (version 1, published). A second run reported `unchanged`, `changed=0` ✅ |
+| Execution | AO execution `daa650ad-2fdb-4821-b243-a1b691e286bc` **completed**. It launched AAP job 1284 (*AI Governance - Check Environment*), whose `set_stats` artifacts came back in the activity output ✅ |
+| AAP proxy | `GET /proxies/aap/job_templates?organization=<name>` filters by organization **name** ✅ |
+| Paging | `GET /workflows` accepts `limit` ≤ 100 |
+| Service account rights | `ai-service-account` is scoped to project `default`. It can manage workflows, credentials, executions, approvals, and service accounts. It **cannot** read settings (403) |
+| `aigov-trigger` | Created by `configure_ao.yml` (ID `5f2ac72f-…`). **Its client credential is not issued yet.** Issuing it writes the secret into the AAP credential *AI Governance - Automation Orchestrator*; the automated step was held for user confirmation |
+| SSRF allowlist | **Not verified** (settings require an AO administrator). It must contain `opa.ai-governance.svc`, `governance-api.ai-governance.svc`, and the AAP gateway host, and it must reach ao-worker |
+| LLM integration | **"LiteMaaS" is in validation status `error`: HTTP 401.** The API key needs renewal before the Stage 1 AI explanation step (T1.11) |

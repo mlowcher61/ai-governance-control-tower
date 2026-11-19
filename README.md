@@ -2,11 +2,12 @@
 
 ### Powered by Red Hat Ansible Automation Platform automation orchestrator
 
-> **Status: Stage 0 (foundations) in progress.** The plan was approved on 2026-11-17. Implemented so far:
+> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) starting.** The plan was approved on 2026-11-17. Implemented so far:
 > - AAP config as code (`aap_config/`)
 > - AWS governance roles and demo AgentCore runtimes (CloudFormation)
+> - Governance platform services on OpenShift: PostgreSQL, the Inventory API (PostgREST), OPA, and Grafana (`playbooks/platform/`, `platform/`)
+> - automation orchestrator config as code and the workflow loader (`ao_workflows/`)
 > - Environment check and least-privilege verification playbooks
-> - The project collection's first module
 > - CI
 >
 > See [Implementation status](#implementation-status).
@@ -98,6 +99,8 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.05 AAP config as code (Stage 0 subset) | Done: `aap_config/` |
 | T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed. Full verification on the new EE (AAP job 1271): 19/19 least-privilege checks passed, and all 4 AgentCore runtimes are listed READY through the read-only discovery role |
 | T0.04 Execution environment | Done: `quay.io/locust61/ai-governance-ee:0.1.0` (public; amd64; boto3 1.43 with AgentCore clients), registered in AAP as `ai-governance-ee` and used by all governance job templates |
+| T0.06 Governance platform services | Done (AAP job 1289): PostgreSQL 16, PostgREST v16.6, OPA 1.22.4 (2 replicas), and Grafana 13.3.1 in namespace `ai-governance`. Default-deny NetworkPolicies are proven (a labelled pod reaches the database; an unlabelled pod is blocked). AAP job pods reach OPA and the Inventory API |
+| T0.08 AO config as code and loader | Done: the loader test workflow is applied from YAML, idempotent (second run creates no new version), and executes (AO execution `daa650ad`, which ran AAP job 1284). The `aigov-trigger` service account is created. Open items for an AO administrator are listed in [ao_workflows/README.md](ao_workflows/README.md#items-only-an-ao-administrator-can-do) |
 
 ## Getting started
 
@@ -105,8 +108,8 @@ The configuration-as-code entry points are:
 
 1. **[aap_config/README.md](aap_config/README.md)**: configure AAP from code. This creates the organization, credential types and credentials, project, inventory, and job templates.
 2. In AAP, run **AI Governance - Check Environment**, then **Deploy AWS Governance Roles**, **Deploy Demo Agents**, and **Verify AWS Baseline**.
-3. *(Stage 0/1, next)* **AI Governance - Deploy Platform Services**: PostgreSQL, the Inventory API, OPA, and Grafana on OpenShift.
-4. *(Stage 1, next)* `ao_workflows/`: configure automation orchestrator and load the workflows.
+3. **AI Governance - Deploy Platform Services**: PostgreSQL, the Inventory API, OPA, and Grafana on OpenShift. This needs `aigov_openshift_credential`, the name of an existing AAP credential of type "OpenShift or Kubernetes API Bearer Token". The Grafana URL and the location of its admin password are printed at the end of the job.
+4. **[ao_workflows/README.md](ao_workflows/README.md)**: configure automation orchestrator (**AI Governance - Configure Automation Orchestrator**) and load the governance workflows (**AI Governance - Apply AO Workflows**).
 
 Credentials are entered into AAP (or pulled from your secret manager). **No secrets are ever stored in this repository.**
 
