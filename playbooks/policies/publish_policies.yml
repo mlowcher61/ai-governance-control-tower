@@ -64,7 +64,8 @@
         aigov_config: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/data/governance/config/data.json') | from_json }}"
         aigov_files: "{{ aigov_rego_files.files | map(attribute='path') | sort | list }}"
         aigov_keys: >-
-          {{ aigov_files | map('regex_replace', '^.*/policies/(governance|tests)/', '\\1/') | map('replace', '/', '__') | list }}
+          {{ aigov_files | map('regex_replace', '^.*/policies/governance/', 'governance/')
+             | map('regex_replace', '^.*/policies/tests/', 'tests/') | map('replace', '/', '__') | list }}
       ansible.builtin.set_fact:
         aigov_bundle_rego: >-
           {{ dict(aigov_keys | zip(query('ansible.builtin.file', *aigov_files, rstrip=false))) }}
