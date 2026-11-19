@@ -71,3 +71,14 @@ def test_simulate_omits_empty_context():
     decision, matched = mod.simulate(client, "arn", {"action": "iam:PassRole", "resource": "*", "context": []})
     assert (decision, matched) == ("implicitDeny", 0)
     assert "ContextEntries" not in client.paginator.calls[0]
+
+
+def test_simulation_map_keeps_only_unconditional_wildcard_checks():
+    results = [
+        {"action": "iam:CreateUser", "resource": "*", "decision": "allowed", "has_context": False},
+        {"action": "iam:PutRolePolicy", "resource": "*", "decision": "implicitDeny", "has_context": False},
+        {"action": "iam:DetachRolePolicy", "resource": "arn:aws:iam::1:role/x", "decision": "allowed", "has_context": False},
+        {"action": "iam:TagRole", "resource": "*", "decision": "allowed", "has_context": True},
+        {"action": "s3:GetObject", "resource": "*", "decision": None, "has_context": False},
+    ]
+    assert mod.simulation_map(results) == {"iam:CreateUser": "allowed", "iam:PutRolePolicy": "denied"}

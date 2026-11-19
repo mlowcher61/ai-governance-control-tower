@@ -69,12 +69,21 @@ options:
       description:
         description: Free-text label echoed in the results.
         type: str
+  on_error:
+    description:
+      - What to do when a simulation call fails.
+      - V(fail) stops the task (right for baseline and remediation verification).
+      - V(report) returns RV(evidence_status) C(access_denied) or C(error) and the failed checks without a
+        decision, so discovery records the evidence gap and policies return C(unknown).
+    type: str
+    default: fail
+    choices: [fail, report]
 extends_documentation_fragment:
   - amazon.aws.common.modules
   - amazon.aws.region.modules
   - amazon.aws.boto3
 author:
-  - AI Governance Control Tower contributors
+  - AI Governance Control Tower contributors (@mlowcher61)
 """
 
 EXAMPLES = r"""
@@ -149,6 +158,23 @@ failed_checks:
   returned: always
   type: list
   elements: dict
+simulation:
+  description: >-
+    Action -> allowed or denied, for checks with resource C(*) and no context (the identity.simulation map of
+    the discovery record contract). Checks whose call failed are left out.
+  returned: always
+  type: dict
+  sample: {"iam:CreateUser": "allowed", "iam:PutRolePolicy": "allowed"}
+evidence_status:
+  description: collected, or access_denied / error when a simulation call failed (only with on_error=report).
+  returned: always
+  type: str
+  sample: collected
+errors:
+  description: Failed simulation calls (only with on_error=report).
+  returned: always
+  type: list
+  elements: dict
 """
 
 try:
@@ -158,6 +184,7 @@ except ImportError:
 
 from ansible_collections.amazon.aws.plugins.module_utils.modules import AnsibleAWSModule
 from ansible_collections.amazon.aws.plugins.module_utils.retries import AWSRetry
+from ansible_collections.mlowcher61.ai_governance.plugins.module_utils.evidence import EvidenceTracker
 
 
 def _passed(decision, expected):
@@ -197,6 +224,16 @@ def simulate(client, policy_source_arn, check):
     return decision, matched
 
 
+def simulation_map(results):
+    """identity.simulation of the contract: unconditional checks on resource * only."""
+    out = {}
+    for r in results:
+        if r["decision"] is None or r["resource"] != "*" or r.get("has_context"):
+            continue
+        out[r["action"]] = "allowed" if r["decision"] == "allowed" else "denied"
+    return out
+
+
 def main():
     context_spec = dict(
         key=dict(type="str", required=True, no_log=False),
@@ -220,16 +257,23 @@ def main():
     argument_spec = dict(
         policy_source_arn=dict(type="str", required=True),
         checks=dict(type="list", elements="dict", required=True, options=check_spec),
+        on_error=dict(type="str", default="fail", choices=["fail", "report"]),
     )
 
     module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
     client = module.client("iam", retry_decorator=AWSRetry.jittered_backoff())
 
+    tracker = EvidenceTracker("identity_simulation")
     results = []
     for check in module.params["checks"]:
+        decision, matched = None, 0
         try:
             decision, matched = simulate(client, module.params["policy_source_arn"], check)
-        except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
+        except botocore.exceptions.ClientError as e:
+            if module.params["on_error"] == "fail":
+                module.fail_json_aws(e, msg="Failed to simulate {0} for {1}".format(check["action"], module.params["policy_source_arn"]))
+            tracker.failed("identity_simulation", "SimulatePrincipalPolicy", e, check["action"])
+        except botocore.exceptions.BotoCoreError as e:
             module.fail_json_aws(e, msg="Failed to simulate {0} for {1}".format(check["action"], module.params["policy_source_arn"]))
         results.append(
             dict(
@@ -237,14 +281,17 @@ def main():
                 resource=check.get("resource") or "*",
                 decision=decision,
                 expected=check["expected"],
-                passed=_passed(decision, check["expected"]),
+                passed=decision is not None and _passed(decision, check["expected"]),
                 matched_statement_count=matched,
                 description=check.get("description"),
+                has_context=bool(check.get("context")),
             )
         )
 
     failed = [r for r in results if not r["passed"]]
-    module.exit_json(changed=False, results=results, all_passed=not failed, failed_checks=failed)
+    module.exit_json(changed=False, results=results, all_passed=not failed, failed_checks=failed,
+                     simulation=simulation_map(results), evidence_status=tracker.status["identity_simulation"],
+                     errors=tracker.errors)
 
 
 if __name__ == "__main__":

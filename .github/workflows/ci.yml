@@ -46,6 +46,10 @@ jobs:
       - name: Contracts - fixtures and examples match the schemas
         run: python -m pytest -q schemas/tests
 
+      - name: ansible-test sanity (project collection)
+        working-directory: collections/ansible_collections/mlowcher61/ai_governance
+        run: ansible-test sanity --venv --python 3.12
+
       - name: Unit tests (project collection)
         working-directory: collections
         run: PYTHONPATH="$PWD" python -m pytest -q ansible_collections/mlowcher61/ai_governance/tests/unit

@@ -24,7 +24,7 @@ def test_token_structure_and_claims():
 
 
 def test_signature_verifies_with_hmac_sha256():
-    token, _ = mod.encode({"role": "aigov_discovery"}, SECRET, now=1)
+    token = mod.encode({"role": "aigov_discovery"}, SECRET, now=1)[0]
     signing_input, sig = token.rsplit(".", 1)
     expected = hmac.new(SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
     assert base64.urlsafe_b64decode(sig + "=" * (-len(sig) % 4)) == expected

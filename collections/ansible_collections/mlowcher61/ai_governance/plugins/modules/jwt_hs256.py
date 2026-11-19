@@ -14,16 +14,15 @@ description:
     issue one token per Governance Inventory API role (PostgREST selects the PostgreSQL role from
     the C(role) claim).
   - Adds C(iat) and C(exp) claims from O(ttl_seconds). Uses only the Python standard library.
-  - The token is a secret. Always run this module with C(no_log: true).
+  - "The token is a secret. Always run this module with C(no_log: true)."
   - This module exists because no certified Ansible collection signs JWTs.
 options:
   secret:
     description: Shared HMAC secret (the PostgREST C(jwt-secret)). At least 32 characters.
     type: str
     required: true
-    no_log: true
   claims:
-    description: Claims to sign, for example C({"role": "aigov_discovery", "sub": "aap-discovery"}).
+    description: 'Claims to sign, for example C({"role": "aigov_discovery", "sub": "aap-discovery"}).'
     type: dict
     required: true
   ttl_seconds:
@@ -33,7 +32,7 @@ options:
 notes:
   - Supports check mode. The module never changes anything.
 author:
-  - AI Governance Control Tower contributors
+  - AI Governance Control Tower contributors (@mlowcher61)
 """
 
 EXAMPLES = r"""

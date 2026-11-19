@@ -14,6 +14,16 @@
     aigov_aws_region: us-west-1
     aigov_governance_stack_name: aigov-governance-roles
     aigov_demo_stack_name: aigov-demo-agents
+    # What the deployed demo execution roles must look like through the read-only modules (T1.04).
+    aigov_demo_role_expectations:
+      aigov-demo-payments-dispute-assistant: {policy: aigov-approved-agentcore-runtime-basic, admin_probes: denied}
+      aigov-demo-quick-helper-bot: {policy: AdministratorAccess, admin_probes: allowed}
+      aigov-demo-hr-faq-agent: {policy: aigov-approved-agentcore-runtime-basic, admin_probes: denied}
+      aigov-demo-research-runtime: {policy: aigov-approved-agentcore-runtime-basic, admin_probes: denied}
+    aigov_admin_probe_checks:
+      - {action: "iam:CreateUser"}
+      - {action: "iam:AttachRolePolicy"}
+      - {action: "iam:PutRolePolicy"}
   tasks:
     - name: Verify the discovery role credential is attached to this job template
       ansible.builtin.assert:
@@ -174,6 +184,61 @@
       register: aigov_runtimes_raw
       changed_when: false
 
+    # T1.04 acceptance on live data: the read-only modules see each demo agent's execution role as deployed.
+    - name: Read the demo agents' execution roles through the discovery role
+      mlowcher61.ai_governance.iam_role_permissions_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        role_name: "{{ item }}"
+      loop: "{{ aigov_demo_role_expectations.keys() | list }}"
+      register: aigov_demo_roles
+
+    - name: Probe administrator actions for each demo execution role (evidence mode)
+      mlowcher61.ai_governance.iam_policy_simulation_info:
+        access_key: "{{ aigov_ro.access_key }}"
+        secret_key: "{{ aigov_ro.secret_key }}"
+        session_token: "{{ aigov_ro.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        policy_source_arn: "{{ item.identity.principal_ref }}"
+        on_error: report
+        checks: "{{ aigov_admin_probe_checks }}"
+      loop: "{{ aigov_demo_roles.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: aigov_demo_role_sims
+
+    - name: Compare what the read-only modules saw with the deployed demo roles
+      vars:
+        aigov_role_view: >-
+          {{ dict(aigov_demo_roles.results | map(attribute='item')
+                  | zip(aigov_demo_roles.results | zip(aigov_demo_role_sims.results))) }}
+      ansible.builtin.set_fact:
+        aigov_read_module_problems: >-
+          {%- set problems = [] -%}
+          {%- for role, expect in aigov_demo_role_expectations.items() -%}
+          {%- set view, sim = aigov_role_view[role] -%}
+          {%- set names = view.identity.policies | map(attribute='name') | list -%}
+          {%- if view.evidence_status != 'collected' -%}
+          {%- set _ = problems.append(role ~ ': identity evidence ' ~ view.evidence_status) -%}
+          {%- endif -%}
+          {%- if expect.policy not in names -%}
+          {%- set _ = problems.append(role ~ ': expected policy ' ~ expect.policy ~ ', saw ' ~ names) -%}
+          {%- endif -%}
+          {%- if sim.evidence_status != 'collected' -%}
+          {%- set _ = problems.append(role ~ ': simulation evidence ' ~ sim.evidence_status) -%}
+          {%- endif -%}
+          {%- for action, decision in sim.simulation.items() if decision != expect.admin_probes -%}
+          {%- set _ = problems.append(role ~ ': ' ~ action ~ ' is ' ~ decision ~ ', expected ' ~ expect.admin_probes) -%}
+          {%- endfor -%}
+          {%- endfor -%}
+          {{ problems }}
+        aigov_read_module_view: >-
+          {{ dict(aigov_demo_roles.results | map(attribute='item')
+                  | zip(aigov_demo_roles.results | map(attribute='identity') | map(attribute='policies')
+                        | map('map', attribute='name') | map('list'))) }}
+
     - name: Summarize the verification
       ansible.builtin.set_fact:
         aigov_baseline_verification:
@@ -184,6 +249,8 @@
           failed_checks: >-
             {{ aigov_sim_discovery.failed_checks + aigov_sim_remediation.failed_checks + aigov_sim_reset.failed_checks }}
           agentcore_listing: "{{ aigov_runtimes_raw.stdout | from_json }}"
+          demo_role_policies_seen: "{{ aigov_read_module_view }}"
+          read_module_problems: "{{ aigov_read_module_problems }}"
 
     - name: Show the verification summary
       ansible.builtin.debug:
@@ -201,6 +268,14 @@
           - aigov_baseline_verification.failed_checks | length == 0
         fail_msg: "Baseline verification failed: {{ aigov_baseline_verification.failed_checks }}"
         success_msg: All least-privilege checks matched their expected outcomes.
+
+    - name: Fail if the read-only modules did not see the demo roles as deployed
+      ansible.builtin.assert:
+        that: aigov_baseline_verification.read_module_problems | length == 0
+        fail_msg: "Read module check failed: {{ aigov_baseline_verification.read_module_problems }}"
+        success_msg: >-
+          The read-only modules saw every demo execution role as deployed (AdministratorAccess only on
+          quick_helper_bot; administrator probes allowed only there).
 
     - name: Fail if the demo runtimes are not all READY (when the AgentCore API is available)
       ansible.builtin.assert:

@@ -12,6 +12,7 @@ context/
 __pycache__/
 *.pyc
 .pytest_cache/
+**/tests/output/
 .ruff_cache/
 .venv/
 venv/
