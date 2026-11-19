@@ -115,6 +115,14 @@
     - name: Decide whether AO must restart (pods read envFrom only at start)
       ansible.builtin.set_fact:
         aigov_ao_restart_needed: "{{ aigov_ao_current_hosts | sort != aigov_ao_merged_hosts | sort }}"
+        aigov_ao_new_data: "{{ aigov_ao_settings_data | combine({'APP_INTEGRATION_URL_ALLOWED_HOSTS': aigov_ao_merged_hosts | to_json}) }}"
+
+    - name: Report which settings keys differ (key names and types only; values are not printed)
+      ansible.builtin.debug:
+        msg: >-
+          {{ item }}: {{ 'changes' if aigov_ao_settings_data.get(item) != aigov_ao_new_data[item] else 'unchanged' }}
+          ({{ aigov_ao_settings_data.get(item) | type_debug }} -> {{ aigov_ao_new_data[item] | type_debug }})
+      loop: "{{ aigov_ao_new_data.keys() | list }}"
 
     - name: Write the allowlist into the settings ConfigMap
       kubernetes.core.k8s:
@@ -126,7 +134,8 @@
             name: "{{ aigov_ao_settings_configmap }}"
             namespace: "{{ aigov_ao_namespace }}"
             labels: "{{ aigov_ao_labels if aigov_ao_settings.resources | length == 0 else omit }}"
-          data: "{{ aigov_ao_settings_data | combine({'APP_INTEGRATION_URL_ALLOWED_HOSTS': aigov_ao_merged_hosts | to_json}) }}"
+          data: "{{ aigov_ao_new_data }}"
+      when: aigov_ao_settings.resources | length == 0 or aigov_ao_new_data != aigov_ao_settings_data
 
     - name: Restart the AO components so they read the new settings
       when: aigov_ao_restart_needed | bool
