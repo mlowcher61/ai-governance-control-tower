@@ -82,7 +82,13 @@
           {{ aigov_bundle_rego | combine(aigov_bundle_data)
              | combine({'tests__publish_self_test.rego': "package governance.publish_self_test\n\ntest_the_publish_job_refuses_this_bundle if false\n"}
                        if aigov_publish_self_test | bool else {}) }}
-        aigov_policy_check_job: "opa-policy-check-{{ aigov_bundle_revision[:10] }}-{{ (aigov_bundle_rego | to_json | hash('sha256'))[:6] }}"
+
+
+    # The check is content-addressed: the Job name carries a hash of the exact candidate, so a finished Job is
+    # only reused for identical content, and any change (including the self-test) gets a fresh check.
+    - name: Name the check Job after the candidate content
+      ansible.builtin.set_fact:
+        aigov_policy_check_job: "opa-policy-check-{{ aigov_bundle_revision[:10] }}-{{ (aigov_candidate | to_json | hash('sha256'))[:8] }}"
 
     # ---- 2. Check the candidate with the server's OPA image --------------------------------------------------
     - name: Publish the candidate bundle for the check Job
