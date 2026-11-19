@@ -26,7 +26,7 @@ jobs:
 
       - name: Install collections needed for linting
         # Galaxy equivalents of the certified content pinned in collections/requirements.yml.
-        run: ansible-galaxy collection install "amazon.aws:==11.5.0" -p ./collections
+        run: ansible-galaxy collection install "amazon.aws:==11.5.0" "kubernetes.core:==6.6.0" -p ./collections
 
       - name: yamllint
         run: yamllint .
