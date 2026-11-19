@@ -10,6 +10,7 @@ verified content gap that justifies it (see `docs/plan/06-technical-dependencies
 | `iam_role_permissions_info` | read-only | The full permission picture of an IAM role: trust policy, tags, **documents** of attached managed policies, inline policies and the permissions boundary, normalized to the contract `identity` shape. No certified module returns managed policy documents or the boundary |
 | `bedrock_agent_details_info` | read-only | Bedrock Agents Classic details missing from `amazon.ai` 1.0.1: tags, guardrail, KMS key, knowledge bases with their S3 data sources and bucket classification, collaborators. Never returns the agent instruction |
 | `iam_policy_simulation_info` | read-only | `iam:SimulatePrincipalPolicy` checks with expected outcomes (negative tests, remediation verification), and the contract `simulation` map for discovery |
+| `agentcore_runtime_info` | read-only | Amazon Bedrock AgentCore runtimes with role, status, network mode, protocol, authorizer, endpoints and tags. Never returns environment variables. Temporary until a certified `amazon.ai` 2.x is on the hub |
 | `jwt_hs256` | utility | Signs the Inventory API tokens (HS256, standard library only) |
 
 **Evidence, not failure.** The read modules never treat a permission problem as "nothing found". Each
@@ -25,8 +26,14 @@ Tests: unit tests use the botocore Stubber, so they run without AWS
 (`cd collections && PYTHONPATH=$PWD python -m pytest ansible_collections/mlowcher61/ai_governance/tests/unit`).
 `ansible-test sanity --venv --python 3.12` runs from the collection directory. Both run in CI.
 
-Planned: `agentcore_runtime_info` (T1.06, until a certified `amazon.ai` 2.x is on the hub),
-`bedrock_agent_alias_state` and `bedrock_agent_tags` (Stage 2).
+| Role / plugin | Purpose |
+|---|---|
+| `discover_ai_agents` | Discovery orchestration: per scope, assume the discovery role, check the account, start a run, call the platform adapters, validate every record against the contract, record them in batches, close the run, publish artifacts |
+| `discover_aws_agentcore` | Adapter for AgentCore runtimes (platform `aws.bedrock_agentcore_runtime`) |
+| `inventory_api` | Calls the Inventory API (`rpc` and `view` task files) without ever printing the token |
+| filter `agentcore_discovery_record` | Module outputs to a discovery record (`schemas/discovery-record.v1.json`) |
+
+Planned: `bedrock_agent_alias_state` and `bedrock_agent_tags` (Stage 2).
 
 The collection is installed into Ansible Automation Platform projects from the repository itself
 (`collections/requirements.yml`, `type: dir`).
