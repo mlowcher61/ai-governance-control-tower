@@ -9,6 +9,7 @@ This directory holds the governance workflows for automation orchestrator (AO). 
 | `config/approvers.yml` | AAP usernames allowed to decide approvals. |
 | `configure_ao.yml` | Config as code for AO. It checks the integrations and credentials, creates the `aigov-trigger` service account, and checks the SSRF allowlist. |
 | `apply_workflows.yml` | The loader. It renders each file, validates it with AO, then creates or updates it and publishes it. |
+| `definitions/t0_loader_test.yml`, `definitions/t0_llm_smoke_test.yml` | Smoke tests. One proves the loader and AAP job launch; the other proves the LLM integration returns structured output. |
 | `run_workflow.yml` | Starts a workflow by name, waits for it to finish, and fails unless it completed. |
 | `tasks/` | Shared tasks: AO login, name-to-ID lookups, applying one workflow, and issuing the trigger credential. |
 | `reference/` | The AO OpenAPI document and a runtime-proven reference export (T0.02). |

@@ -101,7 +101,15 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.04 Execution environment | Done: `quay.io/locust61/ai-governance-ee:0.1.0` (public; amd64; boto3 1.43 with AgentCore clients), registered in AAP as `ai-governance-ee` and used by all governance job templates |
 | T0.06 Governance platform services | Done (AAP job 1289): PostgreSQL 16, PostgREST v16.6, OPA 1.22.4 (2 replicas), and Grafana 13.3.1 in namespace `ai-governance`. Default-deny NetworkPolicies are proven (a labelled pod reaches the database; an unlabelled pod is blocked). AAP job pods reach OPA and the Inventory API |
 | T1.01 Database schema and migrations | Done: `database/migrations/V001__baseline.sql`, applied on the cluster by **AI Governance - Apply Database Migrations** (AAP job 1295; re-run job 1297 `changed=0`). Hash-chained, append-only audit log. SQL tests run in CI (`database/tests/run_local.sh` runs them locally) |
-| T0.08 AO config as code and loader | Done: the loader test workflow is applied from YAML, idempotent (second run creates no new version), and executes (AO execution `daa650ad`, which ran AAP job 1284). The `aigov-trigger` service account is created. Open items for an AO administrator are listed in [ao_workflows/README.md](ao_workflows/README.md#items-only-an-ao-administrator-can-do) |
+| T0.08 AO config as code and loader | Done: the loader test workflow is applied from YAML, idempotent (second run creates no new version), and executes (AO execution `daa650ad`, which ran AAP job 1284). The LLM smoke test passes (execution `fb83e168`). The `aigov-trigger` service account and its AAP credential exist; its AO project role is still to be granted (see [Open items](#open-items-2026-11-19)). AO administrator items are listed in [ao_workflows/README.md](ao_workflows/README.md#items-only-an-ao-administrator-can-do) |
+
+### Open items (2026-11-19)
+
+| Item | Who | How |
+|---|---|---|
+| Give the AO service account `aigov-trigger` the `project-user` role | You (AO project-admin credential) | `ansible-playbook ao_workflows/configure_ao.yml`. The role assignment is defined as code there |
+| Add `opa.ai-governance.svc`, `governance-api.ai-governance.svc` and the AAP host to the AO setting `APP_INTEGRATION_URL_ALLOWED_HOSTS`, and make sure it reaches ao-worker | AO administrator | AO settings, or the AO operator configuration. Needed before AO calls OPA directly (Stage 2) |
+| Re-validate the "LiteMaaS" integration in AO | AO administrator (cosmetic) | The key was renewed and the LLM smoke test passes; only the cached status still shows the old 401 |
 
 ## Getting started
 
@@ -116,4 +124,4 @@ Credentials are entered into AAP (or pulled from your secret manager). **No secr
 
 ## Repository
 
-`github.com/mlowcher61/ai-governance-control-tower` (proposed)
+`github.com/mlowcher61/ai-governance-control-tower` (private for now)

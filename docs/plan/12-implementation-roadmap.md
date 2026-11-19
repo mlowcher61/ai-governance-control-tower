@@ -132,6 +132,8 @@ T0.01 (1) → T0.03 (2) → T0.04 (1.5) → T0.05 (2) → T0.06 (3) → T1.01 (3
 
 ## 5. Milestones
 
+> **Progress (2026-11-19):** **M0 reached.** T0.01–T0.08 are done; see [environment-validation.md](environment-validation.md). Stage 1: T1.01 is done (V001 applied on the cluster); T1.02 is next. Open environment items: give `aigov-trigger` its AO project role (`configure_ao.yml`, run by the user), and set the AO SSRF allowlist (AO admin).
+
 | Milestone | Contents | Measurable completion criteria |
 |---|---|---|
 | **M0 — Foundations ready** | T0.01–T0.08 | CI green; EE published; AAP configured from code; governance services healthy; AWS stacks deployed; AO behavior findings documented; test workflow applied by the loader |
