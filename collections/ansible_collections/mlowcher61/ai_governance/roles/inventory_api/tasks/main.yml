@@ -1,0 +1,10 @@
+---
+- name: Check the Inventory API credential is attached
+  ansible.builtin.assert:
+    that:
+      - aigov_api_url | length > 0
+      - aigov_api_token | length > 0
+    fail_msg: >-
+      Attach an AAP credential of type "AI Governance - Inventory API" (for example
+      "AI Governance - Inventory API (discovery)") to this job template.
+    quiet: true

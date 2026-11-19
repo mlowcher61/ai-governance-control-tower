@@ -1,0 +1,31 @@
+---
+# Discovery orchestration (docs/plan/03 section 3). One discovery run per scope.
+#
+# A scope is one cloud account and its regions and platforms. With no scopes configured, one scope is built
+# from aigov_aws_account_id and aigov_aws_region (the job template's extra vars).
+aigov_discovery_scopes: []
+#   - name: demo
+#     provider: aws
+#     account_ref: "111122223333"
+#     regions: [us-west-1]
+#     platforms: [aws.bedrock_agentcore_runtime]
+
+# Run only the scope with this name (automation orchestrator passes it). Empty = every scope.
+aigov_scope_name: ""
+# Correlation ID from automation orchestrator. Empty = the Inventory API creates one.
+aigov_governance_run_id: ""
+
+aigov_aws_account_id: ""
+aigov_aws_region: us-west-1
+aigov_discovery_platforms: [aws.bedrock_agentcore_runtime]
+
+# Records sent per api.record_discovery call
+aigov_discovery_batch_size: 25
+
+# Bundled contract used to validate every record before it is sent (scripts/bundle_schemas.py)
+aigov_repo_root: "{{ playbook_dir }}/../.."
+aigov_discovery_schema: "{{ aigov_repo_root }}/schemas/bundled/discovery-record.v1.json"
+
+# Platform -> adapter role
+aigov_discovery_adapters:
+  aws.bedrock_agentcore_runtime: mlowcher61.ai_governance.discover_aws_agentcore

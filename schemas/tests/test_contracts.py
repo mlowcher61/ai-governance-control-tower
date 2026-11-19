@@ -106,3 +106,34 @@ def test_artifact_findings_string_holds_valid_findings():
     decoded = json.loads(artifact["findings_for_explanation"])
     assert validator("findings-for-explanation.v1.json").is_valid(decoded)
     assert len(decoded) == int(artifact["explain_count"])
+
+
+# ---- Bundled copies (schemas/bundled/, used by ansible.utils.validate in playbooks) ----------------
+
+BUNDLED = SCHEMAS / "bundled"
+
+
+def bundled_validator(schema_name, pointer=""):
+    schema = load(BUNDLED / schema_name)
+    if pointer:
+        schema = dict(schema, **{"$ref": pointer})
+    return Draft202012Validator(schema)  # no registry: a bundle must be self-contained
+
+
+def test_bundles_are_up_to_date():
+    import subprocess
+    import sys
+
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "bundle_schemas.py"), "--check"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+@pytest.mark.parametrize("schema_name,pointer,path", VALID + INVALID, ids=ids(VALID + INVALID))
+def test_bundle_agrees_with_source(schema_name, pointer, path):
+    data = load(path)
+    assert bundled_validator(schema_name, pointer).is_valid(data) == validator(schema_name, pointer).is_valid(data)
+
+
+@pytest.mark.parametrize("path", sorted((FIXTURES / "discovery").glob("*.json")), ids=lambda p: p.name)
+def test_bundled_discovery_record_accepts_fixtures(path):
+    assert bundled_validator("discovery-record.v1.json").is_valid(load(path))

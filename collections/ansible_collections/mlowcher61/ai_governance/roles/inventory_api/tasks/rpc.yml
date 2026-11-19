@@ -1,0 +1,28 @@
+---
+# Call one Inventory API function: POST <aigov_api_url>/rpc/<aigov_api_rpc> with aigov_api_body.
+# Sets aigov_api_response (the JSON result). The token never appears in output: the call is no_log, and a
+# failure is re-raised with only the HTTP status and the API's error body.
+- name: "Call the Inventory API function {{ aigov_api_rpc }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_api_url | regex_replace('/+$', '') }}/rpc/{{ aigov_api_rpc }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ aigov_api_token }}"
+      Prefer: return=representation
+    body_format: json
+    body: "{{ aigov_api_body }}"
+    timeout: "{{ aigov_api_timeout }}"
+    status_code: [200, 400, 401, 403, 404, 409, 500]
+  register: aigov_api_raw
+  no_log: true
+
+- name: "Fail with the Inventory API error for {{ aigov_api_rpc }}"
+  ansible.builtin.fail:
+    msg: >-
+      Inventory API {{ aigov_api_rpc }} returned HTTP {{ aigov_api_raw.status }}:
+      {{ aigov_api_raw.json | default(aigov_api_raw.msg | default('no response')) }}
+  when: aigov_api_raw.status != 200
+
+- name: "Keep the result of {{ aigov_api_rpc }}"
+  ansible.builtin.set_fact:
+    aigov_api_response: "{{ aigov_api_raw.json }}"

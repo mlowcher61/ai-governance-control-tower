@@ -19,3 +19,8 @@ kinds:
   - yaml: "ao_workflows/definitions/*.yml"
   - vars: "aap_config/group_vars/**/*.yml"
   - vars: "aap_config/vars/*.yml"
+# Every variable in this project uses the aigov_ prefix, across playbooks and the collection roles: AAP
+# credentials inject aigov_* extra vars (aigov_api_url, aigov_discovery_role_arn, ...) and the discovery
+# roles pass aigov_scope_records between each other. Role-name prefixes would break that shared contract.
+skip_list:
+  - var-naming[no-role-prefix]

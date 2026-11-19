@@ -1,0 +1,6 @@
+---
+# Governance Inventory API (PostgREST). aigov_api_url and aigov_api_token are injected by an AAP credential
+# of type "AI Governance - Inventory API"; the token decides the PostgreSQL role.
+aigov_api_url: ""
+aigov_api_token: ""
+aigov_api_timeout: 60

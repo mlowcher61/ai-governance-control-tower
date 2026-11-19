@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: AI Governance Control Tower contributors
+  description: Discovers AI agents per scope with the platform adapters and records them in the Inventory API
+  license: GPL-3.0-or-later
+  min_ansible_version: "2.16"
+  platforms: []
+dependencies: []

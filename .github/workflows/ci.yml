@@ -38,7 +38,7 @@ jobs:
         run: cfn-lint --regions us-west-1 -- aws/cloudformation/*.yaml
 
       - name: ruff (Python)
-        run: ruff check demo collections/ansible_collections/mlowcher61 database/tests schemas/tests
+        run: ruff check demo collections/ansible_collections/mlowcher61 database/tests schemas/tests scripts
 
       - name: Contracts - schemas are valid JSON Schema 2020-12
         run: check-jsonschema --check-metaschema schemas/*.v1.json

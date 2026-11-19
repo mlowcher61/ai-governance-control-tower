@@ -22,7 +22,14 @@
     "network_mode": "PUBLIC",
     "protocol": "HTTP",
     "code_runtime": "PYTHON_3_13",
-    "authorizer": null
+    "authorizer": null,
+    "endpoints": [
+      {
+        "name": "DEFAULT",
+        "status": "READY",
+        "live_version": "1"
+      }
+    ]
   },
   "evidence_status": {
     "agent": "collected",

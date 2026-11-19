@@ -3,7 +3,7 @@
   "overall_status": "compliant",
   "risk": {
     "score": 20,
-    "category": "medium",
+    "category": "low",
     "factors": [
       {
         "factor": "production_environment",

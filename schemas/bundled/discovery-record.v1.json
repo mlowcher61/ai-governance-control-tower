@@ -1,0 +1,553 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/bundled/discovery-record.v1.json",
+  "title": "Discovery record, version 1",
+  "description": "One AI agent as normalized by a discovery adapter (docs/plan/03 section 3). Batches of these are sent to the Inventory API function api.record_discovery. Every adapter (AgentCore, Bedrock Agents Classic, later Azure and GCP) produces this shape.",
+  "type": "object",
+  "required": [
+    "provider",
+    "platform",
+    "account_ref",
+    "region",
+    "external_id",
+    "resource_ref",
+    "name",
+    "evidence_status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "provider": {
+      "$ref": "#/$defs/common_provider"
+    },
+    "platform": {
+      "$ref": "#/$defs/common_platform"
+    },
+    "account_ref": {
+      "$ref": "#/$defs/common_non_empty_string",
+      "description": "AWS account ID, Azure subscription or GCP project."
+    },
+    "account_alias": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "region": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "external_id": {
+      "$ref": "#/$defs/common_non_empty_string",
+      "description": "agentId or agentRuntimeId."
+    },
+    "resource_ref": {
+      "$ref": "#/$defs/common_non_empty_string",
+      "description": "ARN or resource URI."
+    },
+    "name": {
+      "$ref": "#/$defs/common_non_empty_string"
+    },
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "environment": {
+      "$ref": "#/$defs/common_environment"
+    },
+    "tags": {
+      "$ref": "#/$defs/common_tags"
+    },
+    "attributes": {
+      "type": "object",
+      "description": "Platform-specific details (guardrail, network mode, protocol, version, ...)."
+    },
+    "evidence_status": {
+      "$ref": "#/$defs/common_evidence_status"
+    },
+    "source_created_at": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/common_timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source_updated_at": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/common_timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "collected_at": {
+      "$ref": "#/$defs/common_timestamp"
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Ignored on input: the Inventory API computes it."
+    },
+    "foundation_model": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "model_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "model_id": {
+              "$ref": "#/$defs/common_non_empty_string"
+            },
+            "model_arn": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "vendor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "identity": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "principal_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "principal_ref": {
+              "$ref": "#/$defs/common_non_empty_string",
+              "description": "Execution role ARN."
+            },
+            "permissions_boundary_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "trust_policy": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "tags": {
+              "$ref": "#/$defs/common_tags"
+            },
+            "simulation": {
+              "$ref": "#/$defs/common_simulation"
+            },
+            "policies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/common_identity_policy"
+              }
+            },
+            "collected_at": {
+              "$ref": "#/$defs/common_timestamp"
+            }
+          }
+        }
+      ]
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/common_tool"
+      }
+    },
+    "data_sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/common_data_source"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "When identity evidence was collected, the identity and its policies must be present.",
+      "if": {
+        "properties": {
+          "evidence_status": {
+            "properties": {
+              "identity": {
+                "const": "collected"
+              }
+            },
+            "required": [
+              "identity"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "identity": {
+            "type": "object",
+            "required": [
+              "principal_ref",
+              "policies"
+            ]
+          }
+        },
+        "required": [
+          "identity"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "common_data_source": {
+      "type": "object",
+      "required": [
+        "type",
+        "external_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "knowledge_base",
+            "s3_data_source",
+            "database",
+            "other"
+          ]
+        },
+        "external_id": {
+          "$ref": "#/$defs/common_non_empty_string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "storage_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification_source": {
+          "enum": [
+            "s3_tag",
+            "registry",
+            "none",
+            null
+          ]
+        },
+        "attributes": {
+          "type": "object"
+        }
+      }
+    },
+    "common_decision": {
+      "enum": [
+        "pass",
+        "fail",
+        "unknown",
+        "not_applicable",
+        "error"
+      ]
+    },
+    "common_environment": {
+      "description": "Lowercase environment name, or null when it cannot be derived (policies then assume production).",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "common_evidence_status": {
+      "description": "Evidence domain -> evidence value.",
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "agent",
+          "tags",
+          "identity",
+          "identity_simulation",
+          "tools",
+          "data_sources",
+          "model",
+          "registration"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/common_evidence_value"
+      }
+    },
+    "common_evidence_value": {
+      "description": "docs/plan/03 section 3.3. Anything other than 'collected' makes dependent policies return 'unknown'.",
+      "enum": [
+        "collected",
+        "not_collected",
+        "access_denied",
+        "not_supported",
+        "error"
+      ]
+    },
+    "common_identity_policy": {
+      "type": "object",
+      "required": [
+        "type",
+        "ref",
+        "statements"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "aws_managed",
+            "customer_managed",
+            "inline",
+            "boundary"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/common_non_empty_string",
+          "description": "Policy ARN, or the inline policy name."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/common_policy_statement"
+          }
+        }
+      }
+    },
+    "common_non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "common_overall_status": {
+      "enum": [
+        "compliant",
+        "noncompliant",
+        "unknown",
+        "error"
+      ]
+    },
+    "common_platform": {
+      "description": "<provider>.<platform>, for example aws.bedrock_agentcore_runtime.",
+      "type": "string",
+      "pattern": "^(aws|azure|gcp|generic)\\.[a-z0-9_]+$"
+    },
+    "common_policy_id": {
+      "type": "string",
+      "pattern": "^AIGOV-[A-Z]+-\\d{3}$"
+    },
+    "common_policy_statement": {
+      "description": "One normalized IAM statement: string-or-list fields are always lists.",
+      "type": "object",
+      "required": [
+        "effect",
+        "actions",
+        "resources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sid": {
+          "type": "string"
+        },
+        "effect": {
+          "enum": [
+            "Allow",
+            "Deny"
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "has_conditions": {
+          "type": "boolean"
+        }
+      }
+    },
+    "common_provider": {
+      "enum": [
+        "aws",
+        "azure",
+        "gcp",
+        "generic"
+      ]
+    },
+    "common_purpose": {
+      "enum": [
+        "assessment",
+        "pre_remediation",
+        "verification"
+      ]
+    },
+    "common_risk_category": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "common_severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ]
+    },
+    "common_simulation": {
+      "description": "IAM policy simulator result per probe action.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9-]+:[a-zA-Z0-9*]+$"
+      },
+      "additionalProperties": {
+        "enum": [
+          "allowed",
+          "denied"
+        ]
+      }
+    },
+    "common_tags": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "common_timestamp": {
+      "description": "RFC 3339 timestamp, for example 2026-11-16T22:40:00Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "common_tool": {
+      "type": "object",
+      "required": [
+        "type",
+        "external_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "action_group",
+            "collaborator",
+            "gateway_target",
+            "mcp_server"
+          ]
+        },
+        "external_id": {
+          "$ref": "#/$defs/common_non_empty_string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executor_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_signature": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schema_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attributes": {
+          "type": "object"
+        }
+      }
+    },
+    "common_uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    }
+  }
+}

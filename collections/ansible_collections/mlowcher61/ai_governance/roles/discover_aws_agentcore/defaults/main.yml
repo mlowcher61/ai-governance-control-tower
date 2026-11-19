@@ -1,0 +1,15 @@
+---
+# Adapter for Amazon Bedrock AgentCore runtimes (platform aws.bedrock_agentcore_runtime).
+# Called by discover_ai_agents once per region with:
+#   aigov_region, aigov_account_ref, aigov_session (discovery role credentials), aigov_collected_at
+# Appends to aigov_scope_records (discovery records) and aigov_scope_errors.
+
+# Actions simulated for every execution role (the contract identity.simulation map). Administrator
+# probes plus a sensitive data action; policies read them as evidence of effective permissions.
+aigov_discovery_probe_checks:
+  - action: iam:CreateUser
+  - action: iam:AttachRolePolicy
+  - action: iam:PutRolePolicy
+  - action: secretsmanager:GetSecretValue
+# Tag that holds the environment name (production, development, ...)
+aigov_environment_tag: Environment

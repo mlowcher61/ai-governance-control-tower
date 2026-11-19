@@ -1,0 +1,19 @@
+---
+# AI Governance - Discover AI Agents (task T1.06)
+#
+# Finds every AI agent in the configured scopes with the read-only discovery role, builds a discovery record
+# per agent (schemas/discovery-record.v1.json), validates it, and records it through the Inventory API.
+# Repeat runs are idempotent: an unchanged agent writes no new snapshot.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role" and
+# "AI Governance - Inventory API (discovery)".
+# Artifacts (for automation orchestrator): governance_run_id, discovery_run_id, agents_discovered,
+# agents_changed, agents_missing, discovery_status (schemas/artifacts.v1.json#/$defs/discover).
+- name: AI Governance - discover AI agents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+  roles:
+    - role: mlowcher61.ai_governance.discover_ai_agents

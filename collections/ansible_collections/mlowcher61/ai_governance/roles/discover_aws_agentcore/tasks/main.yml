@@ -1,0 +1,56 @@
+---
+- name: "List the AgentCore runtimes in {{ aigov_region }}"
+  mlowcher61.ai_governance.agentcore_runtime_info:
+    region: "{{ aigov_region }}"
+    access_key: "{{ aigov_session.access_key }}"
+    secret_key: "{{ aigov_session.secret_key }}"
+    session_token: "{{ aigov_session.session_token }}"
+  register: aigov_agentcore
+
+- name: "Record a listing failure in {{ aigov_region }}"
+  ansible.builtin.set_fact:
+    aigov_scope_errors: >-
+      {{ aigov_scope_errors + (aigov_agentcore.errors | map('combine', {'region': aigov_region,
+         'platform': 'aws.bedrock_agentcore_runtime', 'scope_level': true}) | list) }}
+  when: aigov_agentcore.listing_status != 'collected'
+
+- name: Read each runtime's execution role
+  mlowcher61.ai_governance.iam_role_permissions_info:
+    region: "{{ aigov_region }}"
+    access_key: "{{ aigov_session.access_key }}"
+    secret_key: "{{ aigov_session.secret_key }}"
+    session_token: "{{ aigov_session.session_token }}"
+    role_arn: "{{ item.role_arn }}"
+  loop: "{{ aigov_agentcore.runtimes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.role_arn is truthy
+  register: aigov_agentcore_roles
+
+- name: Simulate the probe actions for each execution role
+  mlowcher61.ai_governance.iam_policy_simulation_info:
+    region: "{{ aigov_region }}"
+    access_key: "{{ aigov_session.access_key }}"
+    secret_key: "{{ aigov_session.secret_key }}"
+    session_token: "{{ aigov_session.session_token }}"
+    policy_source_arn: "{{ item.role_arn }}"
+    on_error: report
+    checks: "{{ aigov_discovery_probe_checks }}"
+  loop: "{{ aigov_agentcore.runtimes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.role_arn is truthy
+  register: aigov_agentcore_sims
+
+- name: Build the discovery records
+  ansible.builtin.set_fact:
+    aigov_scope_records: >-
+      {{ aigov_scope_records + [item.0 | mlowcher61.ai_governance.agentcore_discovery_record(
+           account_ref=aigov_account_ref, region=aigov_region, identity=item.1, simulation=item.2,
+           collected_at=aigov_collected_at, environment_tag=aigov_environment_tag)] }}
+    aigov_scope_errors: >-
+      {{ aigov_scope_errors + ((item.0.errors + (item.1.errors | default([])) + (item.2.errors | default([])))
+         | map('combine', {'region': aigov_region, 'agent': item.0.name, 'scope_level': false}) | list) }}
+  loop: "{{ aigov_agentcore.runtimes | zip(aigov_agentcore_roles.results | default([]), aigov_agentcore_sims.results | default([])) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}"

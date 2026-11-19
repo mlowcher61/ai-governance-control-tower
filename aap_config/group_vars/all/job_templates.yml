@@ -50,6 +50,23 @@ aigov_aws_templates:
       aigov_aws_region: "{{ aigov_aws_region }}"
     <<: *aigov_jt_defaults
 
+# T1.06: discovery. Needs the AWS account (role credentials) and the platform (Inventory API credentials).
+aigov_discovery_templates:
+  - name: AI Governance - Discover AI Agents
+    description: "T1.06 - discover AI agents with the read-only role and record them in the Inventory API"
+    playbook: playbooks/discovery/discover_ai_agents.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - Inventory API (discovery)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_aws_account_id: "{{ aigov_aws_account_id | string }}"
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_scope_name: ""
+      aigov_governance_run_id: ""
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:
@@ -125,6 +142,8 @@ controller_templates: >-
   {{ aigov_base_templates
      + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else [])
      + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_discovery_templates if (aigov_aws_account_id | string | length) == 12
+                                     and (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_api_templates if (aigov_openshift_credential | default('') | string | length) > 0
                                and (aigov_aap_credential | default('') | string | length) > 0 else [])
      + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else [])

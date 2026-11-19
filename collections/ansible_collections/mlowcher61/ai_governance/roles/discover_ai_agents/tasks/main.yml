@@ -1,0 +1,69 @@
+---
+- name: Check the Inventory API credential
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+
+- name: Check the AWS discovery role credential
+  ansible.builtin.assert:
+    that:
+      - aigov_discovery_role_arn | default('') | length > 0
+      - aigov_discovery_external_id | default('') | length > 0
+    fail_msg: Attach the credential "AI Governance - AWS Discovery Role" to this job template.
+    quiet: true
+
+- name: Work out the scopes to discover
+  ansible.builtin.set_fact:
+    aigov_scopes_selected: >-
+      {{ (aigov_discovery_scopes if aigov_discovery_scopes | length > 0 else
+          [{'name': 'default', 'provider': 'aws', 'account_ref': aigov_aws_account_id | string,
+            'regions': [aigov_aws_region], 'platforms': aigov_discovery_platforms}])
+         | selectattr('name', 'in', [aigov_scope_name] if aigov_scope_name | length > 0 else
+                      (aigov_discovery_scopes | map(attribute='name') | list) + ['default']) | list }}
+    aigov_collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+    aigov_scope_summaries: []
+
+- name: Check at least one scope was selected
+  ansible.builtin.assert:
+    that:
+      - aigov_scopes_selected | length > 0
+      - aigov_scopes_selected | map(attribute='account_ref') | select('match', '^\d{12}$') | list | length == aigov_scopes_selected | length
+    fail_msg: >-
+      No valid scope selected (aigov_scope_name={{ aigov_scope_name }}). Set aigov_aws_account_id (12 digits), or
+      define aigov_discovery_scopes.
+    quiet: true
+
+- name: Discover each scope
+  ansible.builtin.include_tasks: scope.yml
+  loop: "{{ aigov_scopes_selected }}"
+  loop_control:
+    loop_var: aigov_scope
+    label: "{{ aigov_scope.name }}"
+
+- name: Summarize the discovery
+  ansible.builtin.set_fact:
+    aigov_discovery_artifacts:
+      governance_run_id: "{{ aigov_scope_summaries[0].governance_run_id }}"
+      discovery_run_id: "{{ aigov_scope_summaries[0].discovery_run_id }}"
+      agents_discovered: "{{ aigov_scope_summaries | map(attribute='agents') | sum }}"
+      agents_changed: "{{ aigov_scope_summaries | map(attribute='changed') | sum }}"
+      agents_missing: "{{ aigov_scope_summaries | map(attribute='missing') | sum }}"
+      discovery_status: >-
+        {{ 'failed' if 'failed' in (aigov_scope_summaries | map(attribute='status'))
+           else 'partial' if 'partial' in (aigov_scope_summaries | map(attribute='status')) else 'succeeded' }}
+
+- name: Show the discovery summary
+  ansible.builtin.debug:
+    msg:
+      artifacts: "{{ aigov_discovery_artifacts }}"
+      scopes: "{{ aigov_scope_summaries }}"
+
+- name: Publish the discovery artifacts for automation orchestrator
+  ansible.builtin.set_stats:
+    data: "{{ aigov_discovery_artifacts }}"
+    per_host: false
+
+- name: Fail when discovery failed
+  ansible.builtin.assert:
+    that: aigov_discovery_artifacts.discovery_status != 'failed'
+    fail_msg: "Discovery failed: {{ aigov_scope_summaries | map(attribute='errors') | flatten }}"
+    quiet: true

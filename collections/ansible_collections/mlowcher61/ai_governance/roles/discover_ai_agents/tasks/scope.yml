@@ -1,0 +1,144 @@
+---
+# One discovery run for one scope (aigov_scope).
+- name: "Assume the read-only discovery role for {{ aigov_scope.name }}"
+  amazon.aws.sts_assume_role:
+    role_arn: "{{ aigov_discovery_role_arn }}"
+    external_id: "{{ aigov_discovery_external_id }}"
+    role_session_name: "aigov-discover-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+    duration_seconds: 3600
+    region: "{{ aigov_scope.regions[0] }}"
+  register: aigov_assumed
+  no_log: true
+
+- name: Keep the discovery session credentials
+  ansible.builtin.set_fact:
+    aigov_session:
+      access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+      secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+      session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+  no_log: true
+
+- name: Confirm the session is in the scope's account
+  amazon.aws.aws_caller_info:
+    region: "{{ aigov_scope.regions[0] }}"
+    access_key: "{{ aigov_session.access_key }}"
+    secret_key: "{{ aigov_session.secret_key }}"
+    session_token: "{{ aigov_session.session_token }}"
+  register: aigov_caller
+
+- name: Check the account
+  ansible.builtin.assert:
+    that: aigov_caller.account == aigov_scope.account_ref | string
+    fail_msg: "The discovery role is in account {{ aigov_caller.account }}, but scope {{ aigov_scope.name }} is {{ aigov_scope.account_ref }}."
+    quiet: true
+
+- name: Start the discovery run
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: start_discovery_run
+    aigov_job_id: "{{ tower_job_id | default(awx_job_id) | default('') | string }}"
+    # Optional keys are left out (the API defaults them) rather than sent as empty strings.
+    aigov_api_body: >-
+      {{ {'scope': aigov_scope}
+         | combine({'governance_run_id': aigov_governance_run_id} if aigov_governance_run_id | length > 0 else {})
+         | combine({'aap_job_id': aigov_job_id | int} if aigov_job_id | length > 0 else {}) }}
+
+- name: Keep the run IDs
+  ansible.builtin.set_fact:
+    aigov_run: "{{ aigov_api_response }}"
+    aigov_scope_records: []
+    aigov_scope_errors: []
+
+- name: Run the platform adapters in each region
+  ansible.builtin.include_role:
+    name: "{{ aigov_discovery_adapters[aigov_pr.1] }}"
+  vars:
+    aigov_region: "{{ aigov_pr.0 }}"
+    aigov_account_ref: "{{ aigov_scope.account_ref | string }}"
+  loop: "{{ aigov_scope.regions | product(aigov_scope.platforms) | list }}"
+  loop_control:
+    loop_var: aigov_pr
+    label: "{{ aigov_pr.1 }} in {{ aigov_pr.0 }}"
+
+- name: Validate every record against the discovery record contract
+  ansible.builtin.set_fact:
+    aigov_record_problems: >-
+      {{ aigov_record_problems | default([]) + [{'agent': item.name, 'errors':
+         item | ansible.utils.validate(lookup('ansible.builtin.file', aigov_discovery_schema) | from_json,
+                                       engine='ansible.utils.jsonschema', draft='2020-12')}] }}
+  loop: "{{ aigov_scope_records }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Split valid and invalid records
+  ansible.builtin.set_fact:
+    aigov_invalid: "{{ aigov_record_problems | default([]) | selectattr('errors') | list }}"
+    aigov_valid_records: >-
+      {{ aigov_scope_records | rejectattr('name', 'in', aigov_record_problems | default([]) | selectattr('errors')
+         | map(attribute='agent') | list) | list }}
+
+- name: Submit the records to the Inventory API
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: record_discovery
+    aigov_api_body:
+      discovery_run_id: "{{ aigov_run.discovery_run_id }}"
+      records: "{{ aigov_batch }}"
+  loop: "{{ aigov_valid_records | batch(aigov_discovery_batch_size) | list }}"
+  loop_control:
+    loop_var: aigov_batch
+    label: "{{ aigov_batch | length }} records"
+
+- name: Collect the per-agent results
+  ansible.builtin.set_fact:
+    aigov_recorded: "{{ aigov_recorded | default([]) + aigov_api_response }}"
+  when: aigov_valid_records | length > 0
+
+- name: Decide the run status
+  vars:
+    aigov_scope_level: "{{ aigov_scope_errors | selectattr('scope_level') | list }}"
+    aigov_listings: "{{ aigov_scope.regions | length * aigov_scope.platforms | length }}"
+  ansible.builtin.set_fact:
+    # failed: nothing could be listed; partial: a listing failed, a call errored, or a record was invalid
+    # (AccessDenied on one agent's details is an evidence gap recorded on that agent, not a run failure)
+    aigov_run_status: >-
+      {{ 'failed' if aigov_scope_level | length >= aigov_listings | int
+         else 'partial' if (aigov_scope_level | length > 0 or aigov_invalid | length > 0
+                            or aigov_scope_errors | selectattr('status', 'equalto', 'error') | list | length > 0)
+         else 'succeeded' }}
+
+- name: Complete the discovery run
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: complete_discovery_run
+    aigov_api_body:
+      discovery_run_id: "{{ aigov_run.discovery_run_id }}"
+      status: "{{ aigov_run_status }}"
+      counts:
+        agents: "{{ aigov_recorded | default([]) | length }}"
+        new: "{{ aigov_recorded | default([]) | selectattr('change', 'equalto', 'new') | list | length }}"
+        changed: "{{ aigov_recorded | default([]) | selectattr('change', 'equalto', 'changed') | list | length }}"
+        unchanged: "{{ aigov_recorded | default([]) | selectattr('change', 'equalto', 'unchanged') | list | length }}"
+        invalid: "{{ aigov_invalid | length }}"
+        evidence_gaps: "{{ aigov_scope_errors | rejectattr('scope_level') | list | length }}"
+      errors: "{{ aigov_scope_errors + aigov_invalid }}"
+
+- name: Remember the scope summary
+  ansible.builtin.set_fact:
+    aigov_scope_summaries: >-
+      {{ aigov_scope_summaries + [{'scope': aigov_scope.name, 'governance_run_id': aigov_run.governance_run_id,
+         'discovery_run_id': aigov_run.discovery_run_id, 'status': aigov_run_status,
+         'agents': aigov_recorded | default([]) | length,
+         'changed': aigov_recorded | default([]) | selectattr('change', 'in', ['new', 'changed']) | list | length,
+         'missing': aigov_api_response.missing | length,
+         'results': aigov_recorded | default([]) | map(attribute='change') | list
+                    | zip(aigov_recorded | default([]) | map(attribute='external_id')) | list,
+         'errors': aigov_scope_errors + aigov_invalid}] }}
+    aigov_recorded: []
+    aigov_record_problems: []
