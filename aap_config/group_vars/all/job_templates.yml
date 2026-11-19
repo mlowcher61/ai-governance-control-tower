@@ -67,6 +67,14 @@ aigov_discovery_templates:
       aigov_governance_run_id: ""
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Check Inventory
+    description: "T1.06 acceptance - read-only checks of the inventory and the policy inputs (evaluator role)"
+    playbook: playbooks/discovery/check_inventory.yml
+    credentials:
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:

@@ -1,0 +1,110 @@
+---
+# AI Governance - Check Inventory (T1.06 acceptance, reused by the Stage 1 end-to-end test)
+#
+# Read-only. Reads the Inventory API as the evaluator role and checks:
+#   * the expected number of agents is in the inventory and none is missing;
+#   * the evidence domains discovery can collect are 'collected' (no AccessDenied);
+#   * each agent's policy input (api.evaluation_inputs + an evaluation block) matches the policy input
+#     contract (schemas/bundled/policy-input.v1.json);
+#   * optional expectations per agent: which policies its execution role must, or must not, carry.
+#
+# Credential: "AI Governance - Inventory API (evaluator)".
+- name: AI Governance - check the governance inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_expected_agents: 4
+    aigov_collectable_evidence: [agent, tags, identity, identity_simulation]
+    # agent name -> policy names its execution role must (or must not) have
+    aigov_expected_policies:
+      quick_helper_bot: {must: [AdministratorAccess]}
+      payments_dispute_assistant: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
+      hr_faq_agent: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
+      research_runtime: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
+  tasks:
+    - name: Check the Inventory API credential
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Read the agent overview
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: agent_overview
+        aigov_api_query: order=name
+
+    - name: Keep the overview
+      ansible.builtin.set_fact:
+        aigov_overview: "{{ aigov_api_response }}"
+
+    - name: Read the policy inputs
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: evaluation_inputs
+
+    - name: Add the evaluation block the Evaluate job adds, and validate each input against the contract
+      vars:
+        aigov_schema: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/policy-input.v1.json') | from_json }}"
+        aigov_eval:
+          governance_run_id: 00000000-0000-4000-8000-000000000000
+          evaluated_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          purpose: assessment
+      ansible.builtin.set_fact:
+        aigov_input_problems: >-
+          {{ aigov_input_problems | default([]) + [{'agent': item.input.agent.name, 'errors':
+             (item.input | combine({'evaluation': aigov_eval}))
+             | ansible.utils.validate(aigov_schema, engine='ansible.utils.jsonschema', draft='2020-12')}] }}
+        aigov_inputs: "{{ aigov_inputs | default({}) | combine({item.input.agent.name: item.input}) }}"
+      loop: "{{ aigov_api_response }}"
+      loop_control:
+        label: "{{ item.input.agent.name }}"
+
+    - name: Work out the problems
+      ansible.builtin.set_fact:
+        aigov_problems: >-
+          {%- set p = [] -%}
+          {%- if aigov_overview | rejectattr('missing_since') | list | length != aigov_expected_agents | int -%}
+          {%- set _ = p.append('expected ' ~ aigov_expected_agents ~ ' present agents, found '
+                               ~ (aigov_overview | rejectattr('missing_since') | map(attribute='name') | list)) -%}
+          {%- endif -%}
+          {%- for a in aigov_overview -%}
+          {%- for d in aigov_collectable_evidence if a.evidence_status[d] | default('missing') != 'collected' -%}
+          {%- set _ = p.append(a.name ~ ': evidence ' ~ d ~ ' is ' ~ a.evidence_status[d] | default('missing')) -%}
+          {%- endfor -%}
+          {%- endfor -%}
+          {%- for x in aigov_input_problems | default([]) if x.errors -%}
+          {%- set _ = p.append(x.agent ~ ': policy input breaks the contract: ' ~ (x.errors | map(attribute='message') | list)) -%}
+          {%- endfor -%}
+          {%- for name, e in aigov_expected_policies.items() if name in aigov_inputs -%}
+          {%- set have = aigov_inputs[name].identity.policies | map(attribute='name') | list -%}
+          {%- for m in e.must | default([]) if m not in have -%}
+          {%- set _ = p.append(name ~ ': role should carry ' ~ m ~ ', has ' ~ have) -%}
+          {%- endfor -%}
+          {%- for m in e.must_not | default([]) if m in have -%}
+          {%- set _ = p.append(name ~ ': role must not carry ' ~ m) -%}
+          {%- endfor -%}
+          {%- endfor -%}
+          {{ p }}
+
+    - name: Show the inventory
+      ansible.builtin.debug:
+        msg: >-
+          {{ aigov_overview | map(attribute='name')
+             | zip(aigov_overview | map(attribute='registration_status'),
+                   aigov_overview | map(attribute='environment'),
+                   aigov_overview | map(attribute='compliance_status'),
+                   aigov_overview | map(attribute='identity_ref'))
+             | map('join', ' | ') | list }}
+
+    - name: Check the inventory
+      ansible.builtin.assert:
+        that: aigov_problems | length == 0
+        fail_msg: "Inventory check failed: {{ aigov_problems }}"
+        success_msg: >-
+          {{ aigov_overview | length }} agents; evidence collected; every policy input matches the contract;
+          execution role policies as expected.

@@ -1,0 +1,23 @@
+---
+# Read one Inventory API view: GET <aigov_api_url>/<aigov_api_view>?<aigov_api_query>.
+# Sets aigov_api_response (a list of rows). The token never appears in output.
+- name: "Read the Inventory API view {{ aigov_api_view }}"
+  ansible.builtin.uri:
+    url: >-
+      {{ aigov_api_url | regex_replace('/+$', '') }}/{{ aigov_api_view
+      }}{{ ('?' ~ aigov_api_query) if aigov_api_query | default('') | length > 0 else '' }}
+    headers:
+      Authorization: "Bearer {{ aigov_api_token }}"
+    timeout: "{{ aigov_api_timeout }}"
+    status_code: [200, 400, 401, 403, 404, 500]
+  register: aigov_api_raw
+  no_log: true
+
+- name: "Fail with the Inventory API error for {{ aigov_api_view }}"
+  ansible.builtin.fail:
+    msg: "Inventory API view {{ aigov_api_view }} returned HTTP {{ aigov_api_raw.status }}: {{ aigov_api_raw.json | default(aigov_api_raw.msg | default('')) }}"
+  when: aigov_api_raw.status != 200
+
+- name: "Keep the rows of {{ aigov_api_view }}"
+  ansible.builtin.set_fact:
+    aigov_api_response: "{{ aigov_api_raw.json }}"
