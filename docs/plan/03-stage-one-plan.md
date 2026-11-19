@@ -155,7 +155,7 @@ Client: boto3 `bedrock-agentcore-control` (✅ [operations](https://docs.aws.ama
 
 ### 4.5 Governance registry (external metadata)
 
-Some data cannot be discovered, so it is supplied as code in `inventory/registry/` and loaded by the job template **AI Governance - Load Governance Registry**:
+Some data cannot be discovered, so it is supplied as code in `inventory/registry/` and loaded by the job template **AI Governance - Load Governance Registry**. The format is the contract `schemas/registry.v1.json`:
 
 ```yaml
 # inventory/registry/owners.yml
@@ -170,15 +170,15 @@ aigov_owners:
 # inventory/registry/registrations.yml
 aigov_registrations:
   - registration_id: REG-0001
-    match: { provider: aws, platform: aws.bedrock_agents_classic, account_id: "111122223333", region: us-east-1, name: payments_dispute_assistant }
+    match_keys: { provider: aws, platform: aws.bedrock_agentcore_runtime, account_ref: "111122223333", name: payments_dispute_assistant }
     owner_id: own-payments-ml
     business_purpose: Summarize card dispute cases for analysts
     environment: production
     data_classification: confidential
     declared_model: null
     approved_tools: []
-    risk_assessment: { status: completed, completed_at: "2026-10-05", expires_at: "2027-10-05", reference: RA-2026-114 }
-    sensitive_data_approval: { status: approved, approved_by: data-governance-board, expires_at: "2027-04-05", reference: DGB-77 }
+    risk_assessment: { status: complete, completed_at: "2026-10-05", expires_at: "2027-10-05", reference: RA-2026-114 }
+    sensitive_data_approval: { approved_by: data-governance-board, approved_at: "2026-10-06", expires_at: "2027-04-05", reference: DGB-77 }
 ```
 
 A discovered agent with no matching registration has the registration status `unregistered`. That is the definition of an **unauthorized (shadow) agent**.
