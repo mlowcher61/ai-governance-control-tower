@@ -109,7 +109,7 @@ Step 2 needs AAP API access (`AAP_SERVER` and `AAP_API_TOKEN`), and the AAP cred
 
 `configure_ao.yml` never fails because of missing AO permissions. Instead, it lists the open items under `action_required`. Typical items:
 
-- **SSRF allowlist.** `APP_INTEGRATION_URL_ALLOWED_HOSTS` must contain `opa.ai-governance.svc`, `governance-api.ai-governance.svc`, and the AAP gateway host. The setting must also reach the **ao-worker** pods, not only ao-backend.
+- **SSRF allowlist.** `APP_INTEGRATION_URL_ALLOWED_HOSTS` must contain `opa.ai-governance.svc`, `governance-api.ai-governance.svc`, and the AAP gateway host. The setting must also reach the **ao-worker** pods, not only ao-backend. Without an AO identity that has the system `admin` role, run the AAP job template **AI Governance - Configure AO Network Allowlist** instead. It sets the value through the AO deployment (the `ao-admin-settings` ConfigMap) with the OpenShift credential, and checks it inside ao-worker.
 - **LLM integration health.** If the integration reports `error` (for example HTTP 401), renew its API key in the AO credential. The reported status is cached until an AO admin re-validates the integration, so confirm the fix by running **AI Governance - LLM Smoke Test (as code)**.
 - **Service account permissions.** A new service account gets only the roles an AO administrator assigns. `aigov-trigger` needs these roles in the governance project:
   - workflow read and run

@@ -61,3 +61,5 @@ aigov_api_token_ttl_days: 90
 # automation orchestrator (T0.08). AO route URL, e.g. https://ao.apps.example.com (empty = skip the AO
 # credential and job templates). See ao_workflows/README.md.
 aigov_ao_url: ""
+# Namespace of the AO installation (used by "AI Governance - Configure AO Network Allowlist").
+aigov_ao_namespace: automation-orchestrator

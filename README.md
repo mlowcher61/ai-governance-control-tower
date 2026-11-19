@@ -107,9 +107,9 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 
 ### Open items (2026-11-19, cluster mk6hb)
 
-| Item | Who | How |
-|---|---|---|
-| Add `opa.ai-governance.svc`, `governance-api.ai-governance.svc` and the AAP host to the AO setting `APP_INTEGRATION_URL_ALLOWED_HOSTS`, and make sure it reaches ao-worker | AO administrator | AO settings, or the AO operator configuration. Needed before AO calls OPA directly (Stage 2) |
+None. The AO SSRF allowlist is set by **AI Governance - Configure AO Network Allowlist** (see below).
+If another tool rewrites the `ao-admin-settings` ConfigMap in the AO namespace (for example the sales.demos
+"Configure Automation Orchestrator" job), run that job template again afterwards.
 
 ## The Inventory API
 
@@ -168,6 +168,7 @@ The configuration-as-code entry points are:
 3. **AI Governance - Deploy Platform Services**: PostgreSQL, the Inventory API, OPA, and Grafana on OpenShift. This needs `aigov_openshift_credential`, the name of an existing AAP credential of type "OpenShift or Kubernetes API Bearer Token". The Grafana URL and the location of its admin password are printed at the end of the job.
    Then run **AI Governance - Apply Database Migrations** (creates the schema and the API functions) and **AI Governance - Issue API Tokens** (needs `aigov_aap_credential`, an existing AAP credential of type "Red Hat Ansible Automation Platform"). The second job puts one API token per role into the *AI Governance - Inventory API (…)* credentials.
 4. **[ao_workflows/README.md](ao_workflows/README.md)**: configure automation orchestrator (**AI Governance - Configure Automation Orchestrator**) and load the governance workflows (**AI Governance - Apply AO Workflows**).
+5. **AI Governance - Configure AO Network Allowlist**: AO blocks calls to cluster-internal addresses by default. This job adds the AAP gateway, OPA and the Inventory API to AO's allowlist (`APP_INTEGRATION_URL_ALLOWED_HOSTS`). It writes them into the `ao-admin-settings` ConfigMap that every AO component loads, keeps any hosts already listed, restarts AO only when the list changed, and checks the value inside a running ao-worker pod. It uses the OpenShift credential, so no AO administrator role is needed. Set `aigov_ao_namespace` in `customer.yml` if AO is not in `automation-orchestrator`.
 
 Credentials are entered into AAP (or pulled from your secret manager). **No secrets are ever stored in this repository.**
 

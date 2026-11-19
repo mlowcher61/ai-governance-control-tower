@@ -16,7 +16,7 @@ playbook is safe: it converges AAP to these definitions.
 | Project | `AI Governance Control Tower` (this Git repository) |
 | Inventory | `AI Governance - Localhost` |
 | Execution environment | `AI Governance EE` (registered once `aigov_custom_ee_image` is set, after `scripts/build_ee.sh`). It is pulled with `aigov_ee_registry_credential`, a hub username/password credential, because an AAP token gets only anonymous registry access |
-| Job templates | `AI Governance - Check Environment`; AWS: `- Deploy AWS Governance Roles`, `- Deploy Demo Agents`, `- Verify AWS Baseline` (when `aigov_aws_account_id` is set); platform: `- Deploy Platform Services`, `- Apply Database Migrations` (when `aigov_openshift_credential` is set), `- Issue API Tokens` (also needs `aigov_aap_credential`); automation orchestrator: `- Configure Automation Orchestrator`, `- Apply AO Workflows` (when `aigov_ao_url` is set) |
+| Job templates | `AI Governance - Check Environment`; AWS: `- Deploy AWS Governance Roles`, `- Deploy Demo Agents`, `- Verify AWS Baseline` (when `aigov_aws_account_id` is set); platform: `- Deploy Platform Services`, `- Apply Database Migrations` (when `aigov_openshift_credential` is set), `- Issue API Tokens` (also needs `aigov_aap_credential`); automation orchestrator: `- Configure Automation Orchestrator`, `- Apply AO Workflows` (when `aigov_ao_url` is set), `- Configure AO Network Allowlist` (also needs `aigov_openshift_credential`) |
 
 Why three role credential types? AAP allows only one credential of each type on a job template, so a
 template that only has the *discovery* type can never assume the *remediation* role.
