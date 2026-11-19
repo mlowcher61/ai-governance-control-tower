@@ -234,17 +234,62 @@
         state: present
         definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/grafana.yml.j2') | ansible.builtin.from_yaml_all | list }}"
 
-    - name: Wait for OPA, PostgREST and Grafana to be available
-      kubernetes.core.k8s_info:
-        kind: Deployment
-        namespace: "{{ aigov_platform_namespace }}"
-        name: "{{ item }}"
-        wait: true
-        wait_condition:
-          type: Available
-          status: "True"
-        wait_timeout: 300
-      loop: [opa, governance-api, grafana]
+    - name: Wait for the services and diagnose any that do not start
+      block:
+        - name: Wait for OPA, PostgREST and Grafana to be available
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            namespace: "{{ aigov_platform_namespace }}"
+            name: "{{ item }}"
+            wait: true
+            wait_condition:
+              type: Available
+              status: "True"
+            wait_timeout: 300
+          loop: [opa, governance-api, grafana]
+      rescue:
+        - name: Read the platform pods
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "{{ aigov_platform_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/part-of=ai-governance
+          register: aigov_pods
+
+        - name: Show the state of every pod that is not ready
+          ansible.builtin.debug:
+            msg: >-
+              {{ item.metadata.name }}: phase={{ item.status.phase }}
+              containers={{ item.status.containerStatuses | default([]) | map(attribute='state') | list }}
+              conditions={{ item.status.conditions | default([]) | selectattr('status', 'equalto', 'False') | list }}
+          loop: "{{ aigov_pods.resources | rejectattr('status.phase', 'equalto', 'Succeeded') | list }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+
+        - name: Read the recent logs of pods that are not ready
+          kubernetes.core.k8s_log:
+            namespace: "{{ aigov_platform_namespace }}"
+            name: "{{ item.metadata.name }}"
+            tail_lines: 40
+          loop: >-
+            {{ aigov_pods.resources | rejectattr('status.phase', 'equalto', 'Succeeded')
+               | rejectattr('status.containerStatuses', 'undefined')
+               | selectattr('status.containerStatuses.0.ready', 'equalto', false) | list }}
+          loop_control:
+            label: "{{ item.metadata.name }}"
+          register: aigov_pod_logs
+          failed_when: false
+
+        - name: Show the recent logs
+          ansible.builtin.debug:
+            msg: "{{ item.log_lines | default([item.msg | default('no log')]) }}"
+          loop: "{{ aigov_pod_logs.results | default([]) }}"
+          loop_control:
+            label: "{{ item.item.metadata.name }}"
+
+        - name: Fail after printing the diagnostics
+          ansible.builtin.fail:
+            msg: One or more platform services did not become available. See the pod state and logs above.
 
     # ---- Acceptance checks -------------------------------------------------------------------
     - name: Read the Grafana route
