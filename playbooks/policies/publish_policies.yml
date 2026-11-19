@@ -25,6 +25,9 @@
     aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
     # Set to false to publish without the live check against the demo fixtures (other policy sets)
     aigov_verify_golden: true
+    # Negative self-test: add one always-failing test to the candidate (never served). The job must then
+    # REFUSE the bundle and leave the live policies unchanged.
+    aigov_publish_self_test: false
   tasks:
     - name: Check the OpenShift credential is attached
       ansible.builtin.assert:
@@ -75,7 +78,10 @@
     - name: Separate the serving policies from the tests
       ansible.builtin.set_fact:
         aigov_serving: "{{ aigov_bundle_rego | dict2items | rejectattr('key', 'match', '^tests__') | items2dict | combine(aigov_bundle_data) }}"
-        aigov_candidate: "{{ aigov_bundle_rego | combine(aigov_bundle_data) }}"
+        aigov_candidate: >-
+          {{ aigov_bundle_rego | combine(aigov_bundle_data)
+             | combine({'tests__publish_self_test.rego': "package governance.publish_self_test\n\ntest_the_publish_job_refuses_this_bundle if false\n"}
+                       if aigov_publish_self_test | bool else {}) }}
         aigov_policy_check_job: "opa-policy-check-{{ aigov_bundle_revision[:10] }}-{{ (aigov_bundle_rego | to_json | hash('sha256'))[:6] }}"
 
     # ---- 2. Check the candidate with the server's OPA image --------------------------------------------------
@@ -166,11 +172,14 @@
 
     - name: Publish and verify, rolling back on a failed verification
       block:
-        - name: Replace the served policies
+        - name: Replace the served policies (skipped when this exact bundle is already served)
           ansible.builtin.include_tasks: tasks/serve_bundle.yml
           vars:
             aigov_serve_data: "{{ aigov_serving }}"
             aigov_serve_revision: "{{ aigov_bundle_revision }}"
+          when: >-
+            aigov_previous.resources | length == 0
+            or aigov_previous.resources[0].data | default({}) != aigov_serving
 
         # ---- 4. Verify the live server ------------------------------------------------------------------
         - name: Read the platform info from the live server

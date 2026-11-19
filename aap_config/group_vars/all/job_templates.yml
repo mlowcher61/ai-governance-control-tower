@@ -102,8 +102,10 @@ aigov_platform_templates:
     playbook: playbooks/policies/publish_policies.yml
     credentials:
       - "{{ aigov_openshift_credential }}"
+    ask_variables_on_launch: true
     extra_vars:
       aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+      aigov_publish_self_test: false
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Apply Database Migrations
