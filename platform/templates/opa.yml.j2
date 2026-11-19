@@ -38,6 +38,8 @@ spec:
             - --disable-telemetry
             - --log-level=info
             - --watch
+            # skip the hidden ..data folders of the ConfigMap volume (otherwise every file loads twice)
+            - --ignore=.*
             - /policies
           ports:
             - {name: http, containerPort: 8181}

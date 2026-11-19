@@ -1,5 +1,6 @@
 # Checks a candidate policy bundle with the SAME OPA image the server runs, before it is published:
 # opa check --strict (init container), then opa test. The bundle is mounted from a candidate ConfigMap.
+# --ignore=.* skips the hidden ..data folders of a ConfigMap volume (otherwise every file loads twice).
 # No network access is needed. The Job fails when either step fails, and the publish job then refuses it.
 apiVersion: batch/v1
 kind: Job
@@ -19,7 +20,7 @@ spec:
       initContainers:
         - name: check
           image: {{ aigov_platform_images.opa }}
-          args: [check, --strict, /bundle]
+          args: [check, --strict, --ignore=.*, /bundle]
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {memory: 256Mi}
@@ -28,7 +29,7 @@ spec:
       containers:
         - name: test
           image: {{ aigov_platform_images.opa }}
-          args: [test, --verbose, /bundle]
+          args: [test, --verbose, --ignore=.*, /bundle]
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {memory: 256Mi}

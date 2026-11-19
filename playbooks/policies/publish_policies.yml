@@ -64,7 +64,7 @@
         aigov_config: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/data/governance/config/data.json') | from_json }}"
         aigov_files: "{{ aigov_rego_files.files | map(attribute='path') | sort | list }}"
         aigov_keys: >-
-          {{ aigov_files | map('regex_replace', '^.*/policies/', '') | map('replace', '/', '__') | list }}
+          {{ aigov_files | map('regex_replace', '^.*/policies/(governance|tests)/', '\\1/') | map('replace', '/', '__') | list }}
       ansible.builtin.set_fact:
         aigov_bundle_rego: >-
           {{ dict(aigov_keys | zip(query('ansible.builtin.file', *aigov_files, rstrip=false))) }}
@@ -96,9 +96,23 @@
           kubernetes.core.k8s:
             state: present
             definition: "{{ lookup('ansible.builtin.template', aigov_repo_root ~ '/platform/templates/opa-test-job.yml.j2') | from_yaml }}"
-            wait: true
-            wait_condition: {type: Complete, status: "True"}
-            wait_timeout: 300
+
+        - name: Wait until the check Job succeeds or fails
+          kubernetes.core.k8s_info:
+            kind: Job
+            namespace: "{{ aigov_platform_namespace }}"
+            name: "{{ aigov_policy_check_job }}"
+          register: aigov_check_job
+          until: >-
+            (aigov_check_job.resources[0].status.succeeded | default(0)) > 0 or
+            (aigov_check_job.resources[0].status.failed | default(0)) > 0
+          retries: 60
+          delay: 5
+
+        - name: Fail when the check Job failed
+          ansible.builtin.assert:
+            that: (aigov_check_job.resources[0].status.succeeded | default(0)) > 0
+            quiet: true
       rescue:
         - name: Read the check Job pod
           kubernetes.core.k8s_info:
