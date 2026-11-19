@@ -124,6 +124,12 @@
           ({{ aigov_ao_settings_data.get(item) | type_debug }} -> {{ aigov_ao_new_data[item] | type_debug }})
       loop: "{{ aigov_ao_new_data.keys() | list }}"
 
+    - name: Show the allowlist before and after (not secret)
+      ansible.builtin.debug:
+        msg:
+          before: "{{ aigov_ao_settings_data.APP_INTEGRATION_URL_ALLOWED_HOSTS | default('') }}"
+          after: "{{ aigov_ao_new_data.APP_INTEGRATION_URL_ALLOWED_HOSTS }}"
+
     - name: Write the allowlist into the settings ConfigMap
       kubernetes.core.k8s:
         state: present
