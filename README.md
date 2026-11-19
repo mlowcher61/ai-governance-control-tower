@@ -2,13 +2,14 @@
 
 ### Powered by Red Hat Ansible Automation Platform automation orchestrator
 
-> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) starting.** The plan was approved on 2026-11-17. Implemented so far:
+> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) in progress. T1.01 and T1.02 are done.** The plan was approved on 2026-11-17. The current environment is cluster **mk6hb**. It was rebuilt from config as code only. Implemented so far:
 > - AAP config as code (`aap_config/`)
 > - AWS governance roles and demo AgentCore runtimes (CloudFormation)
 > - Governance platform services on OpenShift: PostgreSQL, the Inventory API (PostgREST), OPA, and Grafana (`playbooks/platform/`, `platform/`)
+> - Database schema (V001) and the Inventory API layer (V002): role-scoped RPC functions and views, with one JWT per role stored in AAP credentials
 > - automation orchestrator config as code and the workflow loader (`ao_workflows/`)
 > - Environment check and least-privilege verification playbooks
-> - CI
+> - CI: lint, unit tests, SQL tests, and HTTP tests through PostgREST
 >
 > See [Implementation status](#implementation-status).
 
@@ -100,16 +101,65 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | T0.07 AWS governance roles and demo agents | Done in us-west-1. Governance roles deployed. Full verification on the new EE (AAP job 1271): 19/19 least-privilege checks passed, and all 4 AgentCore runtimes are listed READY through the read-only discovery role |
 | T0.04 Execution environment | Done: `quay.io/locust61/ai-governance-ee:0.1.0` (public; amd64; boto3 1.43 with AgentCore clients), registered in AAP as `ai-governance-ee` and used by all governance job templates |
 | T0.06 Governance platform services | Done (AAP job 1289): PostgreSQL 16, PostgREST v16.6, OPA 1.22.4 (2 replicas), and Grafana 13.3.1 in namespace `ai-governance`. Default-deny NetworkPolicies are proven (a labelled pod reaches the database; an unlabelled pod is blocked). AAP job pods reach OPA and the Inventory API |
-| T1.01 Database schema and migrations | Done: `database/migrations/V001__baseline.sql`, applied on the cluster by **AI Governance - Apply Database Migrations** (AAP job 1295; re-run job 1297 `changed=0`). Hash-chained, append-only audit log. SQL tests run in CI (`database/tests/run_local.sh` runs them locally) |
+| T1.01 Database schema and migrations | Done: `database/migrations/V001__baseline.sql`, applied by **AI Governance - Apply Database Migrations** (t5d26: jobs 1295/1297; mk6hb: job 49, re-run job 51 `changed=0`). Hash-chained, append-only audit log. SQL tests run in CI (`database/tests/run_local.sh` runs them locally) |
+| T1.02 Inventory API layer | Done: `database/migrations/V002__api_stage1.sql` adds the Stage 1 `api` functions: discovery runs and records, registry load, evaluation inputs and results, the finding lifecycle, AI explanations, and audit append. It also adds the read-only views. Each function can be run only by its own PostgreSQL role. **AI Governance - Issue API Tokens** signs one JWT per role and stores it in the AAP credential *AI Governance - Inventory API (&lt;role&gt;)*. On mk6hb: V002 applied (job 55); tokens issued and checked (job 56, 15/15 HTTP checks). See [The Inventory API](#the-inventory-api) |
 | T0.08 AO config as code and loader | Done: the loader test workflow is applied from YAML, idempotent (second run creates no new version), and executes (AO execution `daa650ad`, which ran AAP job 1284). The LLM smoke test passes (execution `fb83e168`). The `aigov-trigger` service account and its AAP credential exist; its AO project role is still to be granted (see [Open items](#open-items-2026-11-19)). AO administrator items are listed in [ao_workflows/README.md](ao_workflows/README.md#items-only-an-ao-administrator-can-do) |
 
-### Open items (2026-11-19)
+### Open items (2026-11-19, cluster mk6hb)
 
 | Item | Who | How |
 |---|---|---|
-| Give the AO service account `aigov-trigger` the `project-user` role | You (AO project-admin credential) | `ansible-playbook ao_workflows/configure_ao.yml`. The role assignment is defined as code there |
+| Make the AO service account behind `$AO_DEMO_CLIENT_ID` (`claude-work-access`) **project-admin** in AO project `default`. Today it has only the default `authenticated` role, so it can see no projects and gets 403 on integrations | AO administrator | AO UI: *Access → Projects → default → Role assignments*. This unblocks `configure_ao.yml`, which then creates `aigov-trigger`, gives it `project-user`, and stores its client credential in AAP |
+| On mk6hb, check that the AO integrations and credentials the workflows use exist: *Ansible Automation Platform* / *AAP Admin* and *LiteMaaS* / *LiteMaaS API Key* | AO administrator | `configure_ao.yml` reports any that are missing ([ao_workflows/config/connections.yml](ao_workflows/config/connections.yml) holds the names) |
 | Add `opa.ai-governance.svc`, `governance-api.ai-governance.svc` and the AAP host to the AO setting `APP_INTEGRATION_URL_ALLOWED_HOSTS`, and make sure it reaches ao-worker | AO administrator | AO settings, or the AO operator configuration. Needed before AO calls OPA directly (Stage 2) |
-| Re-validate the "LiteMaaS" integration in AO | AO administrator (cosmetic) | The key was renewed and the LLM smoke test passes; only the cached status still shows the old 401 |
+
+## The Inventory API
+
+Playbooks never connect to PostgreSQL directly. They call the **Governance Inventory API**, a PostgREST
+service at `http://governance-api.ai-governance.svc:3000`. The API is reachable only from inside the cluster,
+by AAP job pods and the AO worker. Each request is a JSON `POST /rpc/<function>` (or a `GET` on a view)
+with a bearer token. The token decides which PostgreSQL role runs the request, and each role may call only its
+own functions:
+
+| AAP credential | Role | May call |
+|---|---|---|
+| AI Governance - Inventory API (discovery) | `aigov_discovery` | `start_discovery_run`, `record_discovery`, `complete_discovery_run`, `append_audit_event` |
+| AI Governance - Inventory API (registry) | `aigov_registry` | `load_registry`, `append_audit_event` |
+| AI Governance - Inventory API (evaluator) | `aigov_evaluator` | read `evaluation_inputs`; `record_evaluation`, `record_explanations`, `append_audit_event` |
+| AI Governance - Inventory API (remediator) | `aigov_remediator` | `append_audit_event` now; the Stage 2 remediation functions later |
+| AI Governance - Inventory API (reader) | `aigov_reader` | read `agent_overview`, `findings_open` |
+| AI Governance - Inventory API (auditor) | `aigov_auditor` | `whoami` (the audit reports arrive in a later task) |
+
+A job template gets the API by attaching one of these credentials. That injects the extra vars
+`aigov_api_url` and `aigov_api_token`, and a task calls the API like this:
+
+```yaml
+- name: Start a discovery run
+  ansible.builtin.uri:
+    url: "{{ aigov_api_url }}/rpc/start_discovery_run"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ aigov_api_token }}"
+    body_format: json
+    body:
+      scope: {provider: aws, account_ref: "{{ aigov_aws_account_id }}", regions: ["{{ aigov_aws_region }}"]}
+  register: aigov_run
+  no_log: true   # keeps the token out of the job output
+```
+
+Rules that the API enforces itself:
+
+- `record_discovery` is idempotent: sending the same agent twice writes nothing new. A changed agent gets a new
+  history snapshot and an `agent.config_drift` audit event.
+- An access-denied answer from AWS never erases what is already known. Permissions, tools, and data sources
+  are replaced only when that evidence was actually collected.
+- Agents that disappear are marked `missing_since`, and only by a fully successful run. They are never deleted.
+- A `fail` decision opens a *violation* finding; an `unknown` decision opens an *insufficient evidence* finding.
+  Unknown evidence never closes a violation.
+- AI explanations are stored as advisory text only, trimmed and limited to four fields. They cannot change a decision.
+- Every write appends to the hash-chained audit log, with the caller taken from the token.
+
+Tokens last 90 days (`aigov_api_token_ttl_days`). Re-run **Issue API Tokens** to rotate them.
 
 ## Getting started
 
@@ -118,6 +168,7 @@ The configuration-as-code entry points are:
 1. **[aap_config/README.md](aap_config/README.md)**: configure AAP from code. This creates the organization, credential types and credentials, project, inventory, and job templates.
 2. In AAP, run **AI Governance - Check Environment**, then **Deploy AWS Governance Roles**, **Deploy Demo Agents**, and **Verify AWS Baseline**.
 3. **AI Governance - Deploy Platform Services**: PostgreSQL, the Inventory API, OPA, and Grafana on OpenShift. This needs `aigov_openshift_credential`, the name of an existing AAP credential of type "OpenShift or Kubernetes API Bearer Token". The Grafana URL and the location of its admin password are printed at the end of the job.
+   Then run **AI Governance - Apply Database Migrations** (creates the schema and the API functions) and **AI Governance - Issue API Tokens** (needs `aigov_aap_credential`, an existing AAP credential of type "Red Hat Ansible Automation Platform"). The second job puts one API token per role into the *AI Governance - Inventory API (…)* credentials.
 4. **[ao_workflows/README.md](ao_workflows/README.md)**: configure automation orchestrator (**AI Governance - Configure Automation Orchestrator**) and load the governance workflows (**AI Governance - Apply AO Workflows**).
 
 Credentials are entered into AAP (or pulled from your secret manager). **No secrets are ever stored in this repository.**

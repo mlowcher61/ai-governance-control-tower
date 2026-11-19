@@ -131,3 +131,20 @@
 | `aigov-trigger` rights | It authenticates from AAP (job 1308), but has **no project role**: it sees no projects or credentials, and integrations return 403. `configure_ao.yml` now assigns `project-user` in project `default` (config var `aigov_ao_trigger_role`). `ai-service-account` is project-admin, so it is allowed to do this; the automated grant is waiting for user confirmation |
 | Second AO client | `AO_DEMO_CLIENT_ID` is a second client credential for the same `ai-service-account` (same rights) |
 | mk6hb AAP | `$AAP_SERVER_DEMO` (cluster mk6hb) is reachable, but `AAP_API_TOKEN` returns 401 there. The governance deployment stays on t5d26 |
+
+## 8. Second environment: cluster mk6hb (2026-11-19)
+
+Work moved to cluster **mk6hb**. It was rebuilt from an empty state with the config as code only, which is
+also a test of the new-user steps in [aap_config/README.md](../../aap_config/README.md).
+
+| Check | Result |
+|---|---|
+| AAP | `https://aap-aap.apps.cluster-mk6hb.dyn.redhatworkshops.io`, controller 4.8.13. The token in `$AAP_DEMO_TOKEN` is a superuser ✅ |
+| Private hub | `infra.aap_configuration` 4.11.1 (validated), `ansible.platform` 2.7.20260930, `ansible.controller` 4.8.12; every collection pinned in `collections/requirements.yml` is available, including `ansible.utils` 6.1.0 ✅ |
+| Existing credentials used | `AWS` (ID 7, org APD) as the AWS bootstrap credential; `OpenShift Credential` (ID 5); `AAP Credential` (ID 4) for **Issue API Tokens** |
+| AWS account | **505889097019** (IAM user `open-environment-mk6hb-1-admin`, us-west-1), found by **Check Environment** (job 40). No AgentCore runtimes existed beforehand |
+| AWS baseline | Governance roles (job 43) and demo agents (job 44) deployed. **Verify AWS Baseline** (job 46): no failed least-privilege checks, and all four runtimes are `READY` through the discovery role ✅ |
+| Platform services | **Deploy Platform Services** (job 48) ✅: all acceptance checks passed, including the NetworkPolicy allow and block probes. Grafana is at `https://grafana-ai-governance.apps.cluster-mk6hb.dyn.redhatworkshops.io` |
+| Database | V001 (job 49; the re-run, job 51, reported `changed=0`) and V002 (job 55) applied ✅ |
+| Inventory API tokens | **Issue API Tokens** (job 56) ✅: six tokens; every token switches PostgREST to its own role; 15/15 read-only HTTP acceptance checks passed from an AAP job pod; no token appears in the job output. A config-as-code re-run keeps the tokens |
+| automation orchestrator | `https://ao-automation-orchestrator.apps.cluster-mk6hb.dyn.redhatworkshops.io`, API 1.3.2. The `$AO_DEMO_CLIENT_ID` service account (`claude-work-access`) authenticates, but **has only the default `authenticated` role**: it sees no projects, and integrations return 403. An AO administrator must make it `project-admin` in project `default` before `configure_ao.yml` and the workflow loader can run |

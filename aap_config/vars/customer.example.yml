@@ -18,16 +18,16 @@ aigov_project_scm_branch: main
 # from $AIGOV_SCM_TOKEN (or $GITHUB_TOKEN); with neither set, no SCM credential is created.
 aigov_project_scm_username: mlowcher61
 
-# Execution environment used by the governance job templates. Start with the AAP default; after
-# building the AI Governance EE (scripts/build_ee.sh) set aigov_custom_ee_image and switch to "AI Governance EE".
-aigov_execution_environment: Default execution environment
-# Custom EE image in the private hub registry, e.g. "{{ aigov_aap_hostname }}/ai-governance-ee:0.1.0"
-# (empty = not registered yet). Required for AgentCore APIs (boto3 >= 1.40).
-aigov_custom_ee_image: ""
-# Container Registry credential AAP uses to pull that image (leave empty for a public image). Use an existing credential name, or export
+# Execution environment used by the governance job templates. The quickest start is the prebuilt public
+# image below: this playbook registers it in AAP as "AI Governance EE" (proven on a fresh cluster).
+# To use your own build instead (scripts/build_ee.sh), point aigov_custom_ee_image at it; for a private
+# registry also set aigov_ee_registry_credential. It needs boto3 >= 1.40 for the AgentCore APIs.
+aigov_execution_environment: AI Governance EE
+aigov_custom_ee_image: quay.io/locust61/ai-governance-ee:0.1.0
+# Container Registry credential AAP uses to pull that image (empty for a public image). Use an existing credential name, or export
 # AIGOV_REGISTRY_USERNAME/AIGOV_REGISTRY_PASSWORD to have it created for aigov_ee_registry_host.
-aigov_ee_registry_credential: AI Governance - EE Registry
-aigov_ee_registry_host: "{{ aigov_aap_hostname }}"   # e.g. quay.io
+aigov_ee_registry_credential: ""
+aigov_ee_registry_host: quay.io   # e.g. your private hub host for a private build
 
 # Private automation hub used for collection installs during project sync.
 # The token is read from $AIGOV_HUB_TOKEN (falls back to $AAP_API_TOKEN).
