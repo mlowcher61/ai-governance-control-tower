@@ -107,32 +107,23 @@
              else (aigov_cur_raw.split(',') | map('trim') | select | list) }}
       ansible.builtin.set_fact:
         aigov_ao_current_hosts: "{{ aigov_cur_hosts }}"
-        aigov_ao_merged_hosts: "{{ aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) }}"
-        aigov_ao_settings_data: "{{ aigov_cur_data }}"
+        # Sorted: on ansible-core 2.16 (the EE) union goes through a set, so its order changes between runs.
+        aigov_ao_merged_hosts: "{{ aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) | unique | sort }}"
 
     # A separate step on purpose: compared inside the task above, the lazily templated task vars made
-    # equal lists compare as different, which restarted AO on every run.
+    # equal lists compare as different, which restarted AO on every run. Compared as sets.
     - name: Decide whether AO must restart (pods read envFrom only at start)
       ansible.builtin.set_fact:
-        aigov_ao_restart_needed: "{{ aigov_ao_current_hosts | sort != aigov_ao_merged_hosts | sort }}"
-        aigov_ao_new_data: "{{ aigov_ao_settings_data | combine({'APP_INTEGRATION_URL_ALLOWED_HOSTS': aigov_ao_merged_hosts | to_json}) }}"
+        aigov_ao_restart_needed: "{{ aigov_ao_current_hosts | unique | sort != aigov_ao_merged_hosts }}"
+        # Built as a dict so the JSON text stays a string (a bare "[...]" template becomes a list).
+        aigov_ao_patch_data: "{{ {'APP_INTEGRATION_URL_ALLOWED_HOSTS': aigov_ao_merged_hosts | to_json} }}"
 
-    - name: Report which settings keys differ (key names and types only; values are not printed)
-      ansible.builtin.debug:
-        msg: >-
-          {{ item }}: {{ 'changes' if aigov_ao_settings_data.get(item) != aigov_ao_new_data[item] else 'unchanged' }}
-          ({{ aigov_ao_settings_data.get(item) | type_debug }} -> {{ aigov_ao_new_data[item] | type_debug }})
-      loop: "{{ aigov_ao_new_data.keys() | list }}"
-
-    - name: Show the allowlist before and after (not secret)
-      ansible.builtin.debug:
-        msg:
-          before: "{{ aigov_ao_settings_data.APP_INTEGRATION_URL_ALLOWED_HOSTS | default('') }}"
-          after: "{{ aigov_ao_new_data.APP_INTEGRATION_URL_ALLOWED_HOSTS }}"
-
+    # Only this one key is sent, as a merge patch: other settings in the ConfigMap are never touched.
     - name: Write the allowlist into the settings ConfigMap
+      when: aigov_ao_settings.resources | length == 0 or aigov_ao_restart_needed | bool
       kubernetes.core.k8s:
         state: present
+        merge_type: merge
         definition:
           apiVersion: v1
           kind: ConfigMap
@@ -140,8 +131,7 @@
             name: "{{ aigov_ao_settings_configmap }}"
             namespace: "{{ aigov_ao_namespace }}"
             labels: "{{ aigov_ao_labels if aigov_ao_settings.resources | length == 0 else omit }}"
-          data: "{{ aigov_ao_new_data }}"
-      when: aigov_ao_settings.resources | length == 0 or aigov_ao_new_data != aigov_ao_settings_data
+          data: "{{ aigov_ao_patch_data }}"
 
     - name: Restart the AO components so they read the new settings
       when: aigov_ao_restart_needed | bool
