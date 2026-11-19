@@ -704,6 +704,12 @@ The score is capped at 100. Categories: **critical** ≥ 70, **high** 45–69, *
 | **AIGOV-TOOL-001** | High-risk built-in tools (`ANTHROPIC.Computer`, `ANTHROPIC.Bash`, `ANTHROPIC.TextEditor`, `AMAZON.CodeInterpreter`) require explicit approval | high | all | `tools`, `registration` |
 | **AIGOV-GRD-001** | Production Bedrock Agents Classic agents must have a guardrail attached | medium | production, Classic | `agent` |
 
+> **Implemented (T1.08, 2026-11-19).** The code in `policies/` follows these sketches with these corrections, found by testing against the fixtures:
+> AgentCore data sensitivity comes from the `DataClassification` tag or the registry (data sources are `not_supported`);
+> approvals are checked by date (the registry contract has no approval status); IAM-002 matches dangerous actions by
+> wildcard coverage and leaves full administrator grants to IAM-001; remediation appears only on `fail`; `not_supported`
+> evidence gives `not_applicable` for TOOL-001 and GRD-001; explicit `null` values are handled. Control IDs live in `data.json`.
+
 ### 7.2 Shared library (`lib.rego`)
 
 ```rego
