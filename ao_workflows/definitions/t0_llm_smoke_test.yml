@@ -1,0 +1,36 @@
+---
+# Proves the AO LLM integration and credential work (structured output, no tools).
+# Run it after renewing the LLM API key: ao_workflows/run_workflow.yml with
+#   aigov_ao_workflow_name="AI Governance - LLM Smoke Test (as code)"
+name: AI Governance - LLM Smoke Test (as code)
+description: >-
+  LLM smoke test. One agentic step with a response schema and no tools.
+  Managed by ai-governance-control-tower; edit ao_workflows/definitions/t0_llm_smoke_test.yml, not the canvas.
+publish: true
+triggers:
+  - id: trigger_manual
+    name: Start
+    type: manual_trigger
+    position: {x: 0, y: 200}
+    parameters:
+      input_schema:
+        type: object
+        properties:
+          governance_run_id: {type: string, default: llm-smoke-test}
+nodes:
+  - id: activity_llm_check
+    name: LLM Check
+    type: agentic
+    position: {x: 320, y: 200}
+    prompt: >-
+      You are a health check. Reply with status "ok" and echo the run id ${trigger.governance_run_id}.
+    response_schema:
+      type: object
+      required: [status, run_id]
+      properties:
+        status: {type: string, enum: [ok]}
+        run_id: {type: string}
+    settings:
+      timeout: 300
+edges:
+  - {from: trigger_manual, to: activity_llm_check}

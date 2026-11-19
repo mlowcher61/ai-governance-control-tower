@@ -46,7 +46,9 @@
       ansible.builtin.set_fact:
         aigov_ao_actions: >-
           {{ aigov_ao_actions + ['AO integration "' ~ item.name ~ '" is in status ' ~ item.validation_status
-             ~ ': ' ~ (item.validation_error | default('', true)) ~ '. Fix its credential and re-validate it in AO.'] }}
+             ~ ': ' ~ (item.validation_error | default('', true)) ~ ' (cached status, last validated '
+             ~ (item.last_validated_at | default('?')) ~ '). Fix its credential, then confirm with the workflow'
+             ~ ' "AI Governance - LLM Smoke Test (as code)" (run_workflow.yml); re-validating in AO needs an AO admin.'] }}
       when:
         - item.name in [aigov_ao_aap_integration, aigov_ao_llm_integration]
         - item.validation_status != 'available'
@@ -106,6 +108,10 @@
           {{ aigov_ao_actions + ['Create the AO service account "' ~ aigov_ao_trigger_service_account
              ~ '" in project "' ~ aigov_ao_project ~ '", add a client credential, and store its client ID and secret'
              ~ ' in the AAP credential "AI Governance - Automation Orchestrator" (this identity is not allowed to)'] }}
+
+    - name: Grant the trigger service account its project role
+      when: aigov_ao_sas.status == 200 and (aigov_ao_sa_created.status | default(200)) != 403
+      ansible.builtin.include_tasks: tasks/trigger_role.yml
 
     - name: Issue the trigger service account credential into AAP
       when: aigov_ao_sas.status == 200 and (aigov_ao_sa_created.status | default(200)) != 403

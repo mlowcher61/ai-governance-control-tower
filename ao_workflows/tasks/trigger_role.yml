@@ -1,0 +1,51 @@
+---
+# Assign aigov_ao_trigger_role (default project-user) in aigov_ao_project to the trigger service
+# account. Needs project-admin; otherwise reported as an admin action.
+- name: Read the service accounts, project roles and role assignments
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/{{ item }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 403]
+  loop:
+    - service_accounts
+    - "projects/{{ aigov_ao_projects[aigov_ao_project] }}/roles"
+    - "projects/{{ aigov_ao_projects[aigov_ao_project] }}/role_assignments"
+  register: aigov_ao_role_reads
+
+- name: Work out whether the role is already assigned
+  when: aigov_ao_role_reads.results | map(attribute='status') | unique == [200]
+  ansible.builtin.set_fact:
+    aigov_ao_trigger_sa_id: >-
+      {{ aigov_ao_role_reads.results[0].json.resources | selectattr('name', 'equalto', aigov_ao_trigger_service_account)
+         | map(attribute='id') | first }}
+    aigov_ao_trigger_has_role: >-
+      {{ aigov_ao_role_reads.results[2].json.resources
+         | selectattr('principal_name', 'equalto', aigov_ao_trigger_service_account)
+         | selectattr('role_name', 'equalto', aigov_ao_trigger_role) | list | length > 0 }}
+
+- name: Assign the project role to the trigger service account
+  when:
+    - aigov_ao_trigger_has_role is defined
+    - not (aigov_ao_trigger_has_role | bool)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/projects/{{ aigov_ao_projects[aigov_ao_project] }}/role_assignments"
+    method: POST
+    body_format: json
+    body:
+      role_name: "{{ aigov_ao_trigger_role }}"
+      principal_id: "{{ aigov_ao_trigger_sa_id }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 201, 403]
+  register: aigov_ao_role_assigned
+  changed_when: aigov_ao_role_assigned.status in [200, 201]
+
+- name: Report a role this identity may not assign
+  when: >-
+    aigov_ao_trigger_has_role is not defined or
+    (aigov_ao_role_assigned.status | default(200)) == 403
+  ansible.builtin.set_fact:
+    aigov_ao_actions: >-
+      {{ aigov_ao_actions + ['Assign the AO role "' ~ aigov_ao_trigger_role ~ '" in project "' ~ aigov_ao_project
+         ~ '" to the service account "' ~ aigov_ao_trigger_service_account ~ '" (needs project-admin)'] }}

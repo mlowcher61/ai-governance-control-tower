@@ -34,6 +34,9 @@ aigov_ao_organization: AI Governance
 # executions and approvals. configure_ao.yml creates it when the AO identity it runs
 # as is allowed to; otherwise an AO administrator creates it once (see ao_workflows/README.md).
 aigov_ao_trigger_service_account: aigov-trigger
+# Built-in AO project role for the trigger service account. project-user is the narrowest role that can
+# create/update workflows (the loader job) and run executions; project-auditor cannot run them.
+aigov_ao_trigger_role: project-user
 
 # Name of the AAP credential (type "AI Governance - Automation Orchestrator") that receives the trigger
 # service account's client ID and secret when configure_ao.yml issues them.

@@ -121,3 +121,13 @@
 | `aigov-trigger` | Created by `configure_ao.yml` (ID `5f2ac72f-…`). **Its client credential is not issued yet.** Issuing it writes the secret into the AAP credential *AI Governance - Automation Orchestrator*; the automated step was held for user confirmation |
 | SSRF allowlist | **Not verified** (settings require an AO administrator). It must contain `opa.ai-governance.svc`, `governance-api.ai-governance.svc`, and the AAP gateway host, and it must reach ao-worker |
 | LLM integration | **"LiteMaaS" is in validation status `error`: HTTP 401.** The API key needs renewal before the Stage 1 AI explanation step (T1.11) |
+
+### 7.1 Update 2026-11-19
+
+| Check | Result |
+|---|---|
+| LLM credential | The AO credential "LiteMaaS API Key" was updated with a new key (`$LITEMAAS_TOKEN`). **Workflow "AI Governance - LLM Smoke Test (as code)" execution `fb83e168` completed**: `llama-scout-17b` returned schema-valid structured output (`${activity_llm_check.result.content.status}` = `ok`), which addresses the basic Q-27 structured-output risk. The integration's *cached* validation status still shows the old 401, because re-validation (`POST /integrations/{id}/validate`) needs an AO admin |
+| `aigov-trigger` credential | Issued and stored in the AAP credential *AI Governance - Automation Orchestrator* by `configure_ao.yml` ✅ |
+| `aigov-trigger` rights | It authenticates from AAP (job 1308), but has **no project role**: it sees no projects or credentials, and integrations return 403. `configure_ao.yml` now assigns `project-user` in project `default` (config var `aigov_ao_trigger_role`). `ai-service-account` is project-admin, so it is allowed to do this; the automated grant is waiting for user confirmation |
+| Second AO client | `AO_DEMO_CLIENT_ID` is a second client credential for the same `ai-service-account` (same rights) |
+| mk6hb AAP | `$AAP_SERVER_DEMO` (cluster mk6hb) is reachable, but `AAP_API_TOKEN` returns 401 there. The governance deployment stays on t5d26 |
