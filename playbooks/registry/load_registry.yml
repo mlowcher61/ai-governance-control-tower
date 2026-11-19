@@ -65,18 +65,28 @@
           registrations naming unknown owners: {{ aigov_unknown_owners }}
         quiet: true
 
-    - name: Find the Git commit of the registry  # noqa: command-instead-of-module - read-only rev-parse; the git module only clones/updates
+    - name: Find the Git commit of a workstation checkout  # noqa: command-instead-of-module - read-only rev-parse; the git module only clones/updates
       ansible.builtin.command:
         cmd: git -C {{ aigov_registry_dir }} rev-parse HEAD
       register: aigov_git
       changed_when: false
       failed_when: false
 
-    - name: Use the commit (or the job's project revision when the checkout has no Git metadata)
+    # In AAP the job's project copy has no .git directory; AAP passes the synced commit as PROJECT_REVISION.
+    - name: Use the project revision from AAP, or the Git commit on a workstation
       ansible.builtin.set_fact:
         aigov_registry_commit: >-
-          {{ aigov_git.stdout | trim if aigov_git.rc == 0 and aigov_git.stdout | trim | length == 40
-             else aigov_source_commit | default('unknown', true) }}
+          {{ lookup('ansible.builtin.env', 'PROJECT_REVISION') | default('', true)
+             or (aigov_git.stdout | trim if aigov_git.rc == 0 else '')
+             or 'unknown' }}
+
+    - name: Check the commit is known
+      ansible.builtin.assert:
+        that: aigov_registry_commit is match('^[0-9a-f]{7,40}$')
+        fail_msg: >-
+          Cannot tell which Git commit this registry comes from (no PROJECT_REVISION and no Git checkout). Run the
+          job from an AAP project synced from Git, or from a Git clone.
+        quiet: true
 
     - name: Load the registry
       ansible.builtin.include_role:
