@@ -1,0 +1,44 @@
+---
+# Replace the opa-policies ConfigMap with aigov_serve_data and restart OPA so it loads exactly that set.
+# force: true replaces the whole ConfigMap (a merge would keep files that were removed).
+- name: "Write the opa-policies ConfigMap ({{ aigov_serve_revision }})"
+  kubernetes.core.k8s:
+    state: present
+    force: true
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: opa-policies
+        namespace: "{{ aigov_platform_namespace }}"
+        labels: "{{ aigov_platform_labels }}"
+        annotations:
+          aigov/bundle-revision: "{{ aigov_serve_revision }}"
+      data: "{{ aigov_serve_data }}"
+
+- name: Restart OPA with the new policies
+  kubernetes.core.k8s:
+    state: patched
+    kind: Deployment
+    namespace: "{{ aigov_platform_namespace }}"
+    name: opa
+    definition:
+      spec:
+        template:
+          metadata:
+            annotations:
+              aigov/bundle-revision: "{{ aigov_serve_revision }}"
+              aigov/restarted-at: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
+- name: Wait for OPA to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ aigov_platform_namespace }}"
+    name: opa
+  register: aigov_opa_rollout
+  until:
+    - aigov_opa_rollout.resources[0].status.updatedReplicas | default(0) == aigov_opa_rollout.resources[0].spec.replicas
+    - aigov_opa_rollout.resources[0].status.readyReplicas | default(0) == aigov_opa_rollout.resources[0].spec.replicas
+    - aigov_opa_rollout.resources[0].status.observedGeneration | default(0) >= aigov_opa_rollout.resources[0].metadata.generation
+  retries: 36
+  delay: 5

@@ -11,6 +11,7 @@ exclude_paths:
   - collections/ansible_collections/infra/
   - collections/ansible_collections/kubernetes/
 kinds:
+  - tasks: "**/playbooks/**/tasks/*.yml"
   - playbook: "**/playbooks/**/*.yml"
   - playbook: "aap_config/configure_aap.yml"
   - playbook: "ao_workflows/*.yml"

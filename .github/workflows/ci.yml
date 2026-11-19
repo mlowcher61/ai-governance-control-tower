@@ -54,6 +54,34 @@ jobs:
         working-directory: collections
         run: PYTHONPATH="$PWD" python -m pytest -q ansible_collections/mlowcher61/ai_governance/tests/unit
 
+  policies:
+    name: Governance policies (OPA)
+    runs-on: ubuntu-latest
+    env:
+      OPA_VERSION: "1.22.4"   # same version as the OPA server (playbooks/platform/deploy_services.yml)
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -sSfL -o /usr/local/bin/opa "https://github.com/open-policy-agent/opa/releases/download/v${OPA_VERSION}/opa_linux_amd64_static"
+          chmod +x /usr/local/bin/opa && opa version
+
+      - name: Formatting (opa fmt)
+        run: test -z "$(opa fmt --list policies/)" || { opa fmt --diff policies/; exit 1; }
+
+      - name: Strict compile (opa check)
+        run: opa check --strict policies/governance policies/data policies/tests
+
+      - name: Unit tests with coverage of at least 90%
+        run: opa test --coverage --threshold 90 policies/governance policies/data policies/tests > coverage.json || { opa test -v policies/governance policies/data policies/tests; exit 1; }
+
+      - name: Golden decisions for the four demo agents (and the evaluation-result contract)
+        run: |
+          pip install "jsonschema>=4.18"
+          python3 scripts/golden_decisions.py
+
   sql:
     name: Database migrations and SQL tests
     runs-on: ubuntu-latest

@@ -97,6 +97,15 @@ aigov_platform_templates:
       aigov_platform_trusted_namespaces: "{{ aigov_platform_trusted_namespaces }}"
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Publish Governance Policies
+    description: "T1.08 - test the Rego policies with the server's OPA image, publish them, verify the golden decisions (refuses or rolls back)"
+    playbook: playbooks/policies/publish_policies.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+    extra_vars:
+      aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Apply Database Migrations
     description: "T1.01 - apply database/migrations (forward-only, checksum-verified) with a Kubernetes Job"
     playbook: playbooks/platform/db_migrate.yml

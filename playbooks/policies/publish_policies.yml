@@ -1,0 +1,227 @@
+---
+# AI Governance - Publish Governance Policies (task T1.08)
+#
+# Publishes policies/ to the OPA server, refusing anything that is not proven good:
+#   1. Stamp the bundle with the Git commit (PROJECT_REVISION from AAP, or the Git checkout).
+#   2. Run "opa check --strict" and "opa test" (policies/tests) in a Kubernetes Job with the SAME OPA image
+#      as the server. A failure REFUSES the publish; the live policies are not touched.
+#   3. Replace the opa-policies ConfigMap and restart OPA.
+#   4. Ask the live server to evaluate the four demo fixtures and require exactly the golden decisions in
+#      policies/fixtures/expected/. A mismatch ROLLS BACK to the previous policies.
+#
+# Credential: "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
+- name: AI Governance - publish the governance policies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_platform_namespace: ai-governance
+    aigov_platform_images:
+      opa: docker.io/openpolicyagent/opa:1.22.4-static
+    aigov_platform_labels:
+      app.kubernetes.io/part-of: ai-governance
+      app.kubernetes.io/managed-by: ai-governance-control-tower
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+    # Set to false to publish without the live check against the demo fixtures (other policy sets)
+    aigov_verify_golden: true
+  tasks:
+    - name: Check the OpenShift credential is attached
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+        fail_msg: Attach the AAP credential of type "OpenShift or Kubernetes API Bearer Token" to this job template.
+        quiet: true
+
+    # ---- 1. Build the bundle ------------------------------------------------------------------------------
+    - name: Find the Git commit of a workstation checkout  # noqa: command-instead-of-module - read-only rev-parse
+      ansible.builtin.command:
+        cmd: git -C {{ aigov_repo_root }} rev-parse HEAD
+      register: aigov_git
+      changed_when: false
+      failed_when: false
+
+    - name: Set the bundle revision
+      ansible.builtin.set_fact:
+        aigov_bundle_revision: >-
+          {{ lookup('ansible.builtin.env', 'PROJECT_REVISION') | default('', true)
+             or (aigov_git.stdout | trim if aigov_git.rc == 0 else '') }}
+
+    - name: Check the bundle revision is a Git commit
+      ansible.builtin.assert:
+        that: aigov_bundle_revision is match('^[0-9a-f]{7,40}$')
+        fail_msg: Cannot tell which Git commit is being published. Run from an AAP project synced from Git, or a Git clone.
+        quiet: true
+
+    - name: Find the policy and test files
+      ansible.builtin.find:
+        paths: ["{{ aigov_repo_root }}/policies/governance", "{{ aigov_repo_root }}/policies/tests"]
+        patterns: "*.rego"
+        recurse: true
+      register: aigov_rego_files
+
+    - name: Build the bundle (ConfigMap keys cannot hold "/", so paths become "__")
+      vars:
+        aigov_config: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/data/governance/config/data.json') | from_json }}"
+        aigov_files: "{{ aigov_rego_files.files | map(attribute='path') | sort | list }}"
+        aigov_keys: >-
+          {{ aigov_files | map('regex_replace', '^.*/policies/', '') | map('replace', '/', '__') | list }}
+      ansible.builtin.set_fact:
+        aigov_bundle_rego: >-
+          {{ dict(aigov_keys | zip(query('ansible.builtin.file', *aigov_files, rstrip=false))) }}
+        aigov_bundle_data:
+          data.json: "{{ {'governance': {'config': aigov_config | combine({'bundle_revision': aigov_bundle_revision})}} | to_json }}"
+
+    - name: Separate the serving policies from the tests
+      ansible.builtin.set_fact:
+        aigov_serving: "{{ aigov_bundle_rego | dict2items | rejectattr('key', 'match', '^tests__') | items2dict | combine(aigov_bundle_data) }}"
+        aigov_candidate: "{{ aigov_bundle_rego | combine(aigov_bundle_data) }}"
+        aigov_policy_check_job: "opa-policy-check-{{ aigov_bundle_revision[:10] }}-{{ (aigov_bundle_rego | to_json | hash('sha256'))[:6] }}"
+
+    # ---- 2. Check the candidate with the server's OPA image --------------------------------------------------
+    - name: Publish the candidate bundle for the check Job
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ aigov_policy_check_job }}"
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa-policy-check'}) }}"
+          data: "{{ aigov_candidate }}"
+
+    - name: Check and test the candidate bundle
+      block:
+        - name: Run opa check --strict and opa test
+          kubernetes.core.k8s:
+            state: present
+            definition: "{{ lookup('ansible.builtin.template', aigov_repo_root ~ '/platform/templates/opa-test-job.yml.j2') | from_yaml }}"
+            wait: true
+            wait_condition: {type: Complete, status: "True"}
+            wait_timeout: 300
+      rescue:
+        - name: Read the check Job pod
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "{{ aigov_platform_namespace }}"
+            label_selectors: ["job-name={{ aigov_policy_check_job }}"]
+          register: aigov_check_pods
+
+        - name: Read the OPA output
+          kubernetes.core.k8s_log:
+            namespace: "{{ aigov_platform_namespace }}"
+            name: "{{ aigov_check_pods.resources[0].metadata.name }}"
+            container: "{{ item }}"
+          loop: [check, test]
+          register: aigov_check_logs
+          failed_when: false
+          when: aigov_check_pods.resources | length > 0
+
+        - name: Refuse the bundle
+          ansible.builtin.fail:
+            msg:
+              - "REFUSED: bundle {{ aigov_bundle_revision }} failed opa check or opa test. The live policies were not changed."
+              - "{{ aigov_check_logs.results | default([]) | map(attribute='log_lines', default=[]) | flatten }}"
+
+    - name: Read the test results
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ aigov_platform_namespace }}"
+        label_selectors: ["job-name={{ aigov_policy_check_job }}"]
+      register: aigov_check_pods
+
+    - name: Show the test summary
+      kubernetes.core.k8s_log:
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ aigov_check_pods.resources[0].metadata.name }}"
+        container: test
+      register: aigov_test_log
+
+    - name: Report the tests
+      ansible.builtin.debug:
+        msg: "{{ aigov_test_log.log_lines | select('match', '^(PASS|FAIL|ERROR)') | list }}"
+
+    # ---- 3. Publish ---------------------------------------------------------------------------------------
+    - name: Keep the current policies for a rollback
+      kubernetes.core.k8s_info:
+        kind: ConfigMap
+        namespace: "{{ aigov_platform_namespace }}"
+        name: opa-policies
+      register: aigov_previous
+
+    - name: Publish and verify, rolling back on a failed verification
+      block:
+        - name: Replace the served policies
+          ansible.builtin.include_tasks: tasks/serve_bundle.yml
+          vars:
+            aigov_serve_data: "{{ aigov_serving }}"
+            aigov_serve_revision: "{{ aigov_bundle_revision }}"
+
+        # ---- 4. Verify the live server ------------------------------------------------------------------
+        - name: Read the platform info from the live server
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/platform/info"
+          register: aigov_info
+          until: aigov_info.status == 200 and (aigov_info.json.result.bundle_revision | default('')) == aigov_bundle_revision
+          retries: 12
+          delay: 5
+
+        - name: Evaluate the demo fixtures on the live server
+          when: aigov_verify_golden | bool
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/evaluate/result"
+            method: POST
+            body_format: json
+            body:
+              input: "{{ lookup('ansible.builtin.file', item) | from_json }}"
+          loop: "{{ query('ansible.builtin.fileglob', aigov_repo_root ~ '/policies/fixtures/inputs/*.json') | sort }}"
+          loop_control:
+            label: "{{ item | basename }}"
+          register: aigov_live
+
+        - name: Compare with the golden decisions
+          when: aigov_verify_golden | bool
+          vars:
+            aigov_expected: >-
+              {{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/fixtures/expected/' ~ (item.item | basename)) | from_json
+                 | combine({'bundle_revision': aigov_bundle_revision}) }}
+          ansible.builtin.assert:
+            that: item.json.result == aigov_expected
+            fail_msg: >-
+              {{ item.item | basename }}: the live decision differs from the golden decision
+              (live {{ item.json.result.overall_status | default('none') }} / risk {{ item.json.result.risk.score | default('?') }},
+              expected {{ aigov_expected.overall_status }} / risk {{ aigov_expected.risk.score }}).
+            success_msg: >-
+              {{ item.item | basename }}: {{ aigov_expected.overall_status }}, risk {{ aigov_expected.risk.score }}
+              {{ aigov_expected.risk.category }}
+          loop: "{{ aigov_live.results }}"
+          loop_control:
+            label: "{{ item.item | basename }}"
+
+      rescue:
+        - name: Roll back to the previous policies
+          ansible.builtin.include_tasks: tasks/serve_bundle.yml
+          vars:
+            aigov_serve_data: "{{ aigov_previous.resources[0].data }}"
+            aigov_serve_revision: "{{ aigov_previous.resources[0].metadata.annotations['aigov/bundle-revision'] | default('previous') }}"
+          when: aigov_previous.resources | length > 0
+
+        - name: Fail after the rollback
+          ansible.builtin.fail:
+            msg: >-
+              ROLLED BACK: bundle {{ aigov_bundle_revision }} passed its tests but the live server did not return the golden
+              decisions. The previous policies ({{ aigov_previous.resources[0].metadata.annotations['aigov/bundle-revision']
+              | default('none') }}) are served again. Failed task: {{ ansible_failed_task.name }}.
+
+    - name: Remove the candidate bundle ConfigMap
+      kubernetes.core.k8s:
+        state: absent
+        kind: ConfigMap
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ aigov_policy_check_job }}"
+
+    - name: Report the published bundle
+      ansible.builtin.debug:
+        msg: >-
+          Published governance policies {{ aigov_bundle_revision }} to {{ aigov_opa_url }}:
+          {{ aigov_info.json.result.policies | join(', ') }}.

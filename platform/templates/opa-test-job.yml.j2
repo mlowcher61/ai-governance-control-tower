@@ -1,0 +1,39 @@
+# Checks a candidate policy bundle with the SAME OPA image the server runs, before it is published:
+# opa check --strict (init container), then opa test. The bundle is mounted from a candidate ConfigMap.
+# No network access is needed. The Job fails when either step fails, and the publish job then refuses it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ aigov_policy_check_job }}
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa-policy-check'}) | to_json }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'opa-policy-check'}) | to_json }}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: check
+          image: {{ aigov_platform_images.opa }}
+          args: [check, --strict, /bundle]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: bundle, mountPath: /bundle, readOnly: true}
+      containers:
+        - name: test
+          image: {{ aigov_platform_images.opa }}
+          args: [test, --verbose, /bundle]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: bundle, mountPath: /bundle, readOnly: true}
+      volumes:
+        - name: bundle
+          configMap: {name: {{ aigov_policy_check_job }}}
