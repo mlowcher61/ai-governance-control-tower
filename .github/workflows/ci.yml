@@ -43,3 +43,44 @@ jobs:
       - name: Unit tests (project collection)
         working-directory: collections
         run: PYTHONPATH="$PWD" python -m pytest -q ansible_collections/mlowcher61/ai_governance/tests/unit
+
+  sql:
+    name: Database migrations and SQL tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Bootstrap roles (as the superuser)
+        env: {PGUSER: postgres, PGPASSWORD: postgres}
+        run: bash database/tests/ci_setup.sh
+
+      - name: Apply migrations twice (second run must be a no-op)
+        env: {PGUSER: aigov_owner, PGPASSWORD: owner, PGDATABASE: aigov}
+        run: |
+          bash database/migrate.sh database/migrations
+          bash database/migrate.sh database/migrations | tee second-run.txt
+          grep -q "0 applied" second-run.txt
+
+      - name: Reject an edited migration
+        env: {PGUSER: aigov_owner, PGPASSWORD: owner, PGDATABASE: aigov}
+        run: |
+          mkdir -p /tmp/tampered && cp database/migrations/*.sql /tmp/tampered/
+          echo "-- edited" >> /tmp/tampered/V001__baseline.sql
+          if bash database/migrate.sh /tmp/tampered; then echo "edited migration was accepted"; exit 1; fi
+
+      - name: SQL tests
+        env: {PGUSER: aigov_owner, PGPASSWORD: owner, PGDATABASE: aigov}
+        run: for t in database/tests/test_*.sql; do psql -X -q -v ON_ERROR_STOP=1 -f "$t"; done
+

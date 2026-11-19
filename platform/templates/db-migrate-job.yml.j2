@@ -1,0 +1,34 @@
+# Applies database/migrations with database/migrate.sh as the database owner. The Job name carries
+# a hash of the migration set, so an unchanged set is not re-run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ aigov_migrate_job }}
+  namespace: {{ aigov_platform_namespace }}
+  labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db-migrate'}) | to_json }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db-migrate', 'aigov/db-client': 'true'}) | to_json }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ aigov_platform_images.postgresql }}
+          command: [/bin/bash, /migrations/migrate.sh, /migrations]
+          env:
+            - {name: PGHOST, value: governance-db}
+            - {name: PGPORT, value: "5432"}
+            - {name: PGDATABASE, value: {{ aigov_db_name }}}
+            - {name: PGUSER, value: {{ aigov_db_owner }}}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: governance-db, key: owner-password}}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+          volumeMounts:
+            - {name: migrations, mountPath: /migrations, readOnly: true}
+      volumes:
+        - name: migrations
+          configMap: {name: {{ aigov_migrate_job }}}

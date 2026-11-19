@@ -63,6 +63,15 @@ aigov_platform_templates:
       aigov_platform_trusted_namespaces: "{{ aigov_platform_trusted_namespaces }}"
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Apply Database Migrations
+    description: "T1.01 - apply database/migrations (forward-only, checksum-verified) with a Kubernetes Job"
+    playbook: playbooks/platform/db_migrate.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+    extra_vars:
+      aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+    <<: *aigov_jt_defaults
+
 # T0.08: automation orchestrator config as code and the workflow loader.
 aigov_ao_templates:
   - name: AI Governance - Configure Automation Orchestrator

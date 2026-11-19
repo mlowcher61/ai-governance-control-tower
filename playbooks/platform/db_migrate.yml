@@ -1,0 +1,106 @@
+---
+# AI Governance - Apply Database Migrations (task T1.01)
+#
+# Ships database/migrations/*.sql and database/migrate.sh to the cluster as a ConfigMap and runs
+# them in a Kubernetes Job as the database owner. Forward-only and checksum-verified: an applied
+# migration that was edited makes the Job fail. Idempotent: an unchanged migration set is skipped.
+# Run "AI Governance - Deploy Platform Services" first (it creates the database and roles).
+- name: AI Governance - apply database migrations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_platform_namespace: ai-governance
+    aigov_platform_images:
+      postgresql: registry.redhat.io/rhel9/postgresql-16:1-1794513854
+    aigov_db_name: aigov
+    aigov_db_owner: aigov_owner
+    aigov_platform_labels:
+      app.kubernetes.io/part-of: ai-governance
+      app.kubernetes.io/managed-by: ai-governance-control-tower
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+  tasks:
+    - name: Check the OpenShift credential is attached
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+        fail_msg: Attach the AAP credential of type "OpenShift or Kubernetes API Bearer Token" to this job template.
+        quiet: true
+
+    - name: Read the migration files
+      ansible.builtin.set_fact:
+        aigov_migration_files: >-
+          {{ query('ansible.builtin.fileglob', aigov_repo_root ~ '/database/migrations/V*.sql') | sort }}
+
+    - name: Build the migration ConfigMap data
+      ansible.builtin.set_fact:
+        aigov_migration_data: >-
+          {{ dict(aigov_migration_files | map('basename')
+                  | zip(query('ansible.builtin.file', *aigov_migration_files, rstrip=false)))
+             | combine({'migrate.sh': lookup('ansible.builtin.file', aigov_repo_root ~ '/database/migrate.sh', rstrip=false)}) }}
+
+    - name: Name the run after the migration set
+      ansible.builtin.set_fact:
+        aigov_migrate_job: >-
+          governance-db-migrate-{{ aigov_migration_data | to_json(sort_keys=True) | hash('sha256') | truncate(10, True, '', 0) }}
+
+    - name: Publish the migrations as a ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ aigov_migrate_job }}"
+            namespace: "{{ aigov_platform_namespace }}"
+            labels: "{{ aigov_platform_labels | combine({'app.kubernetes.io/name': 'governance-db-migrate'}) }}"
+          data: "{{ aigov_migration_data }}"
+
+    - name: Run the migration Job and diagnose a failure
+      block:
+        - name: Run the migration Job
+          kubernetes.core.k8s:
+            state: present
+            definition: "{{ lookup('ansible.builtin.template', aigov_repo_root ~ '/platform/templates/db-migrate-job.yml.j2') | ansible.builtin.from_yaml }}"
+            wait: true
+            wait_condition:
+              type: Complete
+              status: "True"
+            wait_timeout: 600
+      rescue:
+        - name: Read the migration Job pod
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: "{{ aigov_platform_namespace }}"
+            label_selectors:
+              - "job-name={{ aigov_migrate_job }}"
+          register: aigov_migrate_pods
+
+        - name: Read the migration log
+          kubernetes.core.k8s_log:
+            namespace: "{{ aigov_platform_namespace }}"
+            name: "{{ aigov_migrate_pods.resources[0].metadata.name }}"
+          register: aigov_migrate_fail_log
+          when: aigov_migrate_pods.resources | length > 0
+
+        - name: Fail with the migration log
+          ansible.builtin.fail:
+            msg: "{{ aigov_migrate_fail_log.log_lines | default(['the migration Job did not start']) }}"
+
+    - name: Read the migration log
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ aigov_platform_namespace }}"
+        label_selectors:
+          - "job-name={{ aigov_migrate_job }}"
+      register: aigov_migrate_pods
+
+    - name: Show the migration log
+      kubernetes.core.k8s_log:
+        namespace: "{{ aigov_platform_namespace }}"
+        name: "{{ aigov_migrate_pods.resources[0].metadata.name }}"
+      register: aigov_migrate_log
+      when: aigov_migrate_pods.resources | length > 0
+
+    - name: Report the migration result
+      ansible.builtin.debug:
+        msg: "{{ aigov_migrate_log.log_lines | default(['migration set unchanged; Job ' ~ aigov_migrate_job ~ ' already completed']) }}"

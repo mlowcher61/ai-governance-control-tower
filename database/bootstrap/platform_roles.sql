@@ -11,6 +11,15 @@ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'aigov_api_anon') \gexec
 SELECT 'CREATE ROLE grafana_ro LOGIN'
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'grafana_ro') \gexec
 
+-- API roles selected by the PostgREST JWT "role" claim (docs/plan/02 section 5, docs/plan/08).
+-- NOLOGIN: reachable only through the authenticator. Their privileges are granted by migrations.
+SELECT format('CREATE ROLE %I NOLOGIN', r)
+FROM unnest(ARRAY['aigov_discovery', 'aigov_registry', 'aigov_evaluator', 'aigov_remediator',
+                  'aigov_reader', 'aigov_auditor']) AS r
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec
+GRANT aigov_discovery, aigov_registry, aigov_evaluator, aigov_remediator, aigov_reader, aigov_auditor
+  TO aigov_authenticator;
+
 ALTER ROLE aigov_authenticator PASSWORD :'auth_pw';
 ALTER ROLE grafana_ro PASSWORD :'grafana_pw';
 GRANT aigov_api_anon TO aigov_authenticator;
