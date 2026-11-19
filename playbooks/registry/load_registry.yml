@@ -1,0 +1,100 @@
+---
+# AI Governance - Load Governance Registry (task T1.07)
+#
+# Loads the governance registry (inventory/registry/owners.yml and registrations.yml) into the Inventory API.
+# The registry in Git is authoritative: owners and registrations that are not in the files are removed, and
+# every discovered agent is re-matched. The Git commit is recorded on each registration and in the audit log.
+#
+# Steps: read the files -> validate them against schemas/bundled/registry.v1.json -> api.load_registry.
+# Credential: "AI Governance - Inventory API (registry)". The AWS account ID (aigov_aws_account_id) fills the
+# account_ref match key.
+- name: AI Governance - load the governance registry
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_registry_dir: "{{ aigov_repo_root }}/inventory/registry"
+    aigov_aws_account_id: ""
+  tasks:
+    - name: Check the Inventory API credential
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Check the AWS account ID
+      ansible.builtin.assert:
+        that: aigov_aws_account_id | string is match('^\d{12}$')
+        fail_msg: Set aigov_aws_account_id (12 digits) on the job template; the registry matches agents in that account.
+        quiet: true
+
+    - name: Read the registry files
+      ansible.builtin.include_vars:
+        dir: "{{ aigov_registry_dir }}"
+        files_matching: '^(owners|registrations)\.ya?ml$'
+
+    - name: Build the registry document
+      ansible.builtin.set_fact:
+        aigov_registry:
+          owners: "{{ aigov_owners | default([]) }}"
+          registrations: "{{ aigov_registrations | default([]) }}"
+
+    - name: Validate the registry against the contract
+      ansible.builtin.set_fact:
+        aigov_registry_errors: >-
+          {{ aigov_registry | ansible.utils.validate(
+               lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/registry.v1.json') | from_json,
+               engine='ansible.utils.jsonschema', draft='2020-12') }}
+
+    - name: Check the registry is valid and consistent
+      vars:
+        aigov_owner_ids: "{{ aigov_registry.owners | map(attribute='id') | list }}"
+        aigov_reg_ids: "{{ aigov_registry.registrations | map(attribute='registration_id') | list }}"
+        aigov_unknown_owners: >-
+          {{ aigov_registry.registrations | selectattr('owner_id', 'defined') | selectattr('owner_id')
+             | map(attribute='owner_id') | reject('in', aigov_owner_ids) | list }}
+      ansible.builtin.assert:
+        that:
+          - aigov_registry_errors | length == 0
+          - aigov_owner_ids | length == aigov_owner_ids | unique | length
+          - aigov_reg_ids | length == aigov_reg_ids | unique | length
+          - aigov_unknown_owners | length == 0
+        fail_msg: >-
+          The registry is invalid. Contract errors: {{ aigov_registry_errors | map(attribute='message') | list }};
+          duplicate owner IDs: {{ aigov_owner_ids | difference(aigov_owner_ids | unique) | length > 0 }};
+          duplicate registration IDs: {{ aigov_reg_ids | length != aigov_reg_ids | unique | length }};
+          registrations naming unknown owners: {{ aigov_unknown_owners }}
+        quiet: true
+
+    - name: Find the Git commit of the registry  # noqa: command-instead-of-module - read-only rev-parse; the git module only clones/updates
+      ansible.builtin.command:
+        cmd: git -C {{ aigov_registry_dir }} rev-parse HEAD
+      register: aigov_git
+      changed_when: false
+      failed_when: false
+
+    - name: Use the commit (or the job's project revision when the checkout has no Git metadata)
+      ansible.builtin.set_fact:
+        aigov_registry_commit: >-
+          {{ aigov_git.stdout | trim if aigov_git.rc == 0 and aigov_git.stdout | trim | length == 40
+             else aigov_source_commit | default('unknown', true) }}
+
+    - name: Load the registry
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: load_registry
+        aigov_api_body:
+          owners: "{{ aigov_registry.owners }}"
+          registrations: "{{ aigov_registry.registrations }}"
+          source_commit: "{{ aigov_registry_commit }}"
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: "{{ aigov_api_response }}"
+
+    - name: Publish the result for automation orchestrator
+      ansible.builtin.set_stats:
+        data:
+          registry_loaded: "{{ aigov_api_response }}"
+        per_host: false

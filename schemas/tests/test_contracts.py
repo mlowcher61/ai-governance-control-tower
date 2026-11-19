@@ -137,3 +137,40 @@ def test_bundle_agrees_with_source(schema_name, pointer, path):
 @pytest.mark.parametrize("path", sorted((FIXTURES / "discovery").glob("*.json")), ids=lambda p: p.name)
 def test_bundled_discovery_record_accepts_fixtures(path):
     assert bundled_validator("discovery-record.v1.json").is_valid(load(path))
+
+
+# ---- The governance registry as code (inventory/registry/) ---------------------------------------------
+
+
+def load_registry_files(account="111122223333"):
+    import yaml
+
+    reg_dir = ROOT / "inventory" / "registry"
+    text = {name: (reg_dir / f"{name}.yml").read_text().replace("{{ aigov_aws_account_id | string }}", account)
+            for name in ("owners", "registrations")}
+    return {"owners": yaml.safe_load(text["owners"])["aigov_owners"],
+            "registrations": yaml.safe_load(text["registrations"])["aigov_registrations"]}
+
+
+def test_registry_files_match_the_contract():
+    errors = [f"{list(e.absolute_path)}: {e.message}" for e in validator("registry.v1.json").iter_errors(load_registry_files())]
+    assert not errors, errors
+
+
+def test_registry_files_describe_the_fixture_scenario():
+    """The demo registry and the fixture registry must not drift: same owners, same registrations."""
+    files, fixture = load_registry_files(), load(FIXTURES / "registry.json")
+    assert files["owners"] == fixture["owners"]
+
+    def strip(regs):
+        return [{k: v for k, v in r.items() if k != "match_keys"} for r in regs]
+
+    assert strip(files["registrations"]) == strip(fixture["registrations"])
+    for f, x in zip(files["registrations"], fixture["registrations"]):
+        assert f["match_keys"]["name"] == x["match_keys"]["name"]
+        assert f["match_keys"]["account_ref"] == "111122223333"
+
+
+def test_quick_helper_bot_is_deliberately_unregistered():
+    names = [r["match_keys"].get("name") for r in load_registry_files()["registrations"]]
+    assert "quick_helper_bot" not in names

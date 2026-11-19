@@ -6,7 +6,8 @@
 #   * the evidence domains discovery can collect are 'collected' (no AccessDenied);
 #   * each agent's policy input (api.evaluation_inputs + an evaluation block) matches the policy input
 #     contract (schemas/bundled/policy-input.v1.json);
-#   * optional expectations per agent: which policies its execution role must, or must not, carry.
+#   * optional expectations per agent: which policies its execution role must, or must not, carry, and
+#     whether it is registered (set aigov_expected_registration: {} to skip, for example before the registry is loaded).
 #
 # Credential: "AI Governance - Inventory API (evaluator)".
 - name: AI Governance - check the governance inventory
@@ -23,6 +24,12 @@
       payments_dispute_assistant: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
       hr_faq_agent: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
       research_runtime: {must: [aigov-approved-agentcore-runtime-basic], must_not: [AdministratorAccess]}
+    # agent name -> expected registration status (empty = not checked)
+    aigov_expected_registration:
+      payments_dispute_assistant: registered
+      hr_faq_agent: registered
+      research_runtime: registered
+      quick_helper_bot: unregistered
   tasks:
     - name: Check the Inventory API credential
       ansible.builtin.include_role:
@@ -76,6 +83,11 @@
           {%- for d in aigov_collectable_evidence if a.evidence_status[d] | default('missing') != 'collected' -%}
           {%- set _ = p.append(a.name ~ ': evidence ' ~ d ~ ' is ' ~ a.evidence_status[d] | default('missing')) -%}
           {%- endfor -%}
+          {%- endfor -%}
+          {%- for a in aigov_overview if a.name in aigov_expected_registration
+                and a.registration_status != aigov_expected_registration[a.name] -%}
+          {%- set _ = p.append(a.name ~ ': registration is ' ~ a.registration_status ~ ', expected '
+                               ~ aigov_expected_registration[a.name]) -%}
           {%- endfor -%}
           {%- for x in aigov_input_problems | default([]) if x.errors -%}
           {%- set _ = p.append(x.agent ~ ': policy input breaks the contract: ' ~ (x.errors | map(attribute='message') | list)) -%}

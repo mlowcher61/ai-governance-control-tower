@@ -1,0 +1,77 @@
+---
+# Governance registry: AGENT REGISTRATIONS (contract schemas/registry.v1.json, "registrations").
+#
+# A registration says "this AI agent is known and approved for this purpose". A discovered agent matches a
+# registration when EVERY key in match_keys equals the agent's value (provider, platform, account_ref, region,
+# name, external_id or resource_ref); the most specific match wins. A discovered agent that matches nothing is
+# UNREGISTERED: a shadow agent (policy AIGOV-REG-001).
+#
+# Facts discovery cannot see come from here: business purpose, data classification, the declared foundation
+# model (AgentCore does not expose it), approved tools, the risk assessment and the sensitive data approval.
+# Dates are quoted YYYY-MM-DD strings; the Inventory API turns them into timestamps for the policies.
+#
+# The demo scenario (docs/plan/03 section 8; quick_helper_bot is deliberately NOT registered):
+#   REG-0001 payments_dispute_assistant - everything approved and current        -> compliant
+#   REG-0002 hr_faq_agent               - risk assessment expired on 2026-06-01   -> noncompliant
+#   REG-0003 research_runtime           - no model declared                       -> unknown
+aigov_registrations:
+  - registration_id: REG-0001
+    match_keys:
+      provider: aws
+      platform: aws.bedrock_agentcore_runtime
+      account_ref: "{{ aigov_aws_account_id | string }}"
+      name: payments_dispute_assistant
+    owner_id: own-payments-ml
+    business_purpose: Summarize card dispute cases for analysts
+    environment: production
+    data_classification: confidential
+    declared_model: amazon.nova-pro-v1:0
+    approved_tools: []
+    risk_assessment:
+      status: complete
+      reference: RA-2026-014
+      completed_at: "2026-09-01"
+      expires_at: "2027-09-01"
+    sensitive_data_approval:
+      reference: DA-2026-031
+      approved_by: ciso-office
+      approved_at: "2026-09-05"
+      expires_at: "2027-09-05"
+
+  - registration_id: REG-0002
+    match_keys:
+      provider: aws
+      platform: aws.bedrock_agentcore_runtime
+      account_ref: "{{ aigov_aws_account_id | string }}"
+      name: hr_faq_agent
+    owner_id: own-hr-digital
+    business_purpose: Answer employee HR policy questions
+    environment: production
+    data_classification: internal
+    declared_model: amazon.nova-pro-v1:0
+    approved_tools: []
+    risk_assessment:
+      status: complete
+      reference: RA-2025-102
+      completed_at: "2025-06-01"
+      expires_at: "2026-06-01"
+    sensitive_data_approval: null
+
+  - registration_id: REG-0003
+    match_keys:
+      provider: aws
+      platform: aws.bedrock_agentcore_runtime
+      account_ref: "{{ aigov_aws_account_id | string }}"
+      name: research_runtime
+    owner_id: own-research-lab
+    business_purpose: Evaluate research assistant prototypes
+    environment: development
+    data_classification: internal
+    declared_model: null
+    approved_tools: []
+    risk_assessment:
+      status: complete
+      reference: RA-2026-077
+      completed_at: "2026-10-25"
+      expires_at: "2027-10-25"
+    sensitive_data_approval: null

@@ -1,0 +1,29 @@
+---
+# Governance registry: OWNERS (contract schemas/registry.v1.json, "owners").
+#
+# Who is accountable for AI agents. Only an owner with approved: true counts as an approved owner
+# (policy AIGOV-OWN-001). The registry in Git is authoritative: an owner removed here is removed from the
+# inventory by the next "AI Governance - Load Governance Registry" run. Dates are quoted YYYY-MM-DD strings.
+#
+# These entries describe the demo scenario. Replace them with your own owners.
+aigov_owners:
+  - id: own-payments-ml
+    name: Payments ML
+    email: payments-ml@example.com
+    approved: true
+    approved_by: ciso-office
+    approved_at: "2026-08-15"
+
+  - id: own-hr-digital
+    name: HR Digital
+    email: hr-digital@example.com
+    approved: true
+    approved_by: ciso-office
+    approved_at: "2026-03-02"
+
+  - id: own-research-lab
+    name: Research Lab
+    email: research-lab@example.com
+    approved: true
+    approved_by: ciso-office
+    approved_at: "2026-10-20"

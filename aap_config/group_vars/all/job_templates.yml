@@ -67,6 +67,15 @@ aigov_discovery_templates:
       aigov_governance_run_id: ""
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Load Governance Registry
+    description: "T1.07 - load owners and agent registrations from inventory/registry/ (Git is authoritative) and re-match agents"
+    playbook: playbooks/registry/load_registry.yml
+    credentials:
+      - AI Governance - Inventory API (registry)
+    extra_vars:
+      aigov_aws_account_id: "{{ aigov_aws_account_id | string }}"
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Check Inventory
     description: "T1.06 acceptance - read-only checks of the inventory and the policy inputs (evaluator role)"
     playbook: playbooks/discovery/check_inventory.yml
