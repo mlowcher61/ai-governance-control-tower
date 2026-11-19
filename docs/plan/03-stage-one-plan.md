@@ -685,7 +685,7 @@ policies/
 | `production_environment` | 10 | effective environment = production |
 | `insufficient_evidence` | 5 each, max 15 | each `unknown` |
 
-The score is capped at 100. Categories: **critical** ≥ 70, **high** 45–69, **medium** 20–44, **low** < 20. The weights live in `data.json`, so customers can tune them without code changes. Every weight change is a reviewed Git commit.
+The score is capped at 100. Categories: **critical** ≥ 70, **high** 45–69, **medium** 21–44, **low** ≤ 20 (decided 2026-11-19, so a production agent with sensitive data and nothing else wrong, score 20, is low). The weights live in `data.json`, so customers can tune them without code changes. Every weight change is a reviewed Git commit.
 
 ## 7. Example governance policies
 

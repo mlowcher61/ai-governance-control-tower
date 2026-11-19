@@ -1,0 +1,65 @@
+{
+  "agent_id": "0b7a0000-0000-4000-8000-000000000001",
+  "overall_status": "compliant",
+  "risk": {
+    "score": 21,
+    "category": "medium",
+    "factors": [
+      {
+        "factor": "production_environment",
+        "points": 10
+      },
+      {
+        "factor": "sensitive_data_present",
+        "points": 10
+      },
+      {
+        "factor": "insufficient_evidence",
+        "points": 1
+      }
+    ]
+  },
+  "results": [
+    {
+      "agent_id": "0b7a0000-0000-4000-8000-000000000001",
+      "policy_id": "AIGOV-IAM-001",
+      "policy_version": "1.0.0",
+      "title": "Agents must not have unrestricted administrative permissions",
+      "decision": "pass",
+      "severity": "critical",
+      "explanation": "No administrator-equivalent policy is attached and simulation denies every admin probe action.",
+      "evidence": [],
+      "assumptions": [],
+      "remediation": null,
+      "controls": [
+        "NIST-AI-RMF:MANAGE",
+        "NIST-AI-RMF:GOVERN",
+        "ISO42001:A.6",
+        "ENT-IAM-LEAST-PRIVILEGE"
+      ]
+    },
+    {
+      "agent_id": "0b7a0000-0000-4000-8000-000000000001",
+      "policy_id": "AIGOV-GRD-001",
+      "policy_version": "1.0.0",
+      "title": "Production Bedrock Agents Classic agents must have a guardrail attached",
+      "decision": "not_applicable",
+      "severity": "medium",
+      "explanation": "Applies only to Bedrock Agents Classic agents.",
+      "evidence": [],
+      "assumptions": [],
+      "remediation": null,
+      "controls": []
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 0,
+    "unknown": 0,
+    "not_applicable": 1,
+    "error": 0
+  },
+  "bundle_revision": "a1b2c3d",
+  "evaluated_at": "2026-11-17T15:04:05Z",
+  "input_errors": []
+}

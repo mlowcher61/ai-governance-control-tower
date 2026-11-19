@@ -24,7 +24,7 @@ These rules are written into the schemas, so a broken producer fails CI. Nobody 
   `not_supported` or `error`, and a policy input must state every domain. Missing evidence never means "compliant".
 - **No silent compliance.** An evaluation result is `compliant` only when every policy returned `pass` or
   `not_applicable`. Any `fail` forces `noncompliant` (or `error`). Invalid input forces `error`.
-- **Risk categories match scores**: critical ≥ 70, high 45–69, medium 20–44, low < 20.
+- **Risk categories match scores**: critical ≥ 70, high 45–69, medium 21–44, low ≤ 20.
 - **Only failures carry a remediation.**
 - **The AI cannot decide anything.** An AI explanation has no decision, severity or risk field, and extra
   fields are rejected. The findings sent to the AI exclude owner-controlled free text (tags, descriptions),

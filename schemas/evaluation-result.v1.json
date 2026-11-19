@@ -224,7 +224,7 @@
             "risk": {
               "properties": {
                 "score": {
-                  "minimum": 20,
+                  "minimum": 21,
                   "maximum": 44
                 },
                 "category": {
@@ -239,7 +239,7 @@
             "risk": {
               "properties": {
                 "score": {
-                  "maximum": 19
+                  "maximum": 20
                 },
                 "category": {
                   "const": "low"
