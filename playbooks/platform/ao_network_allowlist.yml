@@ -109,8 +109,12 @@
         aigov_ao_current_hosts: "{{ aigov_cur_hosts }}"
         aigov_ao_merged_hosts: "{{ aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) }}"
         aigov_ao_settings_data: "{{ aigov_cur_data }}"
-        # Restart only when the value the pods load is different (they read envFrom only at start).
-        aigov_ao_restart_needed: "{{ aigov_cur_hosts != (aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list)) }}"
+
+    # A separate step on purpose: compared inside the task above, the lazily templated task vars made
+    # equal lists compare as different, which restarted AO on every run.
+    - name: Decide whether AO must restart (pods read envFrom only at start)
+      ansible.builtin.set_fact:
+        aigov_ao_restart_needed: "{{ aigov_ao_current_hosts | sort != aigov_ao_merged_hosts | sort }}"
 
     - name: Write the allowlist into the settings ConfigMap
       kubernetes.core.k8s:
