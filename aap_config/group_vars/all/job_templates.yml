@@ -108,10 +108,25 @@ aigov_ao_templates:
       aigov_ao_validate_only: false
     <<: *aigov_jt_defaults
 
+# AO SSRF allowlist at the deployment level (needs the OpenShift credential and aigov_ao_url).
+aigov_ao_platform_templates:
+  - name: AI Governance - Configure AO Network Allowlist
+    description: "T0.08 - merge the AAP, OPA and Inventory API hosts into the AO SSRF allowlist (ao-admin-settings) and restart AO if it changed"
+    playbook: playbooks/platform/ao_network_allowlist.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+    extra_vars:
+      aigov_aap_hostname: "{{ aigov_aap_hostname }}"
+      aigov_platform_namespace: "{{ aigov_platform_namespace }}"
+      aigov_ao_namespace: "{{ aigov_ao_namespace | default('automation-orchestrator') }}"
+    <<: *aigov_jt_defaults
+
 controller_templates: >-
   {{ aigov_base_templates
      + (aigov_aws_templates if (aigov_aws_account_id | string | length) == 12 else [])
      + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_api_templates if (aigov_openshift_credential | default('') | string | length) > 0
                                and (aigov_aap_credential | default('') | string | length) > 0 else [])
-     + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else []) }}
+     + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else [])
+     + (aigov_ao_platform_templates if (aigov_ao_url | default('') | length) > 0
+                                       and (aigov_openshift_credential | default('') | string | length) > 0 else []) }}

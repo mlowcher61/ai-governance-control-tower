@@ -1,0 +1,190 @@
+---
+# AI Governance - Configure AO Network Allowlist (task T0.08 follow-up)
+#
+# automation orchestrator (AO) blocks calls to private-network addresses (SSRF protection). The
+# governance workflows must reach the AAP gateway, OPA and the Inventory API, which all resolve to
+# cluster-internal addresses, so their hosts must be in the AO setting APP_INTEGRATION_URL_ALLOWED_HOSTS.
+#
+# This playbook sets it at the deployment level, for when no AO identity with the system "admin" role
+# is available to change it through the AO API (ao_workflows/configure_ao.yml does that when it can):
+#   * Every AO Deployment loads the optional ConfigMap "ao-admin-settings" (envFrom), a hook the AO
+#     operator provides and does not own. Writing the setting there reaches ao-backend, ao-worker and
+#     ao-background-worker, and it survives an operator upgrade.
+#   * The ConfigMap is MERGED: other keys, and hosts other tools already allowed, are kept.
+#   * Pods read envFrom only when they start, so changed settings restart the three components.
+#   * The check reads the value from inside a running ao-worker pod, because AO workflow steps run
+#     there (a correct ConfigMap proves nothing about a pod started before it was written).
+#
+# Credential: "OpenShift or Kubernetes API Bearer Token" with access to the AO namespace.
+- name: AI Governance - configure the automation orchestrator network allowlist
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_ao_namespace: automation-orchestrator
+    aigov_ao_instance: ao                 # app.kubernetes.io/instance label of the AO pods
+    aigov_ao_settings_configmap: ao-admin-settings
+    aigov_platform_namespace: ai-governance
+    aigov_aap_hostname: ""
+    aigov_ao_allowed_hosts:
+      - "{{ aigov_aap_hostname | regex_replace('^https?://', '') | regex_replace('/.*$', '') }}"
+      - "opa.{{ aigov_platform_namespace }}.svc"
+      - "governance-api.{{ aigov_platform_namespace }}.svc"
+    aigov_ao_components:
+      - {deployment: ao-backend, component: backend}
+      - {deployment: ao-worker, component: worker}
+      - {deployment: ao-background-worker, component: background-worker}
+    aigov_ao_labels:
+      app.kubernetes.io/managed-by: ai-governance-control-tower
+  tasks:
+    - name: Check the inputs
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+          - aigov_aap_hostname | length > 0
+        fail_msg: >-
+          Attach the "OpenShift or Kubernetes API Bearer Token" credential and set aigov_aap_hostname
+          (the AAP gateway host) on this job template.
+        quiet: true
+
+    - name: Read the AO Deployments
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ aigov_ao_namespace }}"
+        name: "{{ item.deployment }}"
+      loop: "{{ aigov_ao_components }}"
+      loop_control:
+        label: "{{ item.deployment }}"
+      register: aigov_ao_deployments
+
+    - name: Check every AO Deployment exists and loads the settings ConfigMap
+      ansible.builtin.assert:
+        that:
+          - item.resources | length == 1
+          - >-
+            item.resources[0].spec.template.spec.containers | map(attribute='envFrom') | map('default', [])
+            | flatten | selectattr('configMapRef', 'defined') | map(attribute='configMapRef.name')
+            | select('equalto', aigov_ao_settings_configmap) | list | length > 0
+        fail_msg: >-
+          Deployment {{ item.item.deployment }} in {{ aigov_ao_namespace }} is missing or does not load the ConfigMap
+          {{ aigov_ao_settings_configmap }}. Set aigov_ao_namespace for your AO installation, or set
+          APP_INTEGRATION_URL_ALLOWED_HOSTS through the AO operator.
+        quiet: true
+      loop: "{{ aigov_ao_deployments.results }}"
+      loop_control:
+        label: "{{ item.item.deployment }}"
+
+    - name: Check no Deployment overrides the setting with its own env entry
+      ansible.builtin.assert:
+        that: >-
+          item.resources[0].spec.template.spec.containers | map(attribute='env') | map('default', []) | flatten
+          | map(attribute='name') | select('equalto', 'APP_INTEGRATION_URL_ALLOWED_HOSTS') | list | length == 0
+        fail_msg: >-
+          Deployment {{ item.item.deployment }} sets APP_INTEGRATION_URL_ALLOWED_HOSTS directly, which wins over the
+          ConfigMap. Remove that env entry (oc set env deployment/{{ item.item.deployment }} APP_INTEGRATION_URL_ALLOWED_HOSTS-).
+        quiet: true
+      loop: "{{ aigov_ao_deployments.results }}"
+      loop_control:
+        label: "{{ item.item.deployment }}"
+
+    - name: Read the current settings ConfigMap
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        namespace: "{{ aigov_ao_namespace }}"
+        name: "{{ aigov_ao_settings_configmap }}"
+      register: aigov_ao_settings
+
+    - name: Merge the governance hosts into the allowlist
+      vars:
+        aigov_cur_data: "{{ (aigov_ao_settings.resources | first | default({})).data | default({}) }}"
+        aigov_cur_raw: "{{ aigov_cur_data.APP_INTEGRATION_URL_ALLOWED_HOSTS | default('') | trim }}"
+        # The value is a JSON list; a comma-separated string is accepted too.
+        aigov_cur_hosts: >-
+          {{ (aigov_cur_raw | from_json) if aigov_cur_raw.startswith('[')
+             else (aigov_cur_raw.split(',') | map('trim') | select | list) }}
+      ansible.builtin.set_fact:
+        aigov_ao_current_hosts: "{{ aigov_cur_hosts }}"
+        aigov_ao_merged_hosts: "{{ aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) }}"
+        aigov_ao_settings_data: "{{ aigov_cur_data }}"
+        # Restart only when the value the pods load is different (they read envFrom only at start).
+        aigov_ao_restart_needed: "{{ aigov_cur_raw != (aigov_cur_hosts | union(aigov_ao_allowed_hosts | select | list) | to_json) }}"
+
+    - name: Write the allowlist into the settings ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ aigov_ao_settings_configmap }}"
+            namespace: "{{ aigov_ao_namespace }}"
+            labels: "{{ aigov_ao_labels if aigov_ao_settings.resources | length == 0 else omit }}"
+          data: "{{ aigov_ao_settings_data | combine({'APP_INTEGRATION_URL_ALLOWED_HOSTS': aigov_ao_merged_hosts | to_json}) }}"
+
+    - name: Restart the AO components so they read the new settings
+      when: aigov_ao_restart_needed | bool
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        namespace: "{{ aigov_ao_namespace }}"
+        label_selectors:
+          - "app.kubernetes.io/instance={{ aigov_ao_instance }}"
+          - "app.kubernetes.io/component={{ item.component }}"
+        delete_all: true
+      loop: "{{ aigov_ao_components }}"
+      loop_control:
+        label: "{{ item.deployment }}"
+
+    - name: Wait for the AO components to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ aigov_ao_namespace }}"
+        name: "{{ item.deployment }}"
+      loop: "{{ aigov_ao_components }}"
+      loop_control:
+        label: "{{ item.deployment }}"
+      register: aigov_ao_rollout
+      retries: 30
+      delay: 10
+      until:
+        - aigov_ao_rollout.resources | length > 0
+        - aigov_ao_rollout.resources[0].status.readyReplicas | default(0) | int == aigov_ao_rollout.resources[0].spec.replicas | int
+        - aigov_ao_rollout.resources[0].status.updatedReplicas | default(0) | int == aigov_ao_rollout.resources[0].spec.replicas | int
+
+    - name: Find a running ao-worker pod that is not terminating
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ aigov_ao_namespace }}"
+        label_selectors:
+          - "app.kubernetes.io/instance={{ aigov_ao_instance }}"
+          - app.kubernetes.io/component=worker
+        field_selectors:
+          - status.phase=Running
+      register: aigov_ao_worker_pods
+      retries: 30
+      delay: 10
+      until: aigov_ao_worker_pods.resources | rejectattr('metadata.deletionTimestamp', 'defined') | list | length > 0
+
+    - name: Read the allowlist inside the ao-worker pod
+      kubernetes.core.k8s_exec:
+        namespace: "{{ aigov_ao_namespace }}"
+        pod: "{{ (aigov_ao_worker_pods.resources | rejectattr('metadata.deletionTimestamp', 'defined') | first).metadata.name }}"
+        command: printenv APP_INTEGRATION_URL_ALLOWED_HOSTS
+      register: aigov_ao_worker_env
+      changed_when: false
+
+    - name: Check the ao-worker pod allows every governance host
+      ansible.builtin.assert:
+        that: aigov_ao_allowed_hosts | select | difference(aigov_ao_worker_env.stdout | trim | from_json) | length == 0
+        fail_msg: >-
+          ao-worker allows {{ aigov_ao_worker_env.stdout | trim }}; missing
+          {{ aigov_ao_allowed_hosts | select | difference(aigov_ao_worker_env.stdout | trim | from_json) }}
+        success_msg: >-
+          ao-worker allows {{ aigov_ao_worker_env.stdout | trim }}
+          ({{ 'updated; AO components restarted' if aigov_ao_restart_needed | bool else 'already set; no restart' }}).
+          Hosts kept from before: {{ aigov_ao_current_hosts | difference(aigov_ao_allowed_hosts) }}

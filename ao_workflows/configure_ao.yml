@@ -165,7 +165,8 @@
           {{ aigov_ao_actions + ['Ensure the AO setting APP_INTEGRATION_URL_ALLOWED_HOSTS contains '
              ~ (aigov_ao_required_allowed_hosts | select | join(', '))
              ~ ' and that it reaches the ao-worker pods as well as ao-backend (this identity cannot '
-             ~ ('read' if aigov_ao_allow.status != 200 else 'change') ~ ' AO settings)'] }}
+             ~ ('read' if aigov_ao_allow.status != 200 else 'change') ~ ' AO settings). Run the AAP job template'
+             ~ ' "AI Governance - Configure AO Network Allowlist", which sets it through the AO deployment'] }}
 
     # ---- Summary ---------------------------------------------------------------------
     - name: Summarize the automation orchestrator configuration
