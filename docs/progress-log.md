@@ -262,6 +262,31 @@ live server; remediation disabled (detect_only).
 **Problems found and fixed.** On ansible-core 2.16 (the EE), `fileglob` returns nothing for a wildcard directory
 (`*/data.json`); the publish job uses `find`. Found by simulating on 2.16 before deploying, as T1.13 taught.
 
+## 2026-11-20 - T2.02 Remediation lifecycle in the database
+
+**Built.** Migration V007: `api.get_finding_context`, `begin_remediation`, `update_remediation`, `record_approval`,
+`close_finding` and `record_outcome` (remediator role only), the view `api.remediations`, an approval `kind`
+(remediation or rollback), and an explicit table of allowed status transitions. The finding's status follows its remediation
+(planned → awaiting approval → remediating → verifying → resolved, or back to open).
+
+**Safety rules enforced by the database itself, whatever a job sends** (beyond the plan's function list):
+- only the action OPA selected, only for an eligible violation (never for insufficient evidence), only on an open finding;
+- straight from `planned` to `approved` only when OPA permitted automatic remediation; otherwise only `record_approval`
+  approves, rejects or expires it, and approvals and rejections need a named approver;
+- a dry run never reaches `executing`;
+- `rolled_back` only after an approved **rollback** approval (plan §9.2: rollback is never automatic);
+- `close_finding` needs a verified remediation and a *verification* evaluation in which the finding's policy passed;
+- one active remediation per finding: a second attempt is a conflict (HTTP 409);
+- rejected, failed and rolled-back outcomes start the cooldown that OPA checks;
+- every step writes an audit event (`remediation.planned`, `approval.requested`, `approval.decided` as the human
+  approver, `remediation.executed`, `verification.passed`, `finding.resolved`, `rollback.executed`, ...).
+
+**Tests.** `database/tests/test_v007_remediation.sql` follows the approval path end to end, then the automatic path, a dry run,
+a failure with rollback, cooldown, rejection and the concurrency conflict. It was mutation-checked: removing the
+approval-bypass guard or the selected-action guard makes the matching test fail.
+
+**Results.** V007 applied on mk6hb (job 261). CI green.
+
 ---
 
 ## Open items (2026-11-20)
