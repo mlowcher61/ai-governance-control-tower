@@ -26,6 +26,14 @@ Behavior confirmed on this AO build (docs/plan/03 section 9.2 open points):
 - The AI step returned one explanation per finding with the exact `finding_id`, and its next steps quoted the
   policy remediation text (the allowed next steps).
 
+### Stage 1 end-to-end test (T1.13, 2026-11-20)
+
+AAP job 224 (**AI Governance - Stage 1 End-to-End Test**) ran three cycles of the AAP workflow Reset Demo Environment
+(workflow jobs 226, 236, 247) and WF-01 (executions `7b566ad7-9ba4-4dcb-9230-2c45198ec74f`,
+`9e7d1c45-b468-450c-b705-a5b4591852a3`, `d68ce050-3fcd-4e6c-ad3e-0366a31d6197`). Each execution took the explain branch
+(the reset leaves no explained findings), and all Stage 1 acceptance criteria (A1-1 to A1-9) passed with an identical end
+state in every cycle.
+
 ## Earlier proofs (T0.08)
 
 | Workflow | Execution |

@@ -6,7 +6,7 @@ facts are in [plan/environment-validation.md](plan/environment-validation.md), v
 executions in [../ao_workflows/reference/VERIFIED.md](../ao_workflows/reference/VERIFIED.md), and decisions in
 [plan/13-open-questions.md](plan/13-open-questions.md).
 
-Stage 0 and T1.01 were built on cluster **t5d26** (2026-11-17 to 2026-11-19); see environment-validation.md
+**Stage 1 is complete (2026-11-20).** Stage 0 and T1.01 were built on cluster **t5d26** (2026-11-17 to 2026-11-19); see environment-validation.md
 sections 1-7. Everything below runs on cluster **mk6hb**.
 
 ---
@@ -194,6 +194,43 @@ query as `grafana_ro` on the demo data.
 **Open.** A visual review of the layout for customer demos (the automated checks prove the queries and data).
 The README's getting-started steps now run the AO allowlist right after configuring AO.
 
+## 2026-11-20 - T1.13 Demo reset, Stage 1 end-to-end test, rehearsal
+
+**Built.**
+- Migration V006: `api.reset_demo`, which works on demo-tagged agents only. It resolves their open findings as
+  `demo_reset`, marks them not evaluated, deletes nothing, and writes a `demo.reset` audit event. Only the remediator
+  role may call it. It also adds the views `api.agent_assessment` and `api.governance_runs` for the acceptance checks.
+- Modules `iam_role_managed_policies` and `agentcore_runtime_tags`. The certified `amazon.aws.iam_role` module also
+  manages instance profiles and role paths, which needs permissions the least-privilege `AIGovDemoResetRole` rightly lacks.
+- `playbooks/demo/vars/demo_baseline.yml`, contract-tested against the demo CloudFormation and the deploy playbook's
+  stack tags. Job template **Reset Demo Agents** and the AAP workflow **Reset Demo Environment**
+  (Reset Demo Agents → Load Governance Registry → Publish Governance Policies).
+- **Stage 1 End-to-End Test**: three cycles of reset + WF-01, checking acceptance A1-1 to A1-7 per cycle, then A1-8
+  (identical end state) and A1-9 (VERIFIED.md). The AO run steps are shared with `run_workflow.yml`
+  (`ao_workflows/tasks/run_one.yml`).
+- The demo script (docs/plan/11) and README use the real workflow, dashboard and Rego file names, and the README has a
+  *Running the Stage 1 demo* section.
+
+**Results.** Reset Demo Environment ran and was idempotent (workflow jobs 201, then 206 with no changes). **Job 224:
+Stage 1 acceptance A1-1 to A1-9 passed in 3 consecutive cycles with an identical end state:**
+
+| Agent | Registration | Status | Risk | Open findings |
+|---|---|---|---|---|
+| payments_dispute_assistant | registered | compliant | low (20) | none |
+| quick_helper_bot | unregistered | noncompliant | critical (100) | DATA-001, IAM-001, MDL-001, OWN-001, REG-001, RSK-001, TAG-001 |
+| hr_faq_agent | registered | noncompliant | low (10) | RSK-001 |
+| research_runtime | registered | unknown | low (5) | MDL-001 |
+
+**Problems found and fixed.**
+- **A YAML `true` became the tag value `"True"`.** That would silently break the IAM conditions, which compare against
+  `"true"`. Tag values are now normalized (caught by a unit test).
+- **AWS refuses to remove `aws:` system tags.** CloudFormation adds `aws:cloudformation:*` tags to every runtime. The module
+  now never touches `aws:` tags (found on the first live run).
+- **The first reset removed the stack tags `aigov:component` and `aigov:managed-by`.** CloudFormation propagates them from the
+  stack, not from the template, and the baseline missed them. They are now part of the baseline, contract-tested, and restored.
+- **The first end-to-end run (job 211) failed at its own acceptance check.** Counts are strings on ansible-core 2.16 (the EE),
+  and my local simulation used 2.21. The checks now convert counts to numbers, and the simulation is run on ansible-core 2.16 too.
+
 ---
 
 ## Open items (2026-11-20)
@@ -202,7 +239,7 @@ The README's getting-started steps now run the AO allowlist right after configur
 |---|---|
 | Visual review of the Grafana dashboards | `https://grafana-ai-governance.apps.cluster-mk6hb.dyn.redhatworkshops.io`, folder *AI Governance* |
 | Regal (Rego linter) | Blocked locally by the permission checker; could run as a CI-only step if wanted |
-| Live demonstration of finding auto-close | Planned in T1.13 (for example renew HR's risk assessment) |
+| Live demonstration of finding auto-close | Covered by SQL tests; not shown live yet (the reset resolves findings as `demo_reset`). A good Stage 2 demo moment: renew HR's risk assessment and re-run WF-01 |
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
 | `claude-work-access` has an extra `project-user` assignment | `project-admin` covers it; can be removed |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |
