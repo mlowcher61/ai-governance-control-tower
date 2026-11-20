@@ -33,7 +33,7 @@ Items marked **🔑 DECISION** need your approval before implementation starts. 
 | **Q-23** | Should Stage 3 include **ServiceNow integration** (findings to incidents, evidence attachment)? | — | Optional P2; a strong message for joint customers | Roadmap |
 | **Q-25 ✅ RESOLVED** (service account `ai-service-account` via `AO_CLIENT_ID`/`AO_CLIENT_SECRET`, project-admin in AO project `default`; runtime calls use `aigov-trigger`, see T0.08) | **AO credential for automation.** AO does not accept the AAP token (verified: 401). The workflow loader, the reference export, and EDA-triggered runs need AO API access | (a) Create an AO **service account** (client ID and secret) and export `AO_CLIENT_ID` / `AO_CLIENT_SECRET`. (b) Provide the AO admin password as `AO_PASSWORD` for the POC | **(a) service account**, scoped to the governance project. (b) is acceptable for the initial reference export only | Blocks T0.02 export, T0.08 |
 | **Q-26 🔑** | **AWS account for the demo.** AAP has two `AWS` credentials. Which account and Region should be used, and may governance roles plus demo AgentCore resources be created there? | — | A dedicated sandbox account; a Region where AgentCore is available (for example us-east-1 or us-west-2) | Blocks T0.07 |
-| **Q-27 ⚙️ PARTIAL** | **`llama-scout-17b` structured output.** Can it reliably return JSON matching `responseSchema`? | — | Test in the T0.02 spike. The design already tolerates AI failure: deterministic explanations remain authoritative, the AI step uses `continue_on_failure`, and invalid AI output forces approval. Fallback: a larger MaaS model if one is available **Status (2026-11-19):** a single-step structured-output test passed (execution `fb83e168`, schema-valid JSON). Reliability on the full WF-01 explanation schema is tested in T1.11. | Explanation quality only |
+| **Q-27 ⚙️ PARTIAL** | **`llama-scout-17b` structured output.** Can it reliably return JSON matching `responseSchema`? | — | Test in the T0.02 spike. The design already tolerates AI failure: deterministic explanations remain authoritative, the AI step uses `continue_on_failure`, and invalid AI output forces approval. Fallback: a larger MaaS model if one is available **Status (2026-11-19):** a single-step structured-output test passed (execution `fb83e168`, schema-valid JSON). Reliability on the full WF-01 explanation schema is tested in T1.11. **Status (2026-11-20):** WF-01 execution `98433f4f` returned 9 of 9 schema-valid explanations with the exact finding IDs and only the allowed next steps. | Explanation quality only |
 | **Q-24** | Should **IAM Access Analyzer** findings (unused access, custom policy checks) feed policies? Some analyzer types are paid features. | — | Defer; `SimulatePrincipalPolicy` and static analysis suffice for the POC | — |
 
 ### 1.1 Plain-language guidance on the two "not sure" items
@@ -54,6 +54,21 @@ Items marked **🔑 DECISION** need your approval before implementation starts. 
 - Bringing an agent under automated remediation is a deliberate, auditable act: someone adds the tag.
 
 The demo agent's role is tagged by the demo CloudFormation stack. The alternative, an IAM path such as `/aigov-agents/`, works similarly, but a role's path cannot be changed after creation, which makes it impractical for existing customer roles.
+
+### 1.2 Decisions made during implementation (2026-11-19 to 2026-11-20)
+
+Details and evidence are in [../progress-log.md](../progress-log.md).
+
+| Decision | Choice | Why |
+|---|---|---|
+| Risk category bands | **low 0-20, medium 21-44**, high 45-69, critical 70+ (was medium 20-44) | §8 of the Stage 1 plan expects the payments agent (score 20) to be low. User decision |
+| Rego library ([ynotbhatc/rego_policy_libraries](https://github.com/ynotbhatc/rego_policy_libraries)) | **Hybrid**: our own library and per-agent policies; the library's control IDs (CIS AWS v7, ISO 42001, EU AI Act, OWASP LLM, NIST AI RMF) cited in each result, pinned to commit `9d26ac4`; a Stage 3 roll-up into its framework modules | The library evaluates organization attestations and AI actions, not individual cloud agents, and uses a different input/output format. User decision |
+| Policy test environment | `opa check` / `opa test` run in a Kubernetes Job with the **server's own OPA image**, not in the EE | No EE rebuild; tests run on exactly the OPA version that serves the policies |
+| AO SSRF allowlist | Set through the **`ao-admin-settings` ConfigMap** (job *Configure AO Network Allowlist*), merged with existing hosts | The AO UI could not give any service account the system admin role needed to change settings through the API. User approved |
+| Shared `aigov_` variables in collection roles | ansible-lint rule `var-naming[no-role-prefix]` skipped | Credentials inject `aigov_*` variables and the roles exchange data through them |
+| Credentials whose secrets are written by jobs | Config as code sends the full key set (Inventory API tokens) or only creates the credential (`state: exists`, AO trigger) | Otherwise a config-as-code re-run patches the secrets away (found twice) |
+| Regal (Rego linter) | **Not added** | Downloading and running it was blocked by the permission checker; correctness is covered by strict compile, unit tests and golden decisions |
+| Q-12 / Q-13 / Q-16 defaults | Adopted in `policies/data/governance/config/data.json`: approved models `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `anthropic.claude-3-5-haiku-20241022-v1:0`; tags `Owner`, `Environment`, `DataClassification`, `CostCenter`; `assume_production` | Proposed defaults; customers change them in `data.json` |
 
 ## 2. Assumptions
 

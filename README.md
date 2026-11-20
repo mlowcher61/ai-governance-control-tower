@@ -18,7 +18,7 @@
 > - Environment check and least-privilege verification playbooks
 > - CI: lint, unit tests, SQL tests, and HTTP tests through PostgREST
 >
-> See [Implementation status](#implementation-status).
+> See [Implementation status](#implementation-status) and the detailed [progress log](docs/progress-log.md).
 
 ---
 
@@ -84,6 +84,7 @@ Everything is linked by one correlation ID and written to a hash-chained audit l
 | 11 | [Customer demo](docs/plan/11-customer-demo.md) | 15–20 minute demonstration script with talking points |
 | 12 | [Implementation roadmap](docs/plan/12-implementation-roadmap.md) | Tasks, estimates, critical path, milestones |
 | 13 | [Open questions](docs/plan/13-open-questions.md) | Decisions needed, assumptions, licensing, unverified items |
+| — | [Progress log](docs/progress-log.md) | What each task built and proved, problems found and fixed, decisions, open items |
 | — | [Environment validation](docs/plan/environment-validation.md) | Read-only checks of the target AAP, AO, and AWS environment (2026-11-17) |
 
 ## Key terms for new Ansible users
