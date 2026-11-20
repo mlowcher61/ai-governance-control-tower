@@ -40,7 +40,7 @@ _value:
   type: dict
 """
 
-import copy
+import copy  # noqa: E402 - Ansible plugins keep DOCUMENTATION first
 
 
 def policy_input_refresh(stored, record):
