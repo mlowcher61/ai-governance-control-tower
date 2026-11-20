@@ -65,3 +65,9 @@ def test_runtime_tags_plan():
     assert to_remove == ["Owner"]
     assert tags_mod.plan(current, wanted, False)[1] == []
     assert tags_mod.plan({"aigov:demo": "true"}, {"aigov:demo": "true"}, True) == ({}, [])
+
+
+def test_aws_system_tags_are_never_removed():
+    current = {"aws:cloudformation:stack-name": "aigov-demo-agents", "AWS:Other": "x", "Owner": "o", "aigov:demo": "true"}
+    to_add, to_remove = tags_mod.plan(current, {"aigov:demo": "true", "aws:ignored": "y"}, True)
+    assert to_remove == ["Owner"] and to_add == {}

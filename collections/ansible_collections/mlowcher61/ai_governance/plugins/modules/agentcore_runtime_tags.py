@@ -11,6 +11,7 @@ short_description: Set the tags of an Amazon Bedrock AgentCore runtime
 version_added: "0.1.0"
 description:
   - Makes the tags of an AgentCore runtime equal to O(tags) (with O(purge_tags)), or adds them.
+  - AWS system tags (keys starting with C(aws:), for example the C(aws:cloudformation:*) tags) are never changed or removed.
   - Used by the demo reset to restore the demo baseline tags. No certified collection manages AgentCore tags yet.
 options:
   resource_arn:
@@ -71,11 +72,16 @@ def tag_value(value):
     return str(value)
 
 
+def system_tag(key):
+    """AWS-managed tags (for example aws:cloudformation:stack-name) cannot be changed or removed."""
+    return key.lower().startswith("aws:")
+
+
 def plan(current, wanted, purge):
-    """Return (to_add, to_remove) for the current and wanted tag dicts."""
-    wanted = dict((k, tag_value(v)) for k, v in wanted.items())
+    """Return (to_add, to_remove) for the current and wanted tag dicts. aws: system tags are never touched."""
+    wanted = dict((k, tag_value(v)) for k, v in wanted.items() if not system_tag(k))
     to_add = dict((k, v) for k, v in wanted.items() if current.get(k) != v)
-    to_remove = sorted(k for k in current if k not in wanted) if purge else []
+    to_remove = sorted(k for k in current if k not in wanted and not system_tag(k)) if purge else []
     return to_add, to_remove
 
 
