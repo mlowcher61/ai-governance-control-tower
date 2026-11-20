@@ -317,6 +317,59 @@ unit tests and will be shown live in T2.07: after a remediation, the reassessmen
 
 ---
 
+## 2026-11-20 - T2.04 Plan Remediation
+
+**Built.**
+- **AI Governance - Plan Remediation** (`playbooks/remediation/plan.yml`; AWS bootstrap + discovery role + Inventory API
+  remediator credentials). For one open violation it:
+  1. reads the finding context and captures the **pre-state** read-only (execution role policies, boundary, trust policy,
+     tags; runtime tags);
+  2. works out the actions that fit the pre-state (filter `remediation_applicable_actions`) and asks OPA
+     `governance.remediation.authz`;
+  3. **dry-runs** the selected action with the real modules in check mode (managed policies, boundary, runtime tags);
+  4. checks the AI recommendation against `schemas/ai-recommendation.v1.json` (`remediation_ai_check`). It is advisory only:
+     output that fails its contract is neither shown to the approver nor stored;
+  5. computes the **blast radius** (`remediation_blast_radius`): other agents on the same role, or a trust policy that
+     admits other principals, gives `yes`; incomplete evidence gives `unknown`;
+  6. asks OPA `governance.remediation.route` for `auto`, `approval`, `simulate` or `halt`;
+  7. records the remediation (`begin_remediation`, always with OPA's action) and moves it to `awaiting_approval`,
+     `approved` or `skipped` (simulate); writes a Markdown **approval summary** (finding, planned change, blast radius,
+     rollback, OPA reasons and bundle, AI advisory, owner and separation of duties).
+  Any problem gives `route: halt` with the reason; nothing is changed in AWS.
+- **V008**: `get_finding_context` adds `agents_sharing_role`, tags and the registry facts (owner, environment, data
+  classification).
+- New filter `remediation_governance_tags`: registry values when the agent is registered, quarantine tags otherwise;
+  owners are never invented.
+- Contracts: `ai-recommendation.v1.json` and `artifacts.v1.json#/$defs/plan`, with examples.
+
+**Problem found and fixed.** The demo profile could never be published: the overlay was included in the data of the
+policy check Job, so the test "the committed default is detect_only" refused the bundle (job 286; the live policies
+were not touched). The check Job now always tests the committed settings. The profile changes only the serving bundle,
+whose remediation settings are checked on the live server (commit b7257f4).
+
+**ansible-core 2.16 findings** (simulated before deploying): a `set_fact` of the string `yes` becomes boolean `true`, so
+yes/no values are kept as booleans and converted where used. `omit` inside a nested dict is not removed, so request
+bodies are built with `combine`. The template lookup trims newlines after block tags, so the summary template keeps
+each tag on its own line.
+
+**Tests.** Unit tests for the four filters (76 in total), V008 SQL tests, schema examples (128), and the plan Jinja on
+ansible-core 2.16 with the AI recommendation as an object, as JSON text, invalid, and empty.
+
+**Results on mk6hb.** V008 applied (job 282). Default settings: route `halt`, with every OPA reason (job 285). Demo
+profile published (job 288). `quick_helper_bot` IAM-001 (job 291): route `approval`, remediation
+`320f53ea-43db-4feb-9ede-155870a7fa14` awaiting approval. Planned change: attach `aigov-approved-agentcore-runtime-basic`,
+detach `AdministratorAccess`. Blast radius `no`, rollback `yes`, AI agrees. Finding status `awaiting_approval` (job 293).
+A second plan halts (job 294). Reassess still finds the role noncompliant, so the dry run changed nothing in AWS (job 295).
+
+**Not shown live.** The `auto` and `simulate` routes and an invalid AI recommendation (covered by unit tests, the
+simulation and the OPA route tests). The OPA decision ID is empty because OPA decision logging is not enabled; the
+bundle revision identifies the policy version.
+
+**Left in place for T2.05.** The demo profile stays published on mk6hb, and remediation `320f53ea…` awaits approval.
+Republish with the default profile to turn remediation off.
+
+---
+
 ## Open items (2026-11-20)
 
 | Item | Notes |
@@ -326,4 +379,6 @@ unit tests and will be shown live in T2.07: after a remediation, the reassessmen
 | Live demonstration of finding auto-close | Covered by SQL tests; not shown live yet (the reset resolves findings as `demo_reset`). A good Stage 2 demo moment: renew HR's risk assessment and re-run WF-01 |
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
 | `claude-work-access` has an extra `project-user` assignment | `project-admin` covers it; can be removed |
+| Demo profile published on mk6hb | Left on for T2.05 (remediation `320f53ea…` awaits approval); republish with `aigov_policy_profile: default` to turn remediation off |
+| OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |

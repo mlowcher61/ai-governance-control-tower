@@ -50,7 +50,8 @@ to the actions that fix it. It is also the source of the `action_types` in each 
 
 **Remediation is off in the committed settings** (`remediation.enabled: false`, `mode: detect_only`); a test enforces
 this. To demonstrate remediation, publish with `aigov_policy_profile: demo`. That applies `overlays/demo/remediation.json`
-and allows only the account in `aigov_aws_account_id`.
+and allows only the account in `aigov_aws_account_id`. The publish job always runs the tests against the committed settings; the profile changes only
+the policies that are served, and the job checks the live remediation settings after publishing.
 
 ## Files
 

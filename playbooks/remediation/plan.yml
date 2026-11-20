@@ -308,7 +308,8 @@
           ansible.builtin.set_fact:
             aigov_plan: >-
               {{ aigov_plan | combine({'route': 'halt', 'remediation_id': aigov_remediation_id | default(''),
-                                       'reason': 'planning failed: ' ~ ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
+                                       'reason': ('not planned: ' if ansible_failed_result.assertion is defined else 'planning failed: ')
+                                                 ~ ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
 
     - name: Check the artifacts against their contract
       ansible.builtin.assert:

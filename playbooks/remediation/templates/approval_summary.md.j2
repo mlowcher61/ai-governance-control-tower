@@ -25,7 +25,7 @@
 
 **Rollback:** {{ 'available (the pre-state is recorded)' if aigov_rollback | bool else 'not available' }}
 
-**Policy decision (deterministic):** OPA decision {{ aigov_authz_decision_id | default('-', true) }}, bundle {{ aigov_authz.bundle_revision | default('-', true) }}, route **{{ aigov_route.route }}** ({{ aigov_route.reason }})
+**Policy decision (deterministic):** OPA decision {{ aigov_authz_decision_id | default('-', true) }}, bundle {{ aigov_authz.bundle_revision | default('-', true) }}, route **{{ aigov_route.route }}**. Reasons:
 
 {% for r in aigov_authz.reasons | default([]) %}
 - {{ r }}
