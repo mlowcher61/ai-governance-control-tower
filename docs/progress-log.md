@@ -287,6 +287,34 @@ approval-bypass guard or the selected-action guard makes the matching test fail.
 
 **Results.** V007 applied on mk6hb (job 261). CI green.
 
+## 2026-11-20 - T2.03 Get Finding Context and Reassess Agent
+
+**Built.**
+- **AI Governance - Get Finding Context** (remediator credential): reads `api.get_finding_context` and publishes the
+  finding, agent, environment, attempts, cooldown and exempt status, with a new remediation run ID. An unknown finding
+  does not fail the job: it reports `finding_status: not_found`, so WF-02 can branch on it.
+- **AI Governance - Reassess Agent** (discovery AWS role + evaluator credential): re-collects one agent from AWS (the
+  AgentCore adapter, filtered to that runtime), then rebuilds its policy input with the live state (new filter
+  `policy_input_refresh`; registration and IDs from the inventory). It asks OPA and records the evaluation with purpose
+  `pre_remediation`, which never changes findings. The finding's policy gives the assessment: `compliant` (the finding is
+  stale), `noncompliant`, `missing_evidence` or `error` (filter `reassessment_outcome`). Errors are reported as
+  `assessment: error`, never as a failed job.
+- The decision does not depend on the last discovery run, and the job cannot rewrite the inventory. Verify Remediation
+  (T2.07) will reuse it.
+- Contracts: `artifacts.v1` gains `finding_context` and `reassess`. The `inventory_api` wrapper can accept expected
+  error responses.
+
+**Tests.** The refresh filter rebuilds all four stored policy inputs exactly from their discovery records; the outcome
+filter is tested for every decision, including a stale finding (live pass gives `compliant`). Get Finding Context
+artifacts were simulated on ansible-core 2.16 for both the found and the not-found case.
+
+**Results on mk6hb.** Get Finding Context: `quick_helper_bot` IAM-001 (job 266, full context), unknown finding (268,
+`not_found`). Reassess: IAM-001 `noncompliant` critical (274), MDL-001 `missing_evidence` (275), HR RSK-001
+`noncompliant` (277), unknown finding `error` with the reason (278). Check Inventory (279): findings unchanged.
+
+**Not shown live.** A stale finding (`compliant`) needs AWS or the registry to change after an assessment. It is covered by
+unit tests and will be shown live in T2.07: after a remediation, the reassessment of the fixed finding must be compliant.
+
 ---
 
 ## Open items (2026-11-20)
