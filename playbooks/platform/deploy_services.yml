@@ -37,6 +37,7 @@
       app.kubernetes.io/managed-by: ai-governance-control-tower
     aigov_repo_root: "{{ playbook_dir }}/../.."
     aigov_tpl: "{{ aigov_repo_root }}/platform/templates"
+    aigov_dashboard_files: "{{ query('ansible.builtin.fileglob', aigov_repo_root ~ '/dashboards/json/*.json') | sort }}"
   tasks:
     - name: Check the OpenShift credential is attached
       ansible.builtin.assert:
@@ -131,7 +132,10 @@
               ~ aigov_db_secret['authenticator-password'] ~ aigov_db_secret['grafana-password'])
              | hash('sha256') | truncate(10, True, '', 0) }}
         aigov_run_suffix: "{{ tower_job_id | default(awx_job_id) | default(now(utc=true, fmt='%Y%m%d%H%M%S'), true) }}"
-        aigov_grafana_config_hash: "{{ lookup('ansible.builtin.file', aigov_tpl ~ '/grafana.yml.j2') | hash('sha256') | truncate(12, True, '', 0) }}"
+        aigov_grafana_config_hash: >-
+          {{ (lookup('ansible.builtin.file', aigov_tpl ~ '/grafana.yml.j2')
+              ~ (query('ansible.builtin.file', *aigov_dashboard_files) | join('')))
+             | hash('sha256') | truncate(12, True, '', 0) }}
       no_log: true
 
     # ---- Network policies first, so nothing is ever reachable without them --------------
@@ -216,11 +220,12 @@
         state: present
         definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/governance-api.yml.j2') | ansible.builtin.from_yaml_all | list }}"
 
-    - name: Create the Grafana dashboards ConfigMap (only when none exists; dashboards arrive in T1.12)
+    # Dashboards are provisioned from Git (dashboards/json/). force replaces the whole ConfigMap, so a dashboard
+    # removed from Git disappears too. Grafana restarts only when the dashboard set changes (hash annotation).
+    - name: Publish the Grafana dashboards from dashboards/json/
       kubernetes.core.k8s:
         state: present
-        apply: false
-        force: false
+        force: true
         definition:
           apiVersion: v1
           kind: ConfigMap
@@ -228,6 +233,7 @@
             name: grafana-dashboards
             namespace: "{{ aigov_platform_namespace }}"
             labels: "{{ aigov_platform_labels }}"
+          data: "{{ dict(aigov_dashboard_files | map('basename') | zip(query('ansible.builtin.file', *aigov_dashboard_files))) }}"
 
     - name: Deploy Grafana
       kubernetes.core.k8s:
@@ -308,6 +314,9 @@
       until: aigov_grafana_health.status == 200
       retries: 12
       delay: 5
+
+    - name: Check the dashboards in the live Grafana
+      ansible.builtin.include_tasks: tasks/check_dashboards.yml
 
     - name: Check OPA and PostgREST from this job
       when: aigov_platform_check_from_job | bool

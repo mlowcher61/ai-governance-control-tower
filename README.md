@@ -2,7 +2,7 @@
 
 ### Powered by Red Hat Ansible Automation Platform automation orchestrator
 
-> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) in progress. T1.01–T1.04 and T1.06–T1.11 are done.** The plan was approved on 2026-11-17. The current environment is cluster **mk6hb**. It was rebuilt from config as code only. Implemented so far:
+> **Status: Stage 0 (foundations) complete; Stage 1 (discovery and governance) in progress. T1.01–T1.04 and T1.06–T1.12 are done.** The plan was approved on 2026-11-17. The current environment is cluster **mk6hb**. It was rebuilt from config as code only. Implemented so far:
 > - AAP config as code (`aap_config/`)
 > - AWS governance roles and demo AgentCore runtimes (CloudFormation)
 > - Governance platform services on OpenShift: PostgreSQL, the Inventory API (PostgREST), OPA, and Grafana (`playbooks/platform/`, `platform/`)
@@ -12,6 +12,7 @@
 > - **Governance policies** in OPA/Rego: 10 per-agent policies, risk scoring, golden decisions, and a publish job that refuses failing bundles (`policies/`)
 > - **Policy evaluation**: every agent is judged by OPA, the results and findings are stored, and the findings for the AI step are sanitized (`playbooks/evaluation/`)
 > - **WF-01, the AI Governance Assessment workflow** in automation orchestrator: discover, evaluate, AI explanation (advisory), record, summary (`ao_workflows/definitions/`)
+> - **Grafana dashboards** from Git: Inventory and Findings, Agent Detail (`dashboards/`)
 > - Data contracts (JSON Schemas) and reference fixtures for the four demo agents (`schemas/`, `policies/fixtures/`)
 > - automation orchestrator config as code and the workflow loader (`ao_workflows/`)
 > - Environment check and least-privilege verification playbooks

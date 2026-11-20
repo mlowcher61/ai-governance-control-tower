@@ -1,0 +1,105 @@
+---
+# Live check of the Grafana dashboards (T1.12): each dashboard from dashboards/json/ is loaded exactly once,
+# and every panel query runs through Grafana's own data source against the governance database.
+# Uses the Grafana admin account from the Secret <namespace>/grafana-admin (never printed).
+- name: Read the Grafana admin credentials
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: "{{ aigov_platform_namespace }}"
+    name: grafana-admin
+  register: aigov_grafana_secret
+  no_log: true
+
+- name: Set the Grafana API connection
+  ansible.builtin.set_fact:
+    aigov_grafana_api: "https://{{ aigov_grafana_route.resources[0].spec.host }}"
+    aigov_grafana_user: "{{ aigov_grafana_secret.resources[0].data['admin-user'] | b64decode }}"
+    aigov_grafana_password: "{{ aigov_grafana_secret.resources[0].data['admin-password'] | b64decode }}"
+    aigov_dashboards: "{{ query('ansible.builtin.file', *aigov_dashboard_files) | map('from_json') | list }}"
+  no_log: true
+
+- name: Find the provisioned dashboards
+  ansible.builtin.uri:
+    url: "{{ aigov_grafana_api }}/api/search?type=dash-db&tag=ai-governance"
+    url_username: "{{ aigov_grafana_user }}"
+    url_password: "{{ aigov_grafana_password }}"
+    force_basic_auth: true
+    validate_certs: false
+  register: aigov_grafana_search
+  until: >-
+    aigov_grafana_search.status == 200 and
+    (aigov_grafana_search.json | map(attribute='uid') | list | intersect(aigov_dashboards | map(attribute='uid') | list) | length)
+    == aigov_dashboards | length
+  retries: 24
+  delay: 5
+
+- name: Check each dashboard is loaded exactly once
+  ansible.builtin.assert:
+    that: >-
+      aigov_grafana_search.json | map(attribute='title') | select('equalto', item.title) | list | length == 1
+    fail_msg: >-
+      Dashboard {{ item.title }} is loaded
+      {{ aigov_grafana_search.json | map(attribute='title') | select('equalto', item.title) | list | length }} times.
+    quiet: true
+  loop: "{{ aigov_dashboards }}"
+  loop_control:
+    label: "{{ item.title }}"
+
+- name: Pick an agent for the Agent Detail queries (the dashboard's own variable query)
+  ansible.builtin.uri:
+    url: "{{ aigov_grafana_api }}/api/ds/query"
+    method: POST
+    url_username: "{{ aigov_grafana_user }}"
+    url_password: "{{ aigov_grafana_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      from: now-30d
+      to: now
+      queries:
+        - refId: A
+          datasource: {type: grafana-postgresql-datasource, uid: aigov-postgres}
+          format: table
+          rawQuery: true
+          rawSql: SELECT agent_id::text AS id FROM reporting.agent_current ORDER BY risk_rank, name LIMIT 1
+  register: aigov_grafana_agent
+
+- name: Run every panel query through Grafana
+  vars:
+    aigov_agent_id: "{{ (aigov_grafana_agent.json.results.A.frames[0].data['values'][0] | default(['00000000-0000-0000-0000-000000000000']))[0] }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_grafana_api }}/api/ds/query"
+    method: POST
+    url_username: "{{ aigov_grafana_user }}"
+    url_password: "{{ aigov_grafana_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      from: now-90d
+      to: now
+      queries:
+        - refId: A
+          datasource: {type: grafana-postgresql-datasource, uid: aigov-postgres}
+          format: "{{ item.1.targets[0].format }}"
+          rawQuery: true
+          rawSql: "{{ item.1.targets[0].rawSql | replace('$agent', aigov_agent_id) }}"
+    status_code: [200, 400, 500]
+  # item.0 = dashboard, item.1 = panel
+  loop: "{{ aigov_dashboards | subelements('panels') }}"
+  loop_control:
+    label: "{{ item.0.title }} / {{ item.1.title }}"
+  register: aigov_panel_queries
+
+- name: Check every panel query succeeded
+  ansible.builtin.assert:
+    that: aigov_panel_queries.results | rejectattr('status', 'equalto', 200) | list | length == 0
+    fail_msg: >-
+      Panel queries failed: {{ aigov_panel_queries.results | rejectattr('status', 'equalto', 200)
+      | map(attribute='item') | map('last') | map(attribute='title') | list }}
+      ({{ aigov_panel_queries.results | rejectattr('status', 'equalto', 200) | map(attribute='json') | map(attribute='results', default={})
+      | map('dict2items') | flatten | map(attribute='value') | map(attribute='error', default='') | list }})
+    success_msg: >-
+      {{ aigov_dashboards | length }} dashboards loaded once each; {{ aigov_panel_queries.results | length }} panel queries ran
+      through Grafana. Open {{ aigov_grafana_api }}/dashboards/f/ (folder "AI Governance").

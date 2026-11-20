@@ -1,0 +1,1096 @@
+{
+  "uid": "aigov-inventory",
+  "title": "AI Governance - Inventory and Findings",
+  "description": "Stage 1 overview: discovered AI agents, compliance, risk, shadow agents and open findings. Provisioned from Git (dashboards/json/).",
+  "tags": [
+    "ai-governance"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "AI Governance dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ai-governance"
+      ],
+      "asDropdown": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "AI agents discovered",
+      "description": "Every AI agent discovery found in the governed cloud accounts (agents no longer seen are excluded).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS agents FROM reporting.agent_current"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Compliant",
+      "description": "Agents for which every applicable policy passed.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM reporting.agent_current WHERE compliance_status = 'compliant'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Noncompliant",
+      "description": "Agents with at least one failed policy.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM reporting.agent_current WHERE compliance_status = 'noncompliant'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Unknown or not evaluated",
+      "description": "Agents whose evidence is incomplete (missing evidence is never treated as compliant), or that were not evaluated yet.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM reporting.agent_current WHERE compliance_status IN ('unknown', 'error', 'not_evaluated')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Unregistered (shadow) agents",
+      "description": "Discovered agents that match no registration in the governance registry.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM reporting.agent_current WHERE registration_status = 'unregistered'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Critical open findings",
+      "description": "Open findings of critical severity, for example administrator access on an agent's execution role.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM reporting.findings_open WHERE severity = 'critical'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Evidence coverage",
+      "description": "Share of the latest policy results that could be decided. Unknown results lower it: fix discovery permissions or complete the registry.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT coverage_pct FROM reporting.evidence_coverage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "piechart",
+      "title": "Compliance status",
+      "description": "Agents by overall compliance status.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT compliance_status AS status, count(*) AS agents FROM reporting.agent_current GROUP BY compliance_status ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "compliant"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "noncompliant"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "not_evaluated"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "legend": {
+          "showLegend": true,
+          "placement": "right",
+          "displayMode": "table",
+          "values": [
+            "value"
+          ]
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Agents by risk category",
+      "description": "Deterministic risk score bands: critical 70+, high 45-69, medium 21-44, low 20 or less.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 4,
+        "w": 7,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT risk_category AS category, count(*) AS agents FROM reporting.agent_current GROUP BY risk_category, risk_rank ORDER BY risk_rank"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "auto",
+        "legend": {
+          "showLegend": false
+        },
+        "xTickLabelRotation": 0,
+        "barWidth": 0.7
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Open findings by policy",
+      "description": "Which governance policies are failing (or cannot be evaluated) most often.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 17,
+        "y": 4,
+        "w": 7,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT policy_id AS policy, count(*) AS findings FROM reporting.findings_open GROUP BY policy_id ORDER BY count(*) DESC, policy_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "legend": {
+          "showLegend": false
+        },
+        "xTickLabelRotation": 0,
+        "barWidth": 0.7
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "AI agents",
+      "description": "Every agent in the inventory. Select an agent name to open its detail dashboard.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT agent_id, name AS agent, compliance_status AS compliance, risk_category AS risk, risk_score AS score, registration_status AS registration, coalesce(owner_name, '-') AS owner, environment, platform, account_ref AS account, region, open_findings, last_evaluated_at FROM reporting.agent_current ORDER BY risk_rank, risk_score DESC NULLS LAST, name"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "compliance"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "compliant": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "noncompliant": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "unknown": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "error": {
+                        "color": "purple",
+                        "index": 3
+                      },
+                      "not_evaluated": {
+                        "color": "text",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "risk"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "dark-red",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "green",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Agent detail",
+                    "url": "/d/aigov-agent-detail/ai-governance-agent-detail?var-agent=${__data.fields.agent_id}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Open findings",
+      "description": "Open findings, most severe first. The policy explanation decides; the AI explanation only rephrases it.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT severity, agent_name AS agent, policy_id AS policy, finding_type AS type, age_days AS \"age (days)\", deterministic_explanation AS \"policy explanation\", coalesce(ai_headline, '-') AS \"AI explanation (advisory)\", agent_id FROM reporting.findings_open ORDER BY severity_rank, first_detected_at"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "dark-red",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "yellow",
+                        "index": 3
+                      },
+                      "info": {
+                        "color": "blue",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Agent detail",
+                    "url": "/d/aigov-agent-detail/ai-governance-agent-detail?var-agent=${__data.fields.agent_id}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Compliance trend",
+      "description": "Agents by status at their last assessment of each day.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT day AS time, compliant, noncompliant, unknown FROM reporting.compliance_daily WHERE day > now() - interval '90 days' ORDER BY day"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "compliant"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "noncompliant"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Recent governance runs",
+      "description": "Each assessment run (WF-01): what it evaluated, opened, closed and explained.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT started_at AS started, status, duration_min AS \"minutes\", agents_evaluated AS agents, findings_opened AS opened, findings_closed AS closed, ai_explanations, run_type, governance_run_id FROM reporting.governance_runs_recent ORDER BY started_at DESC LIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ]
+}

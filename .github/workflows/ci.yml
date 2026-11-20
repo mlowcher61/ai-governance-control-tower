@@ -137,3 +137,7 @@ jobs:
           pip install "jsonschema>=4.18"
           AIGOV_API_URL=http://127.0.0.1:3000 AIGOV_JWT_SECRET="$(cat /tmp/jwt_secret)" python3 database/tests/test_contracts_api.py
 
+      - name: Every Grafana panel query runs as the Grafana user and returns rows on the demo data
+        env: {PGPASSWORD: graf}
+        run: python3 database/tests/dashboard_queries.py --require-rows | psql -X -q -h localhost -U grafana_ro -d aigov -v ON_ERROR_STOP=1
+
