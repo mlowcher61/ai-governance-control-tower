@@ -87,7 +87,8 @@
         quiet: true
 
     # policies/data/governance/<name>/data.json becomes data.governance.<name> (config, remediation_catalog,
-    # policy_actions). The demo profile replaces config.remediation with policies/overlays/demo/remediation.json.
+    # policy_actions). The demo profile replaces config.remediation with policies/overlays/demo/remediation.json
+    # in the serving bundle only.
     - name: Build the bundle (ConfigMap keys cannot hold "/", so paths become "__")
       vars:
         aigov_data_files: "{{ aigov_data_found.files | map(attribute='path') | sort | list }}"
@@ -110,13 +111,19 @@
           {{ dict(aigov_keys | zip(query('ansible.builtin.file', *aigov_files, rstrip=false))) }}
         aigov_bundle_data:
           data.json: "{{ {'governance': aigov_data | combine({'config': aigov_config})} | to_json }}"
+        # The tests always run against the COMMITTED settings, so "the committed default is detect_only" keeps its
+        # meaning with any profile. The profile only changes config.remediation, which is checked on the live server.
+        aigov_test_data:
+          data.json: >-
+            {{ {'governance': aigov_data | combine({'config': aigov_data.config
+                | combine({'bundle_revision': aigov_bundle_revision})})} | to_json }}
         aigov_expected_remediation: "{{ aigov_config.remediation }}"
 
     - name: Separate the serving policies from the tests
       ansible.builtin.set_fact:
         aigov_serving: "{{ aigov_bundle_rego | dict2items | rejectattr('key', 'match', '^tests__') | items2dict | combine(aigov_bundle_data) }}"
         aigov_candidate: >-
-          {{ aigov_bundle_rego | combine(aigov_bundle_data)
+          {{ aigov_bundle_rego | combine(aigov_test_data)
              | combine({'tests__publish_self_test.rego': aigov_self_test_rego} if aigov_publish_self_test | bool else {}) }}
 
 
