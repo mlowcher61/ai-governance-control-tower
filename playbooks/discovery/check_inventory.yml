@@ -7,7 +7,8 @@
 #   * each agent's policy input (api.evaluation_inputs + an evaluation block) matches the policy input
 #     contract (schemas/bundled/policy-input.v1.json);
 #   * optional expectations per agent: which policies its execution role must, or must not, carry, and
-#     whether it is registered (set aigov_expected_registration: {} to skip, for example before the registry is loaded).
+#     whether it is registered (set aigov_expected_registration: {} to skip, for example before the registry is loaded);
+#   * once evaluated: each agent's compliance status, risk category and exact set of open findings.
 #
 # Credential: "AI Governance - Inventory API (evaluator)".
 - name: AI Governance - check the governance inventory
@@ -30,6 +31,15 @@
       hr_faq_agent: registered
       research_runtime: registered
       quick_helper_bot: unregistered
+    # Expected evaluation outcome per agent (checked for agents that have been evaluated; {} = not checked)
+    aigov_expected_evaluation:
+      payments_dispute_assistant: {status: compliant, risk: low, findings: []}
+      quick_helper_bot:
+        status: noncompliant
+        risk: critical
+        findings: [AIGOV-DATA-001, AIGOV-IAM-001, AIGOV-MDL-001, AIGOV-OWN-001, AIGOV-REG-001, AIGOV-RSK-001, AIGOV-TAG-001]
+      hr_faq_agent: {status: noncompliant, risk: low, findings: [AIGOV-RSK-001]}
+      research_runtime: {status: unknown, risk: low, findings: [AIGOV-MDL-001]}
   tasks:
     - name: Check the Inventory API credential
       ansible.builtin.include_role:
@@ -46,6 +56,18 @@
     - name: Keep the overview
       ansible.builtin.set_fact:
         aigov_overview: "{{ aigov_api_response }}"
+
+    - name: Read the open findings
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: findings_open
+        aigov_api_query: select=agent_name,policy_id,finding_type,severity
+
+    - name: Keep the open findings
+      ansible.builtin.set_fact:
+        aigov_open_findings: "{{ aigov_api_response }}"
 
     - name: Read the policy inputs
       ansible.builtin.include_role:
@@ -89,6 +111,19 @@
           {%- set _ = p.append(a.name ~ ': registration is ' ~ a.registration_status ~ ', expected '
                                ~ aigov_expected_registration[a.name]) -%}
           {%- endfor -%}
+          {%- for a in aigov_overview if a.name in aigov_expected_evaluation and a.compliance_status != 'not_evaluated' -%}
+          {%- set e = aigov_expected_evaluation[a.name] -%}
+          {%- set have = aigov_open_findings | selectattr('agent_name', 'equalto', a.name) | map(attribute='policy_id') | sort | list -%}
+          {%- if a.compliance_status != e.status -%}
+          {%- set _ = p.append(a.name ~ ': compliance is ' ~ a.compliance_status ~ ', expected ' ~ e.status) -%}
+          {%- endif -%}
+          {%- if a.risk_category != e.risk -%}
+          {%- set _ = p.append(a.name ~ ': risk is ' ~ a.risk_category ~ ', expected ' ~ e.risk) -%}
+          {%- endif -%}
+          {%- if have != e.findings | sort -%}
+          {%- set _ = p.append(a.name ~ ': open findings ' ~ have ~ ', expected ' ~ (e.findings | sort)) -%}
+          {%- endif -%}
+          {%- endfor -%}
           {%- for x in aigov_input_problems | default([]) if x.errors -%}
           {%- set _ = p.append(x.agent ~ ': policy input breaks the contract: ' ~ (x.errors | map(attribute='message') | list)) -%}
           {%- endfor -%}
@@ -110,7 +145,8 @@
              | zip(aigov_overview | map(attribute='registration_status'),
                    aigov_overview | map(attribute='environment'),
                    aigov_overview | map(attribute='compliance_status'),
-                   aigov_overview | map(attribute='identity_ref'))
+                   aigov_overview | map(attribute='risk_score'),
+                   aigov_overview | map(attribute='open_findings'))
              | map('join', ' | ') | list }}
 
     - name: Check the inventory
@@ -119,4 +155,5 @@
         fail_msg: "Inventory check failed: {{ aigov_problems }}"
         success_msg: >-
           {{ aigov_overview | length }} agents; evidence collected; every policy input matches the contract;
-          execution role policies as expected.
+          execution role policies, registrations and ({{ aigov_overview | rejectattr('compliance_status', 'equalto', 'not_evaluated')
+          | list | length }} evaluated) compliance and open findings as expected.

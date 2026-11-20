@@ -1,0 +1,11 @@
+---
+# Evaluate every agent in the inventory against the published governance policies (docs/plan/03 section 9).
+aigov_opa_url: http://opa.ai-governance.svc:8181
+# Correlation ID from automation orchestrator (the Discover job's artifact). Empty = a new run ID.
+aigov_governance_run_id: ""
+aigov_evaluation_purpose: assessment
+# How many sanitized findings to hand to the AI explanation step (the contract allows at most 10)
+aigov_explain_limit: 10
+# Explain findings that already have an AI explanation again (false = only new ones)
+aigov_explain_again: false
+aigov_repo_root: "{{ playbook_dir }}/../.."

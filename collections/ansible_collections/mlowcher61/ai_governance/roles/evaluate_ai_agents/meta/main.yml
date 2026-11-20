@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: AI Governance Control Tower contributors
+  description: Evaluates every inventoried AI agent with OPA and records the decisions and findings
+  license: GPL-3.0-or-later
+  min_ansible_version: "2.16"
+  platforms: []
+dependencies: []

@@ -1,0 +1,19 @@
+---
+# AI Governance - Evaluate Governance Policies (task T1.10)
+#
+# For every agent in the inventory: read its policy input (api.evaluation_inputs), ask OPA for the decision
+# (POST /v1/data/governance/evaluate/result), check it against schemas/evaluation-result.v1.json, and record it
+# with api.record_evaluation, which opens, refreshes and auto-closes findings and writes the audit log.
+# Then publish the sanitized findings for the AI explanation step (api.findings_for_explanation).
+#
+# Credential: "AI Governance - Inventory API (evaluator)". OPA is reached inside the cluster.
+# Artifacts (schemas/artifacts.v1.json#/$defs/evaluate): governance_run_id, evaluated_count, compliant_count,
+# noncompliant_count, unknown_count, explain_count, findings_for_explanation (JSON text), bundle_revision.
+- name: AI Governance - evaluate the governance policies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+  roles:
+    - role: mlowcher61.ai_governance.evaluate_ai_agents

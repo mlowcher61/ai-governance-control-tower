@@ -76,6 +76,17 @@ aigov_discovery_templates:
       aigov_aws_account_id: "{{ aigov_aws_account_id | string }}"
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Evaluate Governance Policies
+    description: "T1.10 - evaluate every agent with OPA, record decisions and findings, publish sanitized findings for the AI step"
+    playbook: playbooks/evaluation/evaluate_policies.yml
+    credentials:
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+      aigov_governance_run_id: ""
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Check Inventory
     description: "T1.06 acceptance - read-only checks of the inventory and the policy inputs (evaluator role)"
     playbook: playbooks/discovery/check_inventory.yml

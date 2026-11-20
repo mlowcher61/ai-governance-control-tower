@@ -6,7 +6,9 @@ Loads policies/fixtures/registry.json (api.load_registry) and the four demo disc
 and checks that each result:
   * validates against schemas/policy-input.v1.json, and
   * equals policies/fixtures/inputs/<agent>.json (except agent.id, which the database assigns).
-So the database view and the policy contract cannot drift apart.
+Then it records the golden OPA decisions (policies/fixtures/expected/) with api.record_evaluation and checks
+the agents' compliance status and api.findings_for_explanation (schemas/findings-for-explanation.v1.json).
+So the database, the policies and the contracts cannot drift apart.
 
     AIGOV_API_URL=http://127.0.0.1:3000 AIGOV_JWT_SECRET=... python3 database/tests/test_contracts_api.py
 
@@ -97,6 +99,45 @@ for path in sorted((FIXTURES / "inputs").glob("*.json")):
         failures += 1
     else:
         print(f"ok    {path.stem}: api.evaluation_inputs equals the fixture and validates")
+
+# 3. Golden OPA results in through api.record_evaluation -> agent status and findings out
+EXPECTED = FIXTURES / "expected"
+STATUS = {"payments_dispute_assistant": "compliant", "quick_helper_bot": "noncompliant",
+          "hr_faq_agent": "noncompliant", "research_runtime": "unknown"}
+gov_run = "6f1c0000-0000-4000-8000-0000000000aa"
+for row in rows:
+    name = row["input"]["agent"]["name"]
+    if name not in STATUS:   # other agents in the test database (for example from the HTTP tests)
+        continue
+    golden = json.loads((EXPECTED / f"{name}.json").read_text())
+    golden["agent_id"] = row["agent_id"]
+    golden["results"] = [dict(r, agent_id=row["agent_id"]) for r in golden["results"]]
+    call("POST", "/rpc/record_evaluation", "aigov_evaluator",
+         {"governance_run_id": gov_run, "agent_id": row["agent_id"], "purpose": "assessment", "result": golden,
+          "input_hash": "contract-test"})
+overview = {a["name"]: a for a in call("GET", "/agent_overview?select=name,compliance_status,risk_score,open_findings", "aigov_evaluator")}
+for name, status in STATUS.items():
+    a = overview.get(name, {})
+    if a.get("compliance_status") != status:
+        print(f"FAIL  {name}: compliance_status {a.get('compliance_status')}, expected {status}")
+        failures += 1
+    else:
+        print(f"ok    {name}: {status}, risk {a.get('risk_score')}, {a.get('open_findings')} open finding(s)")
+
+findings = call("GET", "/findings_for_explanation?select=finding_id,policy_id,finding_type,severity,deterministic_explanation,agent,"
+                "allowed_next_steps&order=severity_rank,last_detected_at.desc&limit=10", "aigov_evaluator")
+ffe = Draft202012Validator({"$ref": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/findings-for-explanation.v1.json"},
+                           registry=registry)
+errors = [f"{list(e.absolute_path)}: {e.message}" for e in ffe.iter_errors(findings)]
+expected_open = 6 + 1 + 1 + 1  # quick_helper_bot 6 fails + MDL unknown, hr_faq_agent RSK, research_runtime MDL unknown
+if errors:
+    print(f"FAIL  findings_for_explanation breaks the contract: {errors[:3]}")
+    failures += 1
+elif len(findings) != expected_open:
+    print(f"FAIL  findings_for_explanation has {len(findings)} findings, expected {expected_open}")
+    failures += 1
+else:
+    print(f"ok    findings_for_explanation: {len(findings)} sanitized findings match the contract")
 
 print(f"\n{failures} failure(s)" if failures else "\nall contract checks passed")
 sys.exit(1 if failures else 0)

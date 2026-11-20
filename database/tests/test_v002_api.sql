@@ -103,7 +103,7 @@ BEGIN
   FOR fn IN SELECT p.oid::regprocedure::text AS sig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'aigov' AND p.proname NOT IN ('verify_audit_chain', 'audit_canonical') LOOP
     FOREACH r IN ARRAY roles LOOP
-      CONTINUE WHEN r = 'aigov_evaluator' AND fn.sig IN ('aigov.rfc3339(text)', 'aigov.rfc3339_members(jsonb)');
+      CONTINUE WHEN r = 'aigov_evaluator' AND fn.sig IN ('aigov.rfc3339(text)', 'aigov.rfc3339_members(jsonb)', 'aigov.safe_text(text,integer)');
       IF has_function_privilege(r, fn.sig, 'EXECUTE') THEN bad := bad || format('%s can execute %s', r, fn.sig); END IF;
     END LOOP;
   END LOOP;

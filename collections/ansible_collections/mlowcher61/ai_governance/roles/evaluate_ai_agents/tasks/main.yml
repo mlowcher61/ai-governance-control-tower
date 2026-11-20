@@ -1,0 +1,146 @@
+---
+- name: Check the Inventory API credential (evaluator)
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+
+- name: Set the run
+  ansible.builtin.set_fact:
+    aigov_run_id: >-
+      {{ aigov_governance_run_id if aigov_governance_run_id | length > 0
+         else ('aigov-evaluate-' ~ (tower_job_id | default(awx_job_id) | default('local')) ~ '-' ~ now(utc=true).isoformat()) | to_uuid }}
+    aigov_evaluated_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+    aigov_schema_dir: "{{ aigov_repo_root }}/schemas/bundled"
+
+- name: Read the policy inputs
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: evaluation_inputs
+
+- name: Add the evaluation block to each input
+  ansible.builtin.set_fact:
+    aigov_inputs: >-
+      {{ aigov_inputs | default([]) + [{'agent_id': item.agent_id, 'name': item.input.agent.name,
+           'input': item.input | combine({'evaluation': {'governance_run_id': aigov_run_id,
+                                          'evaluated_at': aigov_evaluated_at, 'purpose': aigov_evaluation_purpose}}),
+           'input_hash': item.input | to_json(sort_keys=true) | hash('sha256')}] }}
+  loop: "{{ aigov_api_response }}"
+  loop_control:
+    label: "{{ item.input.agent.name }}"
+
+- name: Ask OPA for each agent's decision
+  ansible.builtin.uri:
+    url: "{{ aigov_opa_url }}/v1/data/governance/evaluate/result"
+    method: POST
+    body_format: json
+    body:
+      input: "{{ item.input }}"
+    status_code: [200, 400, 500]
+  loop: "{{ aigov_inputs | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: aigov_opa
+
+- name: Check every decision against the evaluation result contract
+  vars:
+    aigov_contract: "{{ lookup('ansible.builtin.file', aigov_schema_dir ~ '/evaluation-result.v1.json') | from_json }}"
+  ansible.builtin.set_fact:
+    aigov_decisions: >-
+      {{ aigov_decisions | default([]) + [{'agent_id': item.item.agent_id, 'name': item.item.name,
+           'input_hash': item.item.input_hash, 'result': item.json.result | default(none),
+           'decision_id': item.json.decision_id | default(none),
+           'problem': ('OPA returned HTTP ' ~ item.status) if item.status != 200
+                      else 'OPA returned no result (is the policy bundle published?)' if item.json.result is not defined
+                      else (item.json.result | ansible.utils.validate(aigov_contract, engine='ansible.utils.jsonschema', draft='2020-12')
+                            | map(attribute='message') | list | join('; ')) }] }}
+  loop: "{{ aigov_opa.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Record each valid decision (opens, refreshes and auto-closes findings)
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: record_evaluation
+    aigov_api_body: >-
+      {{ {'governance_run_id': aigov_run_id, 'agent_id': aigov_d.agent_id, 'purpose': aigov_evaluation_purpose,
+          'result': aigov_d.result, 'input_hash': aigov_d.input_hash}
+         | combine({'opa_decision_id': aigov_d.decision_id} if aigov_d.decision_id else {}) }}
+  loop: "{{ aigov_decisions | default([]) | rejectattr('problem') | list }}"
+  loop_control:
+    loop_var: aigov_d
+    label: "{{ aigov_d.name }}"
+
+- name: Read the findings for the AI explanation step (sanitized by the Inventory API)
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: findings_for_explanation
+    aigov_api_query: >-
+      select=finding_id,policy_id,finding_type,severity,deterministic_explanation,agent,allowed_next_steps{{
+      '' if aigov_explain_again | bool else '&explained=is.false' }}&order=severity_rank,last_detected_at.desc&limit={{ aigov_explain_limit }}
+
+- name: Check the findings against their contract
+  ansible.builtin.set_fact:
+    aigov_findings: "{{ aigov_api_response }}"
+    aigov_findings_errors: >-
+      {{ aigov_api_response | ansible.utils.validate(
+           lookup('ansible.builtin.file', aigov_schema_dir ~ '/findings-for-explanation.v1.json') | from_json,
+           engine='ansible.utils.jsonschema', draft='2020-12') }}
+
+- name: Summarize the evaluation
+  vars:
+    aigov_ok: "{{ aigov_decisions | default([]) | rejectattr('problem') | map(attribute='result') | list }}"
+  ansible.builtin.set_fact:
+    aigov_evaluation_artifacts:
+      governance_run_id: "{{ aigov_run_id }}"
+      evaluated_count: "{{ aigov_ok | length }}"
+      compliant_count: "{{ aigov_ok | selectattr('overall_status', 'equalto', 'compliant') | list | length }}"
+      noncompliant_count: "{{ aigov_ok | selectattr('overall_status', 'equalto', 'noncompliant') | list | length }}"
+      unknown_count: "{{ aigov_ok | selectattr('overall_status', 'in', ['unknown', 'error']) | list | length }}"
+      explain_count: "{{ aigov_findings | length if aigov_findings_errors | length == 0 else 0 }}"
+      findings_for_explanation: "{{ (aigov_findings if aigov_findings_errors | length == 0 else []) | to_json }}"
+      bundle_revision: "{{ (aigov_ok | first | default({})).bundle_revision | default('none') }}"
+    aigov_evaluation_table: >-
+      {{ aigov_decisions | default([]) | map(attribute='name')
+         | zip(aigov_decisions | default([]) | map(attribute='result') | map('default', {}, true) | map(attribute='overall_status', default='error'),
+               aigov_decisions | default([]) | map(attribute='result') | map('default', {}, true) | map(attribute='risk', default={})
+               | map(attribute='score', default='-'))
+         | map('join', ' | ') | list }}
+
+- name: Check the artifacts against their contract
+  ansible.builtin.set_fact:
+    aigov_artifact_errors: >-
+      {{ aigov_evaluation_artifacts | ansible.utils.validate(
+           lookup('ansible.builtin.file', aigov_schema_dir ~ '/artifacts.v1.json') | from_json | combine({'$ref': '#/$defs/evaluate'}),
+           engine='ansible.utils.jsonschema', draft='2020-12') }}
+
+- name: Show the evaluation
+  ansible.builtin.debug:
+    msg:
+      agents: "{{ aigov_evaluation_table }}"
+      artifacts: "{{ aigov_evaluation_artifacts | dict2items | rejectattr('key', 'equalto', 'findings_for_explanation') | items2dict }}"
+      findings_for_explanation: >-
+        {{ aigov_findings | map(attribute='policy_id')
+           | zip(aigov_findings | map(attribute='agent') | map(attribute='name')) | map('join', ' on ') | list }}
+
+- name: Publish the artifacts for automation orchestrator
+  ansible.builtin.set_stats:
+    data: "{{ aigov_evaluation_artifacts }}"
+    per_host: false
+
+- name: Fail when an agent could not be evaluated or an output broke its contract
+  ansible.builtin.assert:
+    that:
+      - aigov_decisions | default([]) | selectattr('problem') | list | length == 0
+      - aigov_findings_errors | length == 0
+      - aigov_artifact_errors | length == 0
+    fail_msg: >-
+      Evaluation problems: {{ aigov_decisions | default([]) | selectattr('problem') | map(attribute='name')
+      | zip(aigov_decisions | default([]) | selectattr('problem') | map(attribute='problem')) | list }};
+      findings contract: {{ aigov_findings_errors | map(attribute='message') | list }};
+      artifacts contract: {{ aigov_artifact_errors | map(attribute='message') | list }}
+    quiet: true
