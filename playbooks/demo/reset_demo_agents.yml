@@ -80,7 +80,7 @@
         session_token: "{{ aigov_reset_session.sts_creds.session_token }}"
         region: "{{ aigov_aws_region }}"
         resource_arn: "{{ aigov_demo[item.runtime_arn_output] }}"
-        tags: "{{ item.tags }}"
+        tags: "{{ aigov_demo_stack_tags | combine(item.tags) }}"
       loop: "{{ aigov_demo_baseline }}"
       loop_control:
         label: "{{ item.runtime }}"

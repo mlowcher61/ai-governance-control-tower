@@ -5,6 +5,12 @@
 #
 # managed_policies entries: "approved" = the approved least-privilege policy from the governance stack
 # (output ApprovedAgentRuntimePolicyArn); anything else is a policy ARN.
+# Stack-level tags that CloudFormation propagates to every demo resource (set by playbooks/demo/deploy_demo_agents.yml).
+# Merged into each runtime's tags below; a contract test keeps the two playbooks in step.
+aigov_demo_stack_tags:
+  "aigov:component": demo
+  "aigov:managed-by": ai-governance-control-tower
+
 aigov_demo_baseline:
   - runtime: payments_dispute_assistant
     runtime_arn_output: PaymentsAssistantRuntimeArn

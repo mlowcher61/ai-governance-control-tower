@@ -205,6 +205,12 @@ def test_demo_baseline_matches_cloudformation():
                 if r["Type"] == "AWS::BedrockAgentCore::Runtime"}
     roles = {r["Properties"]["RoleName"]: r["Properties"] for r in cfn["Resources"].values() if r["Type"] == "AWS::IAM::Role"}
     assert {b["runtime"] for b in baseline} == set(runtimes)
+    # The stack tags in the baseline are the ones the deploy playbook gives the demo stack
+    stack_tags = yaml.safe_load((ROOT / "playbooks" / "demo" / "vars" / "demo_baseline.yml").read_text())["aigov_demo_stack_tags"]
+    deploy = yaml.safe_load((ROOT / "playbooks" / "demo" / "deploy_demo_agents.yml").read_text())
+    deploy_tags = [t["amazon.aws.cloudformation"]["tags"] for t in deploy[0]["tasks"]
+                   if "amazon.aws.cloudformation" in t and "aigov-demo-agents" in str(t["amazon.aws.cloudformation"].get("template_body", ""))]
+    assert deploy_tags and all(d == stack_tags for d in deploy_tags)
     for b in baseline:
         assert {str(k): str(v) for k, v in runtimes[b["runtime"]]["Tags"].items()} == b["tags"], b["runtime"]
         assert b["runtime_arn_output"] in cfn["Outputs"]
