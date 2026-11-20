@@ -1,0 +1,67 @@
+---
+# AI Governance - Get Finding Context (task T2.03, WF-02 node activity_context)
+#
+# Reads everything remediation needs to know about one finding (api.get_finding_context) and publishes it for
+# automation orchestrator, with a new governance run ID for the remediation run. An unknown finding does not fail
+# the job: finding_status is "not_found", so the workflow can branch on it.
+# Credential: "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/finding_context.
+- name: AI Governance - get the finding context
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_finding_id: ""
+    aigov_governance_run_id: ""
+  tasks:
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Check the finding ID
+      ansible.builtin.assert:
+        that: aigov_finding_id is match('^[0-9a-fA-F-]{36}$')
+        fail_msg: Pass aigov_finding_id (a finding UUID).
+        quiet: true
+
+    - name: Read the finding context
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: get_finding_context
+        aigov_api_body:
+          finding_id: "{{ aigov_finding_id }}"
+        aigov_api_accept_status: [200, 400]
+
+    - name: Build the artifacts
+      vars:
+        aigov_run: >-
+          {{ aigov_governance_run_id if aigov_governance_run_id | length > 0
+             else ('aigov-remediation-' ~ aigov_finding_id ~ '-' ~ now(utc=true).isoformat()) | to_uuid }}
+        aigov_keys: [agent_id, agent_name, policy_id, severity, finding_type, environment, account_ref, platform,
+                     remediation_attempts, cooldown_active, exempt, deterministic_explanation]
+      ansible.builtin.set_fact:
+        aigov_context: >-
+          {{ {'governance_run_id': aigov_run, 'finding_id': aigov_finding_id}
+             | combine({'finding_status': aigov_api_response.finding_status}
+                       | combine(dict(aigov_keys | zip(aigov_keys | map('extract', aigov_api_response))))
+                       if aigov_api_status | int == 200 else {'finding_status': 'not_found'}) }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_context | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/finding_context'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The finding context does not match schemas/artifacts.v1.json#/$defs/finding_context: {{ aigov_context }}"
+        quiet: true
+
+    - name: Show the finding context
+      ansible.builtin.debug:
+        var: aigov_context
+
+    - name: Publish the finding context for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_context }}"
+        per_host: false

@@ -141,6 +141,35 @@ aigov_e2e_templates:
       aigov_e2e_cycles: 3
     <<: *aigov_jt_defaults
 
+# T2.03+: closed-loop remediation (Stage 2)
+aigov_remediation_templates:
+  - name: AI Governance - Get Finding Context
+    description: "T2.03 - read a finding's remediation context (WF-02); an unknown finding reports finding_status not_found"
+    playbook: playbooks/remediation/get_context.yml
+    credentials:
+      - AI Governance - Inventory API (remediator)
+    ask_variables_on_launch: true
+    timeout: 120
+    extra_vars:
+      aigov_finding_id: ""
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Reassess Agent
+    description: "T2.03 - re-collect one agent from AWS (read-only), evaluate it with OPA, report compliant / noncompliant / missing_evidence / error"
+    playbook: playbooks/evaluation/reassess.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    timeout: 600
+    extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+      aigov_governance_run_id: ""
+      aigov_finding_id: ""
+      aigov_reassess_purpose: pre_remediation
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:
@@ -231,6 +260,8 @@ controller_templates: >-
      + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_discovery_templates if (aigov_aws_account_id | string | length) == 12
                                      and (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_remediation_templates if (aigov_aws_account_id | string | length) == 12
+                                       and (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_demo_templates if (aigov_aws_account_id | string | length) == 12
                                 and (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_e2e_templates if (aigov_aws_account_id | string | length) == 12 and (aigov_ao_url | default('') | length) > 0

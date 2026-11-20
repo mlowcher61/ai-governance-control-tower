@@ -1,7 +1,8 @@
 ---
 # Call one Inventory API function: POST <aigov_api_url>/rpc/<aigov_api_rpc> with aigov_api_body.
-# Sets aigov_api_response (the JSON result). The token never appears in output: the call is no_log, and a
-# failure is re-raised with only the HTTP status and the API's error body.
+# Sets aigov_api_response (the JSON result) and aigov_api_status (the HTTP status). The token never appears in
+# output: the call is no_log, and a failure is re-raised with only the HTTP status and the API's error body.
+# aigov_api_accept_status (default [200]) lists statuses that are returned to the caller instead of failing.
 - name: "Call the Inventory API function {{ aigov_api_rpc }}"
   ansible.builtin.uri:
     url: "{{ aigov_api_url | regex_replace('/+$', '') }}/rpc/{{ aigov_api_rpc }}"
@@ -21,8 +22,9 @@
     msg: >-
       Inventory API {{ aigov_api_rpc }} returned HTTP {{ aigov_api_raw.status }}:
       {{ aigov_api_raw.json | default(aigov_api_raw.msg | default('no response')) }}
-  when: aigov_api_raw.status != 200
+  when: aigov_api_raw.status not in (aigov_api_accept_status | default([200]))
 
 - name: "Keep the result of {{ aigov_api_rpc }}"
   ansible.builtin.set_fact:
-    aigov_api_response: "{{ aigov_api_raw.json }}"
+    aigov_api_response: "{{ aigov_api_raw.json | default(none) }}"
+    aigov_api_status: "{{ aigov_api_raw.status }}"

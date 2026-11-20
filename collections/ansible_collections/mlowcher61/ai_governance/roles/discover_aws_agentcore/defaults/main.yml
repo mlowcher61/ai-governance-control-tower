@@ -13,3 +13,5 @@ aigov_discovery_probe_checks:
   - action: secretsmanager:GetSecretValue
 # Tag that holds the environment name (production, development, ...)
 aigov_environment_tag: Environment
+# Only these runtime IDs (empty = every runtime in the region); used to re-collect one agent
+aigov_agentcore_runtime_ids: []

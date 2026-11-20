@@ -1,0 +1,4 @@
+{"governance_run_id": "3e9b0000-0000-4000-8000-000000000001", "finding_id": "8d0f0000-0000-4000-8000-000000000001", "finding_status": "open",
+ "agent_id": "0b7a0000-0000-4000-8000-000000000002", "agent_name": "quick_helper_bot", "policy_id": "AIGOV-IAM-001", "severity": "critical",
+ "finding_type": "violation", "environment": "unknown", "account_ref": "111122223333", "platform": "aws.bedrock_agentcore_runtime",
+ "remediation_attempts": 0, "cooldown_active": "no", "exempt": "no", "deterministic_explanation": "Execution role grants administrator-equivalent access."}

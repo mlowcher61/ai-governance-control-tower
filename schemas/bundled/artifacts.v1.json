@@ -417,6 +417,144 @@
         }
       }
     },
+    "finding_context": {
+      "title": "AI Governance - Get Finding Context",
+      "type": "object",
+      "required": [
+        "governance_run_id",
+        "finding_id",
+        "finding_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "finding_id": {
+          "type": "string"
+        },
+        "finding_status": {
+          "enum": [
+            "open",
+            "remediation_planned",
+            "awaiting_approval",
+            "remediating",
+            "verifying",
+            "resolved",
+            "risk_accepted",
+            "suppressed",
+            "false_positive",
+            "not_found"
+          ]
+        },
+        "agent_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "agent_name": {
+          "type": "string"
+        },
+        "policy_id": {
+          "$ref": "#/$defs/common_policy_id"
+        },
+        "severity": {
+          "$ref": "#/$defs/common_severity"
+        },
+        "finding_type": {
+          "enum": [
+            "violation",
+            "insufficient_evidence"
+          ]
+        },
+        "environment": {
+          "type": "string"
+        },
+        "account_ref": {
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "#/$defs/common_platform"
+        },
+        "remediation_attempts": {
+          "$ref": "#/$defs/count"
+        },
+        "cooldown_active": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "exempt": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "deterministic_explanation": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "finding_status": {
+            "not": {
+              "const": "not_found"
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "agent_id",
+          "agent_name",
+          "policy_id",
+          "severity",
+          "finding_type",
+          "environment",
+          "account_ref",
+          "platform",
+          "remediation_attempts",
+          "cooldown_active",
+          "exempt",
+          "deterministic_explanation"
+        ]
+      }
+    },
+    "reassess": {
+      "title": "AI Governance - Reassess Agent",
+      "type": "object",
+      "required": [
+        "assessment",
+        "evaluation_id",
+        "current_severity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "enum": [
+            "compliant",
+            "noncompliant",
+            "missing_evidence",
+            "error"
+          ]
+        },
+        "evaluation_id": {
+          "type": "string",
+          "description": "Empty when the agent could not be evaluated."
+        },
+        "current_severity": {
+          "type": "string"
+        },
+        "policy_decision": {
+          "type": "string"
+        },
+        "overall_status": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      }
+    },
     "record_explanations": {
       "title": "AI Governance - Record AI Explanations",
       "type": "object",

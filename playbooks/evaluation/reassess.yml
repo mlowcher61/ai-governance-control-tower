@@ -1,0 +1,172 @@
+---
+# AI Governance - Reassess Agent (task T2.03, WF-02 node activity_reassess; reused by Verify Remediation)
+#
+# Re-collects ONE agent from AWS with the read-only discovery role, rebuilds its policy input with that live state
+# (registration and IDs from the inventory), asks OPA, and records the evaluation (purpose pre_remediation by default,
+# which never changes findings). The finding's policy decides the assessment:
+#   compliant (pass or not applicable: the finding is stale), noncompliant, missing_evidence (unknown), or error.
+# The inventory itself is not rewritten: the decision is independent of the last discovery run.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role",
+# "AI Governance - Inventory API (evaluator)". Artifacts: schemas/artifacts.v1.json#/$defs/reassess.
+- name: AI Governance - reassess an agent
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_opa_url: http://opa.ai-governance.svc:8181
+    aigov_governance_run_id: ""
+    aigov_finding_id: ""
+    aigov_agent_id: ""
+    aigov_reassess_purpose: pre_remediation
+  tasks:
+    - name: Reassess, and report an error instead of failing
+      block:
+        - name: Check the inputs and credentials
+          ansible.builtin.assert:
+            that:
+              - aigov_finding_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_reassess_purpose in ['pre_remediation', 'verification', 'assessment']
+              - aigov_discovery_role_arn | default('') | length > 0
+            fail_msg: Pass aigov_finding_id and aigov_governance_run_id, and attach the AWS discovery role credential.
+            quiet: true
+
+        - name: Check the Inventory API credential (evaluator)
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+
+        - name: Read the finding
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: view
+          vars:
+            aigov_api_view: findings_open
+            aigov_api_query: "select=finding_id,agent_id,policy_id,severity&finding_id=eq.{{ aigov_finding_id }}"
+
+        - name: Check the finding is open
+          ansible.builtin.assert:
+            that: aigov_api_response | length == 1
+            fail_msg: Finding {{ aigov_finding_id }} is not open (unknown, or already resolved).
+            quiet: true
+
+        - name: Keep the finding
+          ansible.builtin.set_fact:
+            aigov_finding: "{{ aigov_api_response[0] }}"
+
+        - name: Read the agent's stored policy input
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: view
+          vars:
+            aigov_api_view: evaluation_inputs
+            aigov_api_query: "agent_id=eq.{{ aigov_finding.agent_id }}"
+
+        - name: Keep the stored input
+          ansible.builtin.set_fact:
+            aigov_stored: "{{ aigov_api_response[0].input }}"
+
+        - name: Check the platform is supported for re-collection
+          ansible.builtin.assert:
+            that: aigov_stored.agent.platform == 'aws.bedrock_agentcore_runtime'
+            fail_msg: Re-collection is implemented for AgentCore runtimes (platform {{ aigov_stored.agent.platform }}).
+            quiet: true
+
+        - name: Assume the read-only discovery role
+          amazon.aws.sts_assume_role:
+            role_arn: "{{ aigov_discovery_role_arn }}"
+            external_id: "{{ aigov_discovery_external_id }}"
+            role_session_name: "aigov-reassess-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+            duration_seconds: 900
+            region: "{{ aigov_stored.agent.region }}"
+          register: aigov_assumed
+          no_log: true
+
+        - name: Keep the session
+          ansible.builtin.set_fact:
+            aigov_session:
+              access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+              secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+              session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+            aigov_scope_records: []
+            aigov_scope_errors: []
+            aigov_collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          no_log: true
+
+        - name: Re-collect the agent from AWS
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.discover_aws_agentcore
+          vars:
+            aigov_region: "{{ aigov_stored.agent.region }}"
+            aigov_account_ref: "{{ aigov_stored.agent.account_ref }}"
+            aigov_agentcore_runtime_ids: ["{{ aigov_stored.agent.external_id }}"]
+
+        - name: Check the agent was found
+          ansible.builtin.assert:
+            that: aigov_scope_records | length == 1
+            fail_msg: "Runtime {{ aigov_stored.agent.external_id }} was not found in AWS: {{ aigov_scope_errors }}"
+            quiet: true
+
+        - name: Rebuild the policy input with the live state
+          ansible.builtin.set_fact:
+            aigov_input: >-
+              {{ aigov_stored | mlowcher61.ai_governance.policy_input_refresh(record=aigov_scope_records[0])
+                 | combine({'evaluation': {'governance_run_id': aigov_governance_run_id, 'purpose': aigov_reassess_purpose,
+                                           'evaluated_at': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ')}}) }}
+
+        - name: Ask OPA
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/evaluate/result"
+            method: POST
+            body_format: json
+            body:
+              input: "{{ aigov_input }}"
+          register: aigov_opa
+
+        - name: Check the decision against the evaluation result contract
+          ansible.builtin.assert:
+            that: >-
+              aigov_opa.json.result | ansible.utils.validate(
+                lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/evaluation-result.v1.json') | from_json,
+                engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+            fail_msg: OPA returned no valid decision (is the policy bundle published?).
+            quiet: true
+
+        - name: Record the evaluation
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: record_evaluation
+            aigov_api_body:
+              governance_run_id: "{{ aigov_governance_run_id }}"
+              agent_id: "{{ aigov_finding.agent_id }}"
+              purpose: "{{ aigov_reassess_purpose }}"
+              result: "{{ aigov_opa.json.result }}"
+              input_hash: "{{ aigov_input | dict2items | rejectattr('key', 'equalto', 'evaluation') | items2dict | to_json(sort_keys=true) | hash('sha256') }}"
+
+        - name: Derive the assessment for the finding's policy
+          vars:
+            aigov_outcome: "{{ aigov_opa.json.result | mlowcher61.ai_governance.reassessment_outcome(aigov_finding.policy_id) }}"
+          ansible.builtin.set_fact:
+            aigov_reassess: >-
+              {{ {'assessment': aigov_outcome.assessment, 'evaluation_id': aigov_api_response.evaluation_id,
+                  'current_severity': aigov_outcome.severity | default('', true), 'policy_decision': aigov_outcome.decision | default('', true),
+                  'overall_status': aigov_opa.json.result.overall_status} }}
+
+      rescue:
+        - name: Report the error as the assessment
+          ansible.builtin.set_fact:
+            aigov_reassess: >-
+              {{ {'assessment': 'error', 'evaluation_id': '', 'current_severity': '',
+                  'error_summary': (ansible_failed_result.msg | default('reassessment failed') | string)[:500]} }}
+
+    - name: Show the assessment
+      ansible.builtin.debug:
+        var: aigov_reassess
+
+    - name: Publish the assessment for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_reassess }}"
+        per_host: false

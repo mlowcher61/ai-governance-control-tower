@@ -5,6 +5,7 @@
     access_key: "{{ aigov_session.access_key }}"
     secret_key: "{{ aigov_session.secret_key }}"
     session_token: "{{ aigov_session.session_token }}"
+    agent_runtime_ids: "{{ aigov_agentcore_runtime_ids }}"
   register: aigov_agentcore
 
 - name: "Record a listing failure in {{ aigov_region }}"

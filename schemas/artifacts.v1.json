@@ -6,71 +6,296 @@
   "$defs": {
     "count": {
       "description": "A count. A string of digits is accepted because AO may pass numbers as text.",
-      "oneOf": [{"type": "integer", "minimum": 0}, {"type": "string", "pattern": "^\\d+$"}]
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^\\d+$"
+        }
+      ]
     },
     "discover": {
       "title": "AI Governance - Discover AI Agents",
       "type": "object",
-      "required": ["governance_run_id", "discovery_run_id", "agents_discovered", "discovery_status"],
+      "required": [
+        "governance_run_id",
+        "discovery_run_id",
+        "agents_discovered",
+        "discovery_status"
+      ],
       "additionalProperties": false,
       "properties": {
-        "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
-        "discovery_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
-        "agents_discovered": {"$ref": "#/$defs/count"},
-        "agents_changed": {"$ref": "#/$defs/count"},
-        "agents_missing": {"$ref": "#/$defs/count"},
-        "discovery_status": {"enum": ["succeeded", "partial", "failed"]}
+        "governance_run_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "discovery_run_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "agents_discovered": {
+          "$ref": "#/$defs/count"
+        },
+        "agents_changed": {
+          "$ref": "#/$defs/count"
+        },
+        "agents_missing": {
+          "$ref": "#/$defs/count"
+        },
+        "discovery_status": {
+          "enum": [
+            "succeeded",
+            "partial",
+            "failed"
+          ]
+        }
       }
     },
     "evaluate": {
       "title": "AI Governance - Evaluate Governance Policies",
       "type": "object",
-      "required": ["governance_run_id", "noncompliant_count", "unknown_count", "explain_count", "findings_for_explanation"],
+      "required": [
+        "governance_run_id",
+        "noncompliant_count",
+        "unknown_count",
+        "explain_count",
+        "findings_for_explanation"
+      ],
       "additionalProperties": false,
       "properties": {
-        "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
-        "evaluated_count": {"$ref": "#/$defs/count"},
-        "compliant_count": {"$ref": "#/$defs/count"},
-        "noncompliant_count": {"$ref": "#/$defs/count"},
-        "unknown_count": {"$ref": "#/$defs/count"},
-        "explain_count": {"$ref": "#/$defs/count"},
+        "governance_run_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "evaluated_count": {
+          "$ref": "#/$defs/count"
+        },
+        "compliant_count": {
+          "$ref": "#/$defs/count"
+        },
+        "noncompliant_count": {
+          "$ref": "#/$defs/count"
+        },
+        "unknown_count": {
+          "$ref": "#/$defs/count"
+        },
+        "explain_count": {
+          "$ref": "#/$defs/count"
+        },
         "findings_for_explanation": {
           "type": "string",
           "description": "JSON text of a findings-for-explanation.v1.json array (at most 10 findings)."
         },
-        "bundle_revision": {"type": "string"}
+        "bundle_revision": {
+          "type": "string"
+        }
       }
     },
     "record_explanations": {
       "title": "AI Governance - Record AI Explanations",
       "type": "object",
-      "required": ["recorded"],
+      "required": [
+        "recorded"
+      ],
       "additionalProperties": false,
       "properties": {
-        "recorded": {"$ref": "#/$defs/count"},
-        "skipped": {"$ref": "#/$defs/count"}
+        "recorded": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped": {
+          "$ref": "#/$defs/count"
+        }
       }
     },
     "summary": {
       "title": "AI Governance - Publish Assessment Summary",
       "type": "object",
-      "required": ["summary"],
+      "required": [
+        "summary"
+      ],
       "additionalProperties": false,
       "properties": {
         "summary": {
           "type": "object",
-          "required": ["governance_run_id", "agents", "compliant", "noncompliant", "unknown", "open_findings"],
+          "required": [
+            "governance_run_id",
+            "agents",
+            "compliant",
+            "noncompliant",
+            "unknown",
+            "open_findings"
+          ],
           "additionalProperties": false,
           "properties": {
-            "governance_run_id": {"$ref": "common.v1.json#/$defs/uuid"},
-            "agents": {"type": "integer", "minimum": 0},
-            "compliant": {"type": "integer", "minimum": 0},
-            "noncompliant": {"type": "integer", "minimum": 0},
-            "unknown": {"type": "integer", "minimum": 0},
-            "open_findings": {"type": "integer", "minimum": 0},
-            "critical_findings": {"type": "integer", "minimum": 0},
-            "grafana_url": {"type": "string"}
+            "governance_run_id": {
+              "$ref": "common.v1.json#/$defs/uuid"
+            },
+            "agents": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "compliant": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "noncompliant": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknown": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "open_findings": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "critical_findings": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "grafana_url": {
+              "type": "string"
+            }
           }
+        }
+      }
+    },
+    "finding_context": {
+      "title": "AI Governance - Get Finding Context",
+      "type": "object",
+      "required": [
+        "governance_run_id",
+        "finding_id",
+        "finding_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "finding_id": {
+          "type": "string"
+        },
+        "finding_status": {
+          "enum": [
+            "open",
+            "remediation_planned",
+            "awaiting_approval",
+            "remediating",
+            "verifying",
+            "resolved",
+            "risk_accepted",
+            "suppressed",
+            "false_positive",
+            "not_found"
+          ]
+        },
+        "agent_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "agent_name": {
+          "type": "string"
+        },
+        "policy_id": {
+          "$ref": "common.v1.json#/$defs/policy_id"
+        },
+        "severity": {
+          "$ref": "common.v1.json#/$defs/severity"
+        },
+        "finding_type": {
+          "enum": [
+            "violation",
+            "insufficient_evidence"
+          ]
+        },
+        "environment": {
+          "type": "string"
+        },
+        "account_ref": {
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "common.v1.json#/$defs/platform"
+        },
+        "remediation_attempts": {
+          "$ref": "#/$defs/count"
+        },
+        "cooldown_active": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "exempt": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "deterministic_explanation": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "finding_status": {
+            "not": {
+              "const": "not_found"
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "agent_id",
+          "agent_name",
+          "policy_id",
+          "severity",
+          "finding_type",
+          "environment",
+          "account_ref",
+          "platform",
+          "remediation_attempts",
+          "cooldown_active",
+          "exempt",
+          "deterministic_explanation"
+        ]
+      }
+    },
+    "reassess": {
+      "title": "AI Governance - Reassess Agent",
+      "type": "object",
+      "required": [
+        "assessment",
+        "evaluation_id",
+        "current_severity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "enum": [
+            "compliant",
+            "noncompliant",
+            "missing_evidence",
+            "error"
+          ]
+        },
+        "evaluation_id": {
+          "type": "string",
+          "description": "Empty when the agent could not be evaluated."
+        },
+        "current_severity": {
+          "type": "string"
+        },
+        "policy_decision": {
+          "type": "string"
+        },
+        "overall_status": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
         }
       }
     }
