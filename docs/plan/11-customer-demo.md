@@ -22,16 +22,16 @@
 
 ## 2. Pre-demo setup (T-60 minutes)
 
-1. Run **AI Governance - Reset Demo Environment** in AAP. This restores four AgentCore runtimes. `quick_helper_bot` is unregistered, its role has `AdministratorAccess`, and it is tagged `DataClassification=restricted`.
+1. Run the workflow **AI Governance - Reset Demo Environment** in AAP (about 4 minutes: Reset Demo Agents → Load Governance Registry → Publish Governance Policies). This restores the four AgentCore runtimes to the demo baseline (`playbooks/demo/vars/demo_baseline.yml`). `quick_helper_bot` is unregistered, its role has `AdministratorAccess`, and it is tagged `DataClassification=restricted`.
 2. Run the demo readiness checklist ([09-testing-and-validation.md §7](09-testing-and-validation.md#7-demo-readiness-checklist-run-before-every-customer-demo)).
 3. Open browser tabs:
    - (A) AWS console, Amazon Bedrock AgentCore → Runtimes list
    - (B) AO workflows list
    - (C) AO Approvals page, logged in as the **approver** persona in a separate browser profile
-   - (D) Grafana Executive Overview
-   - (E) Grafana Audit Explorer
+   - (D) Grafana **AI Governance - Inventory and Findings**
+   - (E) Grafana Audit Explorer (Stage 3; until then, the Audit timeline panel of **AI Governance - Agent Detail**)
    - (F) AAP Jobs
-   - (G) GitHub `policies/governance/policies/iam_001_admin.rego`
+   - (G) GitHub `policies/governance/policies/iam_001.rego`
 4. **Choose a variant:**
    - **Variant A (default, most reliable):** the baseline WF-01 runs live during Act 2.
    - **Variant B (Stage 3, "wow" moment):** start with the agent's role scoped. During Act 2, attach `AdministratorAccess` live in the AWS console (as "a developer in a hurry"). EventBridge → SQS → EDA → AO then detects it automatically. Allow about 1–3 minutes of latency and use the talk time.
@@ -48,7 +48,7 @@
 
 ### Act 2 — Discovery (2:00–5:00)
 
-**Do:** Tab B. Open **AI Governance - Discovery and Assessment (as code)** and click Run.
+**Do:** Tab B. Open **AI Governance - WF-01 Governance Assessment** and click Run.
 
 **Show:** The canvas animates through Discover AI Agents, then Evaluate Governance Policies.
 
@@ -61,7 +61,7 @@
 
 ### Act 3 — Assessment (5:00–7:00)
 
-**Show:** Tab D, Grafana Executive Overview, which refreshes to 4 agents: 1 compliant, 2 noncompliant, 1 unknown.
+**Show:** Tab D, Grafana **Inventory and Findings**, which refreshes to 4 agents: 1 compliant, 2 noncompliant, 1 unknown.
 
 **Do:** Click into `quick_helper_bot`, which opens the Agent Detail dashboard.
 
@@ -151,4 +151,4 @@
 
 ## 6. Reset after demo
 
-Run **AI Governance - Reset Demo Environment**. It restores `AdministratorAccess` on the demo role, deregisters the demo agent, and clears the demo findings, preserving their audit history. It uses the reset-only path and is restricted to demo-tagged resources.
+Run the workflow **AI Governance - Reset Demo Environment**. It restores `AdministratorAccess` on the demo role and the baseline tags (as the restricted `AIGovDemoResetRole`, demo-tagged resources only), resolves the demo findings as `demo_reset` while preserving their audit history, reloads the registry from Git (so a demo registration of `quick_helper_bot` is undone), and republishes the policies from Git.

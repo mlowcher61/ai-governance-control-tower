@@ -193,6 +193,24 @@ The configuration-as-code entry points are:
 10. **AI Governance - Evaluate Governance Policies**: judges every discovered agent against the published policies and records the results and findings. Check Inventory then shows each agent's compliance, risk score and open findings.
 11. **Run the assessment in automation orchestrator**: start the workflow **AI Governance - WF-01 Governance Assessment** (AO UI, or `ansible-playbook ao_workflows/run_workflow.yml -e 'aigov_ao_workflow_name="AI Governance - WF-01 Governance Assessment"'`). It runs discovery and evaluation, asks the AI to explain new findings in plain language, records the explanations, and publishes a summary.Credentials are entered into AAP (or pulled from your secret manager). **No secrets are ever stored in this repository.**
 
+## Running the Stage 1 demo
+
+Once the steps above are done, a demo takes three actions. The full script with talking points is in
+[docs/plan/11-customer-demo.md](docs/plan/11-customer-demo.md).
+
+1. **Before the demo:** run the AAP workflow **AI Governance - Reset Demo Environment** (about 4 minutes). It puts the
+   four demo agents back to their baseline. `quick_helper_bot` is unregistered, has `AdministratorAccess` and
+   restricted data. It also resets their findings, then reloads the registry and the policies from Git.
+2. **During the demo:** start **AI Governance - WF-01 Governance Assessment** in automation orchestrator and show it run:
+   discovery, policy evaluation, the AI explanations, and the summary.
+3. **Show the result** in Grafana (**Inventory and Findings**, then **Agent Detail** for `quick_helper_bot`): 4 agents,
+   1 compliant, 2 noncompliant, 1 unknown. `quick_helper_bot` is critical (risk 100) with 7 open findings, each with the policy's
+   explanation and the AI's plain-language explanation.
+
+**Prove it is repeatable:** **AI Governance - Stage 1 End-to-End Test** runs reset + WF-01 three times and checks
+every Stage 1 acceptance criterion (A1-1 to A1-9 in [docs/plan/09](docs/plan/09-testing-and-validation.md#61-stage-1)),
+including that all three cycles end in the same state.
+
 ## Repository
 
 `github.com/mlowcher61/ai-governance-control-tower` (private for now)

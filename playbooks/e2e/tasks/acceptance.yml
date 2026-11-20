@@ -55,7 +55,7 @@
     research_mdl: >-
       {{ aigov_findings | selectattr('agent_name', 'equalto', 'research_runtime') | selectattr('policy_id', 'equalto', 'AIGOV-MDL-001')
          | selectattr('finding_type', 'equalto', 'insufficient_evidence') | list }}
-    explained: "{{ aigov_findings | selectattr('ai_explanation') | list | length }}"
+    explained: "{{ aigov_findings | selectattr('ai_explanation') | list | length }}"  # a string on ansible-core 2.16: cast with | int
     run: "{{ aigov_api_response | first | default({}) }}"
   ansible.builtin.set_fact:
     aigov_problems: >-
@@ -65,17 +65,18 @@
       {%- if rows.quick_helper_bot | default('') != 'unregistered' or aigov_agents.quick_helper_bot | default('') != 'noncompliant'
              or risk.quick_helper_bot | default('') != 'critical' or 'AIGOV-REG-001' not in quick or 'AIGOV-IAM-001' not in quick -%}
       {%- set _ = p.append('A1-2: quick_helper_bot is not unregistered, noncompliant, critical with REG-001 and IAM-001 open') -%}{%- endif -%}
-      {%- if aigov_assessments | length != 4 or aigov_assessments | rejectattr('policies_evaluated', 'equalto', 10) | list | length > 0 -%}
+      {%- if aigov_assessments | length != 4
+             or aigov_assessments | map(attribute='policies_evaluated') | map('int') | reject('equalto', 10) | list | length > 0 -%}
       {%- set _ = p.append('A1-3: not every agent has 10 policies evaluated: '
                            ~ (aigov_assessments | map(attribute='policies_evaluated') | list)) -%}{%- endif -%}
       {%- if aigov_wf01_steps.logic_needs_explanation | default('') != 'completed' or aigov_wf01_steps.activity_explain | default('') != 'completed'
              or aigov_wf01_steps.activity_summary | default('') != 'completed' -%}
       {%- set _ = p.append('A1-4: WF-01 did not branch to the AI step and complete: ' ~ aigov_wf01_steps) -%}{%- endif -%}
-      {%- if aigov_run_ids | length != 1 or run.agents_evaluated | default(0) != 4 or run.findings_opened | default(0) < 1
-             or (aigov_assessments | map(attribute='open_findings_from_run') | sum) != aigov_findings | length -%}
+      {%- if aigov_run_ids | length != 1 or run.agents_evaluated | default(0) | int != 4 or run.findings_opened | default(0) | int < 1
+             or (aigov_assessments | map(attribute='open_findings_from_run') | map('int') | sum) != aigov_findings | length -%}
       {%- set _ = p.append('A1-5: evaluations, results and findings are not correlated by one governance run') -%}{%- endif -%}
       {%- if aigov_findings | rejectattr('deterministic_explanation') | list | length > 0
-             or explained < (0.9 * aigov_findings | length) -%}
+             or (explained | int) < (0.9 * (aigov_findings | length)) -%}
       {%- set _ = p.append('A1-6: ' ~ explained ~ ' of ' ~ (aigov_findings | length) ~ ' findings have an AI explanation (need 90%)') -%}{%- endif -%}
       {%- if aigov_agents.research_runtime | default('') != 'unknown' or research_mdl | length != 1
              or 'unknown' not in (research_mdl | first | default({})).deterministic_explanation | default('') | lower -%}
