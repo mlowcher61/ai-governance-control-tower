@@ -1,0 +1,85 @@
+---
+# AI Governance - Record AI Explanations (task T1.11, WF-01 step after the AI task agent)
+#
+# Stores the AI task agent's plain-language explanations on the open findings (api.record_explanations).
+# The AI is advisory: an explanation cannot change a decision, severity or risk score. Only explanations that
+# match schemas/ai-explanation.v1.json are recorded; the rest are counted as skipped.
+#
+# automation orchestrator passes the AI output as aigov_explanations: a list, a JSON string, or the whole
+# response object ({"explanations": [...]}); all three are accepted.
+# Credential: "AI Governance - Inventory API (evaluator)".
+- name: AI Governance - record the AI explanations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_governance_run_id: ""
+    aigov_explanations: []
+    aigov_llm_model: unknown-model
+  tasks:
+    - name: Check the Inventory API credential
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Check the governance run ID
+      ansible.builtin.assert:
+        that: aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+        fail_msg: Pass aigov_governance_run_id (the Discover job's governance_run_id artifact).
+        quiet: true
+
+    - name: Accept a list, JSON text, or the whole AI response
+      vars:
+        aigov_raw: "{{ aigov_explanations | from_json if aigov_explanations is string else aigov_explanations }}"
+      ansible.builtin.set_fact:
+        aigov_items: "{{ aigov_raw.explanations | default([]) if aigov_raw is mapping else aigov_raw | default([], true) }}"
+
+    - name: Check each explanation against the contract
+      vars:
+        aigov_contract: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/ai-explanation.v1.json') | from_json }}"
+      ansible.builtin.set_fact:
+        aigov_checked: >-
+          {{ aigov_checked | default([]) + [{'item': item, 'errors': {'explanations': [item]}
+             | ansible.utils.validate(aigov_contract, engine='ansible.utils.jsonschema', draft='2020-12')
+             | map(attribute='message') | list}] }}
+      loop: "{{ aigov_items[:10] }}"
+      loop_control:
+        label: "{{ item.finding_id | default('?') }}"
+
+    - name: Split valid and invalid explanations
+      ansible.builtin.set_fact:
+        aigov_valid: "{{ aigov_checked | default([]) | rejectattr('errors') | map(attribute='item') | list }}"
+        aigov_invalid: "{{ aigov_checked | default([]) | selectattr('errors') | list }}"
+
+    - name: Record the valid explanations
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_explanations
+        aigov_api_body:
+          governance_run_id: "{{ aigov_governance_run_id }}"
+          explanations: "{{ aigov_valid }}"
+          model: "{{ aigov_llm_model }}"
+      when: aigov_valid | length > 0
+
+    - name: Summarize
+      ansible.builtin.set_fact:
+        aigov_record_artifacts: >-
+          {{ {'recorded': (aigov_api_response.updated | default(0)) if aigov_valid | length > 0 else 0,
+              'skipped': aigov_invalid | length + aigov_items[10:] | length
+                         + ((aigov_api_response.skipped | default([])) | length if aigov_valid | length > 0 else 0)} }}
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg:
+          received: "{{ aigov_items | length }}"
+          recorded: "{{ aigov_record_artifacts.recorded }}"
+          skipped: "{{ aigov_record_artifacts.skipped }}"
+          invalid: "{{ aigov_invalid | map(attribute='errors') | list }}"
+          not_open: "{{ aigov_api_response.skipped | default([]) if aigov_valid | length > 0 else [] }}"
+
+    - name: Publish the artifacts for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_record_artifacts }}"
+        per_host: false

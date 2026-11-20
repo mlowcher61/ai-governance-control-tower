@@ -1,0 +1,94 @@
+---
+# AI Governance - Publish Assessment Summary (task T1.11, last step of WF-01)
+#
+# Summarizes the inventory after an assessment (agents by compliance status, open and critical findings),
+# closes the governance run (api.complete_governance_run, audited), and publishes the summary artifact.
+# Credential: "AI Governance - Inventory API (evaluator)".
+- name: AI Governance - publish the assessment summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_governance_run_id: ""
+    aigov_grafana_url: ""
+    # completed, or partial when an earlier step reported a problem (automation orchestrator can pass it)
+    aigov_run_status: completed
+  tasks:
+    - name: Check the Inventory API credential
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Check the governance run ID
+      ansible.builtin.assert:
+        that: aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+        fail_msg: Pass aigov_governance_run_id (the Discover job's governance_run_id artifact).
+        quiet: true
+
+    - name: Read the agents
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: agent_overview
+        aigov_api_query: select=name,compliance_status,risk_score,risk_category,open_findings&missing_since=is.null&order=risk_score.desc.nullslast
+
+    - name: Keep the agents
+      ansible.builtin.set_fact:
+        aigov_agents: "{{ aigov_api_response }}"
+
+    - name: Read the open findings
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: findings_open
+        aigov_api_query: select=finding_id,severity
+
+    - name: Build the summary
+      ansible.builtin.set_fact:
+        aigov_summary: >-
+          {{ {'governance_run_id': aigov_governance_run_id,
+              'agents': aigov_agents | length,
+              'compliant': aigov_agents | selectattr('compliance_status', 'equalto', 'compliant') | list | length,
+              'noncompliant': aigov_agents | selectattr('compliance_status', 'equalto', 'noncompliant') | list | length,
+              'unknown': aigov_agents | selectattr('compliance_status', 'in', ['unknown', 'error', 'not_evaluated']) | list | length,
+              'open_findings': aigov_api_response | length,
+              'critical_findings': aigov_api_response | selectattr('severity', 'equalto', 'critical') | list | length}
+             | combine({'grafana_url': aigov_grafana_url} if aigov_grafana_url | length > 0 else {}) }}
+
+    - name: Check the summary against the artifact contract
+      ansible.builtin.assert:
+        that: >-
+          {'summary': aigov_summary} | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/summary'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: The summary does not match schemas/artifacts.v1.json#/$defs/summary.
+        quiet: true
+
+    - name: Close the governance run
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: complete_governance_run
+        aigov_api_body:
+          governance_run_id: "{{ aigov_governance_run_id }}"
+          status: "{{ aigov_run_status }}"
+          summary: "{{ aigov_summary }}"
+
+    - name: Show the assessment summary
+      ansible.builtin.debug:
+        msg:
+          summary: "{{ aigov_summary }}"
+          agents: >-
+            {{ aigov_agents | map(attribute='name')
+               | zip(aigov_agents | map(attribute='compliance_status'), aigov_agents | map(attribute='risk_score'),
+                     aigov_agents | map(attribute='open_findings'))
+               | map('join', ' | ') | list }}
+
+    - name: Publish the summary for automation orchestrator
+      ansible.builtin.set_stats:
+        data:
+          summary: "{{ aigov_summary }}"
+        per_host: false

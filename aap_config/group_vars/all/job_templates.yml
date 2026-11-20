@@ -87,6 +87,26 @@ aigov_discovery_templates:
       aigov_governance_run_id: ""
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Record AI Explanations
+    description: "T1.11 - store the AI task agent's explanations on open findings (advisory; validated against the contract)"
+    playbook: playbooks/evaluation/record_explanations.yml
+    credentials:
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_llm_model: "{{ aigov_ao_llm_model | default('llama-scout-17b') }}"
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Publish Assessment Summary
+    description: "T1.11 - summarize the assessment, close the governance run (audited), publish the summary artifact"
+    playbook: playbooks/evaluation/publish_summary.yml
+    credentials:
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_grafana_url: "{{ aigov_grafana_url | default('') }}"
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Check Inventory
     description: "T1.06 acceptance - read-only checks of the inventory and the policy inputs (evaluator role)"
     playbook: playbooks/discovery/check_inventory.yml

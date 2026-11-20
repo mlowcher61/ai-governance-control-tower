@@ -95,15 +95,16 @@
   vars:
     aigov_ok: "{{ aigov_decisions | default([]) | rejectattr('problem') | map(attribute='result') | list }}"
   ansible.builtin.set_fact:
-    aigov_evaluation_artifacts:
-      governance_run_id: "{{ aigov_run_id }}"
-      evaluated_count: "{{ aigov_ok | length }}"
-      compliant_count: "{{ aigov_ok | selectattr('overall_status', 'equalto', 'compliant') | list | length }}"
-      noncompliant_count: "{{ aigov_ok | selectattr('overall_status', 'equalto', 'noncompliant') | list | length }}"
-      unknown_count: "{{ aigov_ok | selectattr('overall_status', 'in', ['unknown', 'error']) | list | length }}"
-      explain_count: "{{ aigov_findings | length if aigov_findings_errors | length == 0 else 0 }}"
-      findings_for_explanation: "{{ (aigov_findings if aigov_findings_errors | length == 0 else []) | to_json }}"
-      bundle_revision: "{{ (aigov_ok | first | default({})).bundle_revision | default('none') }}"
+    # One expression, so the counts stay integers (automation orchestrator conditions compare numbers).
+    aigov_evaluation_artifacts: >-
+      {{ {'governance_run_id': aigov_run_id,
+          'evaluated_count': aigov_ok | length,
+          'compliant_count': aigov_ok | selectattr('overall_status', 'equalto', 'compliant') | list | length,
+          'noncompliant_count': aigov_ok | selectattr('overall_status', 'equalto', 'noncompliant') | list | length,
+          'unknown_count': aigov_ok | selectattr('overall_status', 'in', ['unknown', 'error']) | list | length,
+          'explain_count': aigov_findings | length if aigov_findings_errors | length == 0 else 0,
+          'findings_for_explanation': (aigov_findings if aigov_findings_errors | length == 0 else []) | to_json,
+          'bundle_revision': (aigov_ok | first | default({})).bundle_revision | default('none')} }}
     aigov_evaluation_table: >-
       {{ aigov_decisions | default([]) | map(attribute='name')
          | zip(aigov_decisions | default([]) | map(attribute='result') | map('default', {}, true) | map(attribute='overall_status', default='error'),
