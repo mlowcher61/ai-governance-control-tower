@@ -231,6 +231,37 @@ Stage 1 acceptance A1-1 to A1-9 passed in 3 consecutive cycles with an identical
 - **The first end-to-end run (job 211) failed at its own acceptance check.** Counts are strings on ansible-core 2.16 (the EE),
   and my local simulation used 2.21. The checks now convert counts to numbers, and the simulation is run on ansible-core 2.16 too.
 
+## 2026-11-20 - Stage 2 begins: T2.01 Remediation catalog, authorization and route policies
+
+**Built.**
+- `policies/data/governance/remediation_catalog`: every remediation the solution can perform, with impact,
+  reversibility, platforms and automatic eligibility. It adds `agentcore_apply_governance_tags`, because the demo agents are
+  AgentCore runtimes and the T1.13 `agentcore_runtime_tags` module can implement it.
+- `policies/data/governance/policy_actions`: policy → actions. This is now the **single source** for the `action_types`
+  in each failing result (they were listed per policy, and some named actions that did not exist).
+- `governance.remediation.authz`: eligibility (enabled, account allowlist, violation only, attempts, cooldown, exempt),
+  action choice (narrowed by `applicable_actions` that the Plan job derives from the real pre-state), and approval reasons.
+- `governance.remediation.route`: halt, simulate, approval or auto. Anything uncertain forces approval.
+- **The committed default stays detection-only** (`enabled: false`, `mode: detect_only`, enforced by a test). The demo
+  profile (`policies/overlays/demo/remediation.json`) is applied only by **Publish Governance Policies** with
+  `aigov_policy_profile: demo`, and allows only `aigov_aws_account_id`. The platform info reports the active
+  remediation mode, and the publish job checks it on the live server.
+
+**Tests.** 29 new Rego tests (84 total, 99.4% coverage): every denial and approval reason, every route row, catalog
+consistency. They were mutation-checked: enabling remediation in the default, or naming an unknown action, makes the tests fail.
+
+**Results.** Publish Governance Policies (job 259): 84/84 tests in the server's OPA image; golden decisions 4/4 on the
+live server; remediation disabled (detect_only).
+
+**Decisions (plan refinements).**
+- Approval is required for every environment except development and sandbox. That includes unknown environments,
+  fail-closed (the plan said production only).
+- Approval is also required when the catalog marks an action as not automatically eligible (in addition to the
+  configured automatic list).
+
+**Problems found and fixed.** On ansible-core 2.16 (the EE), `fileglob` returns nothing for a wildcard directory
+(`*/data.json`); the publish job uses `find`. Found by simulating on 2.16 before deploying, as T1.13 taught.
+
 ---
 
 ## Open items (2026-11-20)

@@ -68,6 +68,8 @@ Details and evidence are in [../progress-log.md](../progress-log.md).
 | Shared `aigov_` variables in collection roles | ansible-lint rule `var-naming[no-role-prefix]` skipped | Credentials inject `aigov_*` variables and the roles exchange data through them |
 | Credentials whose secrets are written by jobs | Config as code sends the full key set (Inventory API tokens) or only creates the credential (`state: exists`, AO trigger) | Otherwise a config-as-code re-run patches the secrets away (found twice) |
 | Regal (Rego linter) | **Not added** | Downloading and running it was blocked by the permission checker; correctness is covered by strict compile, unit tests and golden decisions |
+| Remediation approval scope (T2.01) | Approval for **every environment except development and sandbox** (unknown counts as production), and for actions the catalog marks not automatically eligible | Fail-closed, like the governance policies; the plan required approval for production only |
+| Remediation profiles | Committed default **detect_only**; demo profile `policies/overlays/demo/remediation.json` applied at publish time with the account filled in | Remediation cannot be switched on by a commit alone; the account ID never lives in Git |
 | Q-12 / Q-13 / Q-16 defaults | Adopted in `policies/data/governance/config/data.json`: approved models `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `anthropic.claude-3-5-haiku-20241022-v1:0`; tags `Owner`, `Environment`, `DataClassification`, `CostCenter`; `assume_production` | Proposed defaults; customers change them in `data.json` |
 
 ## 2. Assumptions
