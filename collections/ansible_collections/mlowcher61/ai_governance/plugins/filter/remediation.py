@@ -93,6 +93,93 @@ def reassessment_outcome(result, policy_id):
     return dict(assessment="error", decision=None, severity=None)
 
 
+ADMIN_ACTIONS = ("*", "*:*", "iam:*")
+AGENT_SERVICES = ("bedrock-agentcore.amazonaws.com", "bedrock.amazonaws.com")
+
+
+def _statement_is_admin(st):
+    if st.get("effect") != "Allow" or "*" not in (st.get("resources") or []):
+        return False
+    return any(a in ADMIN_ACTIONS for a in st.get("actions") or []) or bool(st.get("not_actions"))
+
+
+def remediation_applicable_actions(identity, admin_policy_arns, platform):
+    """Catalog actions that fit the real pre-state (which admin grant exists, which platform)."""
+    identity = identity or {}
+    policies = identity.get("policies") or []
+    out = []
+    if any(p.get("type") in ("aws_managed", "customer_managed") and p.get("ref") in (admin_policy_arns or []) for p in policies):
+        out.append("iam_replace_managed_policy")
+    if any(p.get("type") == "inline" and any(_statement_is_admin(s) for s in p.get("statements") or []) for p in policies):
+        out.append("iam_remove_inline_policy")
+    if identity.get("principal_ref"):
+        out += ["iam_apply_permissions_boundary", "iam_tag_role"]
+    if platform == "aws.bedrock_agentcore_runtime":
+        out.append("agentcore_apply_governance_tags")
+    if platform == "aws.bedrock_agents_classic":
+        out += ["bedrock_apply_governance_tags", "bedrock_pause_agent_alias", "bedrock_disable_action_group"]
+    return out
+
+
+def _principals(statement):
+    principal = statement.get("Principal")
+    if principal == "*":
+        return [("AWS", "*")]
+    out = []
+    for kind, value in (principal or {}).items():
+        for v in value if isinstance(value, list) else [value]:
+            out.append((kind, v))
+    return out
+
+
+def remediation_blast_radius(agents_sharing_role, identity, identity_evidence="collected"):
+    """shared_role yes / no / unknown, with the reason. Unknown forces approval (docs/plan/04 section 7.2)."""
+    if identity_evidence != "collected" or not (identity or {}).get("principal_ref") or agents_sharing_role is None:
+        return dict(shared_role="unknown", detail="the execution role could not be read completely")
+    if int(agents_sharing_role) > 0:
+        return dict(shared_role="yes", detail="the role is also used by %d other agent(s) in the inventory" % int(agents_sharing_role))
+    trust = (identity or {}).get("trust_policy") or {}
+    statements = trust.get("Statement") or []
+    if isinstance(statements, dict):
+        statements = [statements]
+    others = sorted(set("%s:%s" % (k, v) for st in statements if st.get("Effect", "Allow") == "Allow" and
+                        "sts:AssumeRole" in (st.get("Action") if isinstance(st.get("Action"), list) else [st.get("Action")])
+                        for k, v in _principals(st) if not (k == "Service" and v in AGENT_SERVICES)))
+    if others:
+        return dict(shared_role="yes", detail="other principals may assume the role: " + ", ".join(others))
+    if not statements:
+        return dict(shared_role="unknown", detail="the trust policy could not be read")
+    return dict(shared_role="no", detail="role used by this agent only; only the agent service may assume it")
+
+
+def remediation_ai_check(recommendation, recommendation_errors, decision):
+    """ai_agrees yes / no / invalid, and whether the AI's recommended action is one OPA allows."""
+    if not isinstance(recommendation, dict) or not recommendation:
+        return dict(ai_agrees="invalid", accepted=False, detail="no AI recommendation was returned")
+    if recommendation_errors:
+        return dict(ai_agrees="invalid", accepted=False, detail="the AI recommendation does not match its contract")
+    accepted = recommendation.get("recommended_action") in (decision.get("allowed_actions") or [])
+    agrees = recommendation.get("agrees_with_selected_action") == "yes" and \
+        recommendation.get("recommended_action") == decision.get("selected_action")
+    detail = "agrees with %s" % decision.get("selected_action") if agrees else \
+        "recommends %s instead of %s" % (recommendation.get("recommended_action"), decision.get("selected_action"))
+    return dict(ai_agrees="yes" if agrees else "no", accepted=accepted, detail=detail)
+
+
+def remediation_governance_tags(context):
+    """Tags for agentcore_apply_governance_tags: registry values when registered, else quarantine tags.
+    Owner values are never invented (docs/plan/04 section 6.1)."""
+    reg = context.get("registration") or None
+    if reg:
+        tags = {"Owner": reg.get("owner_email") or reg.get("owner_id"), "Environment": reg.get("environment"),
+                "DataClassification": reg.get("data_classification"), "aigov:registration": reg.get("registration_id")}
+        return dict((k, str(v)) for k, v in tags.items() if v)
+    return {"aigov:status": "noncompliant", "aigov:finding": str(context.get("finding_id")), "aigov:policy": str(context.get("policy_id"))}
+
+
 class FilterModule:
     def filters(self):
-        return {"policy_input_refresh": policy_input_refresh, "reassessment_outcome": reassessment_outcome}
+        return {"policy_input_refresh": policy_input_refresh, "reassessment_outcome": reassessment_outcome,
+                "remediation_applicable_actions": remediation_applicable_actions,
+                "remediation_blast_radius": remediation_blast_radius, "remediation_ai_check": remediation_ai_check,
+                "remediation_governance_tags": remediation_governance_tags}

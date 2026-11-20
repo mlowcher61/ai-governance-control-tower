@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/ai-recommendation.v1.json",
+  "title": "AI remediation recommendation, version 1",
+  "description": "Structured output of the WF-02 AI step (docs/plan/04 section 4.4). Advisory only: the executed action is always OPA's selected_action. Disagreement, a missing field or an invalid value forces human approval.",
+  "type": "object",
+  "required": [
+    "summary",
+    "risk_explanation",
+    "agrees_with_selected_action",
+    "recommended_action",
+    "rationale",
+    "operational_considerations",
+    "confidence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "risk_explanation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "agrees_with_selected_action": {
+      "enum": [
+        "yes",
+        "no"
+      ]
+    },
+    "recommended_action": {
+      "enum": [
+        "agentcore_apply_governance_tags",
+        "bedrock_apply_governance_tags",
+        "bedrock_disable_action_group",
+        "bedrock_pause_agent_alias",
+        "iam_apply_permissions_boundary",
+        "iam_remove_inline_policy",
+        "iam_replace_managed_policy",
+        "iam_tag_role",
+        "none"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "operational_considerations": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    }
+  }
+}

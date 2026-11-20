@@ -1,0 +1,5 @@
+{"summary": "The agent's execution role has full administrator access. Replacing it with the approved policy removes that risk.",
+ "risk_explanation": "If the agent is manipulated it could create users and change permissions across the account.",
+ "agrees_with_selected_action": "yes", "recommended_action": "iam_replace_managed_policy",
+ "rationale": "The approved policy covers what the runtime needs; administrator access is not required.",
+ "operational_considerations": ["Confirm with the owner that the agent does not call IAM APIs"], "confidence": "high"}

@@ -519,6 +519,83 @@
         ]
       }
     },
+    "plan": {
+      "title": "AI Governance - Plan Remediation",
+      "type": "object",
+      "required": [
+        "route",
+        "reason",
+        "action_type",
+        "approval_summary",
+        "rollback_available"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "type": "string",
+          "description": "Empty when no remediation was recorded (route halt)."
+        },
+        "route": {
+          "enum": [
+            "auto",
+            "approval",
+            "simulate",
+            "halt"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "action_type": {
+          "type": "string"
+        },
+        "approval_summary": {
+          "type": "string"
+        },
+        "rollback_available": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "ai_agrees": {
+          "enum": [
+            "yes",
+            "no",
+            "invalid",
+            "unknown"
+          ]
+        },
+        "blast_radius": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "route": {
+            "enum": [
+              "auto",
+              "approval",
+              "simulate"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "remediation_id": {
+            "$ref": "#/$defs/common_uuid"
+          }
+        },
+        "required": [
+          "remediation_id"
+        ]
+      }
+    },
     "reassess": {
       "title": "AI Governance - Reassess Agent",
       "type": "object",

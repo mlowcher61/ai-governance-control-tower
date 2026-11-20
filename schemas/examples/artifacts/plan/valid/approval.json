@@ -1,0 +1,3 @@
+{"remediation_id": "c71e0000-0000-4000-8000-000000000001", "route": "approval", "reason": "approval required: critical severity requires approval",
+ "action_type": "iam_replace_managed_policy", "approval_summary": "### Remediation approval - quick_helper_bot", "rollback_available": "yes",
+ "ai_agrees": "yes", "blast_radius": "no"}

@@ -1,0 +1,47 @@
+### Remediation approval - {{ aigov_ctx.agent_name }}
+
+**Finding:** {{ aigov_ctx.policy_id }} ({{ aigov_ctx.severity }}) - {{ aigov_ctx.deterministic_explanation }}
+
+**Agent:** `{{ aigov_ctx.agent_name }}` ({{ aigov_ctx.platform }}, account {{ aigov_ctx.account_ref }}, {{ aigov_ctx.region }}, environment {{ aigov_ctx.environment }})
+
+**Execution role:** `{{ aigov_ctx.execution_role }}`
+
+**Planned change ({{ aigov_authz.selected_action }}, checked with a dry run):**
+
+{% for a in aigov_planned.attach | default([]) %}
+- attach `{{ a }}`
+{% endfor %}
+{% for a in aigov_planned.detach | default([]) %}
+- detach `{{ a }}`
+{% endfor %}
+{% if aigov_planned.boundary_after is defined %}
+- set the permissions boundary: `{{ aigov_planned.boundary_before | default('none', true) }}` -> `{{ aigov_planned.boundary_after }}`
+{% endif %}
+{% for k, v in (aigov_planned.tags_add | default({})).items() %}
+- add the tag `{{ k }}={{ v }}`
+{% endfor %}
+
+**Blast radius:** {{ aigov_blast.detail }}
+
+**Rollback:** {{ 'available (the pre-state is recorded)' if aigov_rollback | bool else 'not available' }}
+
+**Policy decision (deterministic):** OPA decision {{ aigov_authz_decision_id | default('-', true) }}, bundle {{ aigov_authz.bundle_revision | default('-', true) }}, route **{{ aigov_route.route }}** ({{ aigov_route.reason }})
+
+{% for r in aigov_authz.reasons | default([]) %}
+- {{ r }}
+{% endfor %}
+
+**AI assessment (advisory; it cannot change the decision):** {{ aigov_ai.detail }}
+
+{% if aigov_ai.ai_agrees != 'invalid' %}
+> {{ aigov_ai_rec.summary }}
+{% for c in aigov_ai_rec.operational_considerations | default([]) %}
+> - {{ c }}
+{% endfor %}
+
+{% endif %}
+{% if aigov_ctx.registration %}
+**Owner:** {{ aigov_ctx.registration.owner_name | default('-', true) }} ({{ aigov_ctx.registration.owner_email | default('-', true) }}). The approver must not be the agent owner.
+{% else %}
+**Owner:** none (the agent is not registered).
+{% endif %}

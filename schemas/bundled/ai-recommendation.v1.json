@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mlowcher61/ai-governance-control-tower/schemas/bundled/ai-recommendation.v1.json",
+  "title": "AI remediation recommendation, version 1",
+  "description": "Structured output of the WF-02 AI step (docs/plan/04 section 4.4). Advisory only: the executed action is always OPA's selected_action. Disagreement, a missing field or an invalid value forces human approval.",
+  "type": "object",
+  "required": [
+    "summary",
+    "risk_explanation",
+    "agrees_with_selected_action",
+    "recommended_action",
+    "rationale",
+    "operational_considerations",
+    "confidence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "risk_explanation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "agrees_with_selected_action": {
+      "enum": [
+        "yes",
+        "no"
+      ]
+    },
+    "recommended_action": {
+      "enum": [
+        "agentcore_apply_governance_tags",
+        "bedrock_apply_governance_tags",
+        "bedrock_disable_action_group",
+        "bedrock_pause_agent_alias",
+        "iam_apply_permissions_boundary",
+        "iam_remove_inline_policy",
+        "iam_replace_managed_policy",
+        "iam_tag_role",
+        "none"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "operational_considerations": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    }
+  },
+  "$defs": {
+    "common_data_source": {
+      "type": "object",
+      "required": [
+        "type",
+        "external_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "knowledge_base",
+            "s3_data_source",
+            "database",
+            "other"
+          ]
+        },
+        "external_id": {
+          "$ref": "#/$defs/common_non_empty_string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "storage_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification_source": {
+          "enum": [
+            "s3_tag",
+            "registry",
+            "none",
+            null
+          ]
+        },
+        "attributes": {
+          "type": "object"
+        }
+      }
+    },
+    "common_decision": {
+      "enum": [
+        "pass",
+        "fail",
+        "unknown",
+        "not_applicable",
+        "error"
+      ]
+    },
+    "common_environment": {
+      "description": "Lowercase environment name, or null when it cannot be derived (policies then assume production).",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "common_evidence_status": {
+      "description": "Evidence domain -> evidence value.",
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "agent",
+          "tags",
+          "identity",
+          "identity_simulation",
+          "tools",
+          "data_sources",
+          "model",
+          "registration"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/common_evidence_value"
+      }
+    },
+    "common_evidence_value": {
+      "description": "docs/plan/03 section 3.3. Anything other than 'collected' makes dependent policies return 'unknown'.",
+      "enum": [
+        "collected",
+        "not_collected",
+        "access_denied",
+        "not_supported",
+        "error"
+      ]
+    },
+    "common_identity_policy": {
+      "type": "object",
+      "required": [
+        "type",
+        "ref",
+        "statements"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "aws_managed",
+            "customer_managed",
+            "inline",
+            "boundary"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/common_non_empty_string",
+          "description": "Policy ARN, or the inline policy name."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/common_policy_statement"
+          }
+        }
+      }
+    },
+    "common_non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "common_overall_status": {
+      "enum": [
+        "compliant",
+        "noncompliant",
+        "unknown",
+        "error"
+      ]
+    },
+    "common_platform": {
+      "description": "<provider>.<platform>, for example aws.bedrock_agentcore_runtime.",
+      "type": "string",
+      "pattern": "^(aws|azure|gcp|generic)\\.[a-z0-9_]+$"
+    },
+    "common_policy_id": {
+      "type": "string",
+      "pattern": "^AIGOV-[A-Z]+-\\d{3}$"
+    },
+    "common_policy_statement": {
+      "description": "One normalized IAM statement: string-or-list fields are always lists.",
+      "type": "object",
+      "required": [
+        "effect",
+        "actions",
+        "resources"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sid": {
+          "type": "string"
+        },
+        "effect": {
+          "enum": [
+            "Allow",
+            "Deny"
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "has_conditions": {
+          "type": "boolean"
+        }
+      }
+    },
+    "common_provider": {
+      "enum": [
+        "aws",
+        "azure",
+        "gcp",
+        "generic"
+      ]
+    },
+    "common_purpose": {
+      "enum": [
+        "assessment",
+        "pre_remediation",
+        "verification"
+      ]
+    },
+    "common_risk_category": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "common_severity": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ]
+    },
+    "common_simulation": {
+      "description": "IAM policy simulator result per probe action.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9-]+:[a-zA-Z0-9*]+$"
+      },
+      "additionalProperties": {
+        "enum": [
+          "allowed",
+          "denied"
+        ]
+      }
+    },
+    "common_tags": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "common_timestamp": {
+      "description": "RFC 3339 timestamp, for example 2026-11-16T22:40:00Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "common_tool": {
+      "type": "object",
+      "required": [
+        "type",
+        "external_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "action_group",
+            "collaborator",
+            "gateway_target",
+            "mcp_server"
+          ]
+        },
+        "external_id": {
+          "$ref": "#/$defs/common_non_empty_string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executor_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_signature": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schema_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attributes": {
+          "type": "object"
+        }
+      }
+    },
+    "common_uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    }
+  }
+}

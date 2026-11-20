@@ -170,6 +170,23 @@ aigov_remediation_templates:
       aigov_reassess_purpose: pre_remediation
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Plan Remediation
+    description: "T2.04 - pre-state, OPA authorization, check-mode dry run, AI check, blast radius, OPA route; records the remediation"
+    playbook: playbooks/remediation/plan.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - Inventory API (remediator)
+    ask_variables_on_launch: true
+    timeout: 300
+    extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_governance_run_id: ""
+      aigov_finding_id: ""
+      aigov_ai_recommendation: {}
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:

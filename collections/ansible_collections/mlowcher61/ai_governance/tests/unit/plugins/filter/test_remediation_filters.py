@@ -63,3 +63,73 @@ def test_errors():
     assert reassessment_outcome(None, "AIGOV-IAM-001")["assessment"] == "error"
     assert reassessment_outcome({"overall_status": "error", "results": []}, "AIGOV-IAM-001")["assessment"] == "error"
     assert reassessment_outcome({"overall_status": "compliant", "results": []}, "AIGOV-IAM-001")["assessment"] == "error"
+
+
+# ---- Plan Remediation helpers ---------------------------------------------------------------------------------
+from ansible_collections.mlowcher61.ai_governance.plugins.filter.remediation import (  # noqa: E402
+    remediation_ai_check,
+    remediation_applicable_actions,
+    remediation_blast_radius,
+    remediation_governance_tags,
+)
+
+ADMIN_ARNS = ["arn:aws:iam::aws:policy/AdministratorAccess"]
+TRUST_AGENT = {"Statement": [{"Effect": "Allow", "Principal": {"Service": "bedrock-agentcore.amazonaws.com"}, "Action": "sts:AssumeRole"}]}
+
+
+def _identity(name):
+    ident = _load("discovery", name)["identity"]
+    return ident
+
+
+def test_applicable_actions_for_the_admin_agent():
+    acts = remediation_applicable_actions(_identity("quick_helper_bot"), ADMIN_ARNS, "aws.bedrock_agentcore_runtime")
+    assert acts[0] == "iam_replace_managed_policy" and "iam_remove_inline_policy" not in acts
+    assert "agentcore_apply_governance_tags" in acts and "bedrock_pause_agent_alias" not in acts
+
+
+def test_inline_admin_policy_needs_removal():
+    ident = {"principal_ref": "r", "policies": [{"type": "inline", "ref": "x", "statements": [
+        {"effect": "Allow", "actions": [], "not_actions": ["iam:*"], "resources": ["*"]}]}]}
+    assert remediation_applicable_actions(ident, ADMIN_ARNS, "aws.bedrock_agentcore_runtime")[0] == "iam_remove_inline_policy"
+
+
+def test_approved_agent_has_no_admin_fix():
+    acts = remediation_applicable_actions(_identity("payments_dispute_assistant"), ADMIN_ARNS, "aws.bedrock_agentcore_runtime")
+    assert "iam_replace_managed_policy" not in acts and "iam_remove_inline_policy" not in acts
+
+
+def test_blast_radius():
+    ident = dict(_identity("quick_helper_bot"), trust_policy=TRUST_AGENT)
+    assert remediation_blast_radius(0, ident)["shared_role"] == "no"
+    assert remediation_blast_radius(2, ident)["shared_role"] == "yes"
+    assert remediation_blast_radius(None, ident)["shared_role"] == "unknown"
+    assert remediation_blast_radius(0, ident, "access_denied")["shared_role"] == "unknown"
+    other = dict(ident, trust_policy={"Statement": [{"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::1:root"}, "Action": ["sts:AssumeRole"]}]})
+    out = remediation_blast_radius(0, other)
+    assert out["shared_role"] == "yes" and "arn:aws:iam::1:root" in out["detail"]
+    assert remediation_blast_radius(0, dict(ident, trust_policy={}))["shared_role"] == "unknown"
+
+
+DECISION = {"selected_action": "iam_replace_managed_policy", "allowed_actions": ["iam_replace_managed_policy", "iam_apply_permissions_boundary"]}
+
+
+def test_ai_check():
+    rec = {"agrees_with_selected_action": "yes", "recommended_action": "iam_replace_managed_policy"}
+    assert remediation_ai_check(rec, [], DECISION) == {"ai_agrees": "yes", "accepted": True, "detail": "agrees with iam_replace_managed_policy"}
+    alt = remediation_ai_check(dict(rec, recommended_action="iam_apply_permissions_boundary", agrees_with_selected_action="no"), [], DECISION)
+    assert alt["ai_agrees"] == "no" and alt["accepted"] is True
+    outside = remediation_ai_check(dict(rec, recommended_action="bedrock_pause_agent_alias"), [], DECISION)
+    assert outside["ai_agrees"] == "no" and outside["accepted"] is False
+    assert remediation_ai_check({}, [], DECISION)["ai_agrees"] == "invalid"
+    assert remediation_ai_check(None, [], DECISION)["ai_agrees"] == "invalid"
+    assert remediation_ai_check(rec, [{"message": "bad"}], DECISION)["ai_agrees"] == "invalid"
+
+
+def test_governance_tags_never_invent_owners():
+    unregistered = remediation_governance_tags({"finding_id": "f1", "policy_id": "AIGOV-REG-001", "registration": None})
+    assert unregistered == {"aigov:status": "noncompliant", "aigov:finding": "f1", "aigov:policy": "AIGOV-REG-001"}
+    registration = {"registration_id": "REG-0002", "owner_email": "hr@example.com", "environment": "production",
+                    "data_classification": None}
+    registered = remediation_governance_tags({"finding_id": "f", "registration": registration})
+    assert registered == {"Owner": "hr@example.com", "Environment": "production", "aigov:registration": "REG-0002"}
