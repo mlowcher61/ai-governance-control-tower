@@ -105,6 +105,17 @@ AAP jobs use `aigov-trigger` to start governance workflows and to read execution
 
 Step 2 needs AAP API access (`AAP_SERVER` and `AAP_API_TOKEN`), and the AAP credential must already exist. To rotate the credential, disable the old one in AO and re-run the playbook.
 
+## Governance workflows
+
+| Workflow | File | What it does |
+|---|---|---|
+| AI Governance - WF-01 Governance Assessment | `definitions/wf01_governance_assessment.yml` | Discover → Evaluate → (findings to explain?) → AI explanation, advisory → Record AI Explanations → Publish Assessment Summary. Verified on mk6hb: see [reference/VERIFIED.md](reference/VERIFIED.md) |
+| AI Governance - Loader Test (as code) | `definitions/t0_loader_test.yml` | Smallest proof that the loader works |
+| AI Governance - LLM Smoke Test (as code) | `definitions/t0_llm_smoke_test.yml` | Proves the LLM integration returns structured output |
+
+The AI step only sees the sanitized findings from `api.findings_for_explanation` (no owner-controlled text). Its output is
+advisory text recorded on the findings; it cannot change a decision, severity or risk score.
+
 ## Items only an AO administrator can do
 
 `configure_ao.yml` never fails because of missing AO permissions. Instead, it lists the open items under `action_required`. Typical items:
