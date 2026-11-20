@@ -1,0 +1,20 @@
+---
+# AAP API connection from the attached "Red Hat Ansible Automation Platform" credential (CONTROLLER_* variables).
+- name: Check the AAP credential is attached
+  ansible.builtin.assert:
+    that: lookup('ansible.builtin.env', 'CONTROLLER_HOST') | length > 0
+    fail_msg: Attach a "Red Hat Ansible Automation Platform" credential (aigov_aap_credential) to this job template.
+    quiet: true
+
+- name: Resolve the AAP connection
+  ansible.builtin.set_fact:
+    aigov_aap_url: >-
+      {{ (lookup('ansible.builtin.env', 'CONTROLLER_HOST') is match('^https?://')) | ternary('', 'https://')
+         ~ (lookup('ansible.builtin.env', 'CONTROLLER_HOST') | regex_replace('/+$', '')) }}
+    aigov_aap_auth_headers: >-
+      {{ {'Authorization': 'Bearer ' ~ lookup('ansible.builtin.env', 'CONTROLLER_OAUTH_TOKEN')}
+         if lookup('ansible.builtin.env', 'CONTROLLER_OAUTH_TOKEN') | length > 0 else {} }}
+    aigov_aap_user: "{{ lookup('ansible.builtin.env', 'CONTROLLER_USERNAME') }}"
+    aigov_aap_password: "{{ lookup('ansible.builtin.env', 'CONTROLLER_PASSWORD') }}"
+    aigov_aap_verify: "{{ lookup('ansible.builtin.env', 'CONTROLLER_VERIFY_SSL') | default('true', true) | bool }}"
+  no_log: true

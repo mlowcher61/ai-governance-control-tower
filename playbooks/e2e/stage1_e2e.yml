@@ -1,0 +1,75 @@
+---
+# AI Governance - Stage 1 End-to-End Test (task T1.13, docs/plan/09 section 6.1)
+#
+# Runs aigov_e2e_cycles (default 3) cycles of:
+#   1. the AAP workflow "AI Governance - Reset Demo Environment" (AWS baseline, findings, registry, policies);
+#   2. the automation orchestrator workflow WF-01 (discover, evaluate, AI explanation, record, summary);
+#   3. the Stage 1 acceptance checks A1-1 to A1-7 against the Inventory API, and an end-state fingerprint.
+# Then A1-8 (every cycle ends in the same state) and A1-9 (WF-01 has a VERIFIED.md entry).
+#
+# Credentials: "Red Hat Ansible Automation Platform" (launch the reset workflow), "AI Governance - Automation
+# Orchestrator" (run WF-01), "AI Governance - Inventory API (evaluator)" (read the results).
+- name: AI Governance - Stage 1 end-to-end test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../../ao_workflows/config/connections.yml
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_e2e_cycles: 3
+    aigov_reset_workflow: AI Governance - Reset Demo Environment
+    aigov_wf01_name: AI Governance - WF-01 Governance Assessment
+    aigov_e2e_results: []
+  tasks:
+    - name: Check the Inventory API credential (evaluator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Connect to AAP with the attached credential
+      ansible.builtin.include_tasks: tasks/aap_connection.yml
+
+    - name: Run the cycles
+      ansible.builtin.include_tasks: tasks/cycle.yml
+      loop: "{{ range(1, (aigov_e2e_cycles | int) + 1) | list }}"
+      loop_control:
+        loop_var: aigov_cycle
+
+    - name: A1-9 - WF-01 importability evidence
+      ansible.builtin.set_fact:
+        aigov_a19: "{{ 'WF-01' in lookup('ansible.builtin.file', aigov_repo_root ~ '/ao_workflows/reference/VERIFIED.md') }}"
+
+    - name: Summarize the end-to-end test
+      ansible.builtin.set_fact:
+        aigov_e2e_summary:
+          cycles: "{{ aigov_e2e_results | map(attribute='cycle') | list }}"
+          reset_workflow_jobs: "{{ aigov_e2e_results | map(attribute='reset_job') | list }}"
+          wf01_executions: "{{ aigov_e2e_results | map(attribute='execution_id') | list }}"
+          governance_runs: "{{ aigov_e2e_results | map(attribute='governance_run_id') | list }}"
+          failed_checks: "{{ aigov_e2e_results | map(attribute='problems') | flatten }}"
+          A1-8_identical_end_state: "{{ aigov_e2e_results | map(attribute='fingerprint') | unique | list | length == 1 }}"
+          A1-9_verified_entry: "{{ aigov_a19 | bool }}"
+          end_state: "{{ (aigov_e2e_results | last).fingerprint }}"
+
+    - name: Show the end-to-end result
+      ansible.builtin.debug:
+        var: aigov_e2e_summary
+
+    - name: Publish the result
+      ansible.builtin.set_stats:
+        data:
+          stage1_e2e: "{{ aigov_e2e_summary }}"
+        per_host: false
+
+    - name: Fail unless every acceptance criterion passed
+      ansible.builtin.assert:
+        that:
+          - aigov_e2e_summary.failed_checks | length == 0
+          - aigov_e2e_summary['A1-8_identical_end_state'] | bool
+          - aigov_e2e_summary['A1-9_verified_entry'] | bool
+        fail_msg: >-
+          Stage 1 acceptance failed: {{ aigov_e2e_summary.failed_checks }};
+          identical end state: {{ aigov_e2e_summary['A1-8_identical_end_state'] }};
+          fingerprints: {{ aigov_e2e_results | map(attribute='fingerprint') | list }}
+        success_msg: >-
+          Stage 1 acceptance A1-1 to A1-9 passed in {{ aigov_e2e_cycles }} consecutive reset + WF-01 cycles with an identical end state.

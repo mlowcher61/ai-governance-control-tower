@@ -1,0 +1,85 @@
+---
+# Start an execution of the workflow named aigov_ao_workflow_name, optionally wait for it, and fail unless it
+# completed. Needs ao_login.yml first. Sets aigov_ao_execution, aigov_ao_exec_state and aigov_ao_activities.
+# Used by run_workflow.yml and the Stage 1 end-to-end test.
+- name: Read the workflows
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/workflows?limit=100"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: aigov_ao_wf_list
+
+- name: Find the workflow by name
+  ansible.builtin.set_fact:
+    aigov_ao_wf_id: >-
+      {{ (aigov_ao_wf_list.json.resources | selectattr('name', 'equalto', aigov_ao_workflow_name)
+          | map(attribute='id') | first) | default('') }}
+
+- name: Check the workflow exists
+  ansible.builtin.assert:
+    that: aigov_ao_wf_id | length > 0
+    fail_msg: "Workflow '{{ aigov_ao_workflow_name }}' not found. Apply it with ao_workflows/apply_workflows.yml."
+    quiet: true
+
+- name: Read the workflow definition to find its manual trigger
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/workflows/{{ aigov_ao_wf_id }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: aigov_ao_wf
+
+- name: Start the execution
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions"
+    method: POST
+    body_format: json
+    body:
+      workflow_id: "{{ aigov_ao_wf_id }}"
+      trigger_node_id: >-
+        {{ aigov_ao_wf.json.version.workflow_definition.triggers
+           | selectattr('type', 'equalto', 'manual_trigger') | map(attribute='id') | first }}
+      input_data: "{{ aigov_ao_input }}"
+      use_published: "{{ aigov_ao_use_published }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 201, 202]
+  register: aigov_ao_execution
+  changed_when: true
+
+- name: Wait for the execution to finish
+  when: aigov_ao_wait | bool
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ aigov_ao_execution.json.id }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: aigov_ao_exec_state
+  until: aigov_ao_exec_state.json.status in ['completed', 'completed_with_errors', 'failed', 'cancelled']
+  retries: "{{ aigov_ao_wait_retries }}"
+  delay: 10
+
+- name: Read the execution activities
+  when: aigov_ao_wait | bool
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ aigov_ao_execution.json.id }}/activities"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: aigov_ao_activities
+
+- name: Report the execution
+  when: aigov_ao_wait | bool
+  ansible.builtin.debug:
+    msg:
+      execution_id: "{{ aigov_ao_execution.json.id }}"
+      status: "{{ aigov_ao_exec_state.json.status }}"
+      activities: >-
+        {{ (aigov_ao_activities.json.resources | default(aigov_ao_activities.json))
+           | map(attribute='activity_name', default='?') | zip(
+             (aigov_ao_activities.json.resources | default(aigov_ao_activities.json)) | map(attribute='status', default='?'))
+           | map('join', ': ') | list }}
+
+- name: Fail unless the execution completed
+  when: aigov_ao_wait | bool
+  ansible.builtin.assert:
+    that: aigov_ao_exec_state.json.status == 'completed'
+    fail_msg: "Execution {{ aigov_ao_execution.json.id }} ended with status {{ aigov_ao_exec_state.json.status }}."
+    quiet: true

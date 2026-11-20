@@ -1,0 +1,105 @@
+---
+# AI Governance - Reset Demo Agents (task T1.13)
+#
+# Puts the four demo agents back to the demo baseline (playbooks/demo/vars/demo_baseline.yml):
+#   * AWS, as the restricted AIGovDemoResetRole (demo-tagged resources only): each execution role gets exactly
+#     its baseline managed policies and no permissions boundary; each runtime gets exactly its baseline tags.
+#     This is how AdministratorAccess comes back on quick_helper_bot after a remediation demo.
+#   * The inventory (api.reset_demo): open findings of demo agents are resolved as "demo_reset" and the agents
+#     are marked not evaluated. Nothing is deleted; the audit log records the reset.
+# The workflow "AI Governance - Reset Demo Environment" runs this, then reloads the registry and republishes the
+# policies from Git.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Demo Reset Role",
+# "AI Governance - Inventory API (remediator)".
+- name: AI Governance - reset the demo agents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vars/demo_baseline.yml
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_demo_stack_name: aigov-demo-agents
+  tasks:
+    - name: Check the credentials are attached
+      ansible.builtin.assert:
+        that:
+          - aigov_demo_reset_role_arn | default('') | length > 0
+          - aigov_demo_reset_external_id | default('') | length > 0
+        fail_msg: Attach the credential "AI Governance - AWS Demo Reset Role" to this job template.
+        quiet: true
+
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Read the governance and demo stack outputs
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ item }}"
+        region: "{{ aigov_aws_region }}"
+      loop:
+        - "{{ aigov_governance_stack_name }}"
+        - "{{ aigov_demo_stack_name }}"
+      register: aigov_stacks
+
+    - name: Collect the stack outputs
+      ansible.builtin.set_fact:
+        aigov_gov: "{{ aigov_stacks.results[0].cloudformation[aigov_governance_stack_name].stack_outputs }}"
+        aigov_demo: "{{ aigov_stacks.results[1].cloudformation[aigov_demo_stack_name].stack_outputs }}"
+
+    - name: Assume the demo reset role (demo-tagged resources only)
+      amazon.aws.sts_assume_role:
+        role_arn: "{{ aigov_demo_reset_role_arn }}"
+        external_id: "{{ aigov_demo_reset_external_id }}"
+        role_session_name: "aigov-demo-reset-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+        duration_seconds: 900
+        region: "{{ aigov_aws_region }}"
+      register: aigov_reset_session
+      no_log: true
+
+    - name: Restore each execution role's managed policies and remove any permissions boundary
+      mlowcher61.ai_governance.iam_role_managed_policies:
+        access_key: "{{ aigov_reset_session.sts_creds.access_key }}"
+        secret_key: "{{ aigov_reset_session.sts_creds.secret_key }}"
+        session_token: "{{ aigov_reset_session.sts_creds.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        role_name: "{{ item.role_name }}"
+        managed_policies: "{{ item.managed_policies | map('replace', 'approved', aigov_gov.ApprovedAgentRuntimePolicyArn) | list }}"
+        permissions_boundary: ""
+      loop: "{{ aigov_demo_baseline }}"
+      loop_control:
+        label: "{{ item.role_name }}"
+      register: aigov_role_reset
+
+    - name: Restore each runtime's tags
+      mlowcher61.ai_governance.agentcore_runtime_tags:
+        access_key: "{{ aigov_reset_session.sts_creds.access_key }}"
+        secret_key: "{{ aigov_reset_session.sts_creds.secret_key }}"
+        session_token: "{{ aigov_reset_session.sts_creds.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        resource_arn: "{{ aigov_demo[item.runtime_arn_output] }}"
+        tags: "{{ item.tags }}"
+      loop: "{{ aigov_demo_baseline }}"
+      loop_control:
+        label: "{{ item.runtime }}"
+      register: aigov_tag_reset
+
+    - name: Reset the demo agents' governance state in the inventory
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: reset_demo
+        aigov_api_body:
+          reason: "Reset Demo Agents (AAP job {{ tower_job_id | default(awx_job_id) | default('local') }})"
+
+    - name: Report the reset
+      ansible.builtin.debug:
+        msg:
+          aws_roles_changed: >-
+            {{ aigov_role_reset.results | selectattr('changed') | map(attribute='item') | map(attribute='role_name') | list }}
+          aws_runtime_tags_changed: >-
+            {{ aigov_tag_reset.results | selectattr('changed') | map(attribute='item') | map(attribute='runtime') | list }}
+          inventory: "{{ aigov_api_response }}"

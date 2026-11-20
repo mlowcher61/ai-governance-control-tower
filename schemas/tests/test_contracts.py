@@ -174,3 +174,42 @@ def test_registry_files_describe_the_fixture_scenario():
 def test_quick_helper_bot_is_deliberately_unregistered():
     names = [r["match_keys"].get("name") for r in load_registry_files()["registrations"]]
     assert "quick_helper_bot" not in names
+
+
+# ---- The demo reset baseline matches the CloudFormation that created the demo agents ----------------------
+
+
+def _cfn_load(path):
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    def any_tag(loader, suffix, node):
+        if isinstance(node, yaml.ScalarNode):
+            return {"Fn::" + suffix: loader.construct_scalar(node)}
+        if isinstance(node, yaml.SequenceNode):
+            return {"Fn::" + suffix: loader.construct_sequence(node)}
+        return {"Fn::" + suffix: loader.construct_mapping(node)}
+
+    Loader.add_multi_constructor("!", any_tag)
+    return yaml.load(path.read_text(), Loader=Loader)
+
+
+def test_demo_baseline_matches_cloudformation():
+    import yaml
+
+    cfn = _cfn_load(ROOT / "aws" / "cloudformation" / "aigov-demo-agents.yaml")
+    baseline = yaml.safe_load((ROOT / "playbooks" / "demo" / "vars" / "demo_baseline.yml").read_text())["aigov_demo_baseline"]
+    runtimes = {r["Properties"]["AgentRuntimeName"]: r["Properties"] for r in cfn["Resources"].values()
+                if r["Type"] == "AWS::BedrockAgentCore::Runtime"}
+    roles = {r["Properties"]["RoleName"]: r["Properties"] for r in cfn["Resources"].values() if r["Type"] == "AWS::IAM::Role"}
+    assert {b["runtime"] for b in baseline} == set(runtimes)
+    for b in baseline:
+        assert {str(k): str(v) for k, v in runtimes[b["runtime"]]["Tags"].items()} == b["tags"], b["runtime"]
+        assert b["runtime_arn_output"] in cfn["Outputs"]
+        cfn_policies = roles[b["role_name"]]["ManagedPolicyArns"]
+        wanted = ["approved" if "ApprovedAgentRuntimePolicyArn" in json.dumps(p) else p.get("Fn::Sub", p) if isinstance(p, dict) else p
+                  for p in cfn_policies]
+        wanted = [w.replace("${AWS::Partition}", "aws") for w in wanted]
+        assert wanted == b["managed_policies"], b["role_name"]

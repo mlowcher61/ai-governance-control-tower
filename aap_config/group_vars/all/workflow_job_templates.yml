@@ -1,0 +1,25 @@
+---
+# AAP workflow job templates.
+#
+# AI Governance - Reset Demo Environment (T1.13, docs/plan/11): puts the whole demo back to its Git state before
+# (or after) a customer demo: the demo agents' AWS baseline and findings, then the registry, then the policies.
+aigov_reset_workflow:
+  - name: AI Governance - Reset Demo Environment
+    description: "T1.13 - Reset Demo Agents (AWS baseline, findings) -> Load Governance Registry -> Publish Governance Policies"
+    organization: "{{ aigov_organization }}"
+    allow_simultaneous: false
+    ask_variables_on_launch: false
+    destroy_current_nodes: true
+    simplified_workflow_nodes:
+      - identifier: reset_demo_agents
+        unified_job_template: AI Governance - Reset Demo Agents
+        success_nodes: [load_registry]
+      - identifier: load_registry
+        unified_job_template: AI Governance - Load Governance Registry
+        success_nodes: [publish_policies]
+      - identifier: publish_policies
+        unified_job_template: AI Governance - Publish Governance Policies
+
+controller_workflows: >-
+  {{ aigov_reset_workflow if (aigov_aws_account_id | string | length) == 12
+                             and (aigov_openshift_credential | default('') | string | length) > 0 else [] }}

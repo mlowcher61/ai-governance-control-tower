@@ -115,6 +115,32 @@ aigov_discovery_templates:
     ask_variables_on_launch: true
     <<: *aigov_jt_defaults
 
+# T1.13: demo reset and the Stage 1 end-to-end test (need the AWS account and the platform).
+aigov_demo_templates:
+  - name: AI Governance - Reset Demo Agents
+    description: "T1.13 - restore the demo agents' AWS baseline (demo reset role) and reset their findings (audited)"
+    playbook: playbooks/demo/reset_demo_agents.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Demo Reset Role
+      - AI Governance - Inventory API (remediator)
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+aigov_e2e_templates:
+  - name: AI Governance - Stage 1 End-to-End Test
+    description: "T1.13 - three cycles of Reset Demo Environment + WF-01, checking acceptance A1-1 to A1-9 and an identical end state"
+    playbook: playbooks/e2e/stage1_e2e.yml
+    credentials:
+      - "{{ aigov_aap_credential }}"
+      - AI Governance - Automation Orchestrator
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_e2e_cycles: 3
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:
@@ -203,6 +229,10 @@ controller_templates: >-
      + (aigov_platform_templates if (aigov_openshift_credential | default('') | string | length) > 0 else [])
      + (aigov_discovery_templates if (aigov_aws_account_id | string | length) == 12
                                      and (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_demo_templates if (aigov_aws_account_id | string | length) == 12
+                                and (aigov_openshift_credential | default('') | string | length) > 0 else [])
+     + (aigov_e2e_templates if (aigov_aws_account_id | string | length) == 12 and (aigov_ao_url | default('') | length) > 0
+                               and (aigov_aap_credential | default('') | string | length) > 0 else [])
      + (aigov_api_templates if (aigov_openshift_credential | default('') | string | length) > 0
                                and (aigov_aap_credential | default('') | string | length) > 0 else [])
      + (aigov_ao_templates if (aigov_ao_url | default('') | length) > 0 else [])

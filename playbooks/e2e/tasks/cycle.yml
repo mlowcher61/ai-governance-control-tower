@@ -1,0 +1,80 @@
+---
+# One end-to-end cycle (aigov_cycle): reset -> WF-01 -> acceptance checks and fingerprint.
+
+# ---- 1. Reset Demo Environment (AAP workflow) -------------------------------------------------------------
+- name: "Find the reset workflow (cycle {{ aigov_cycle }})"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/workflow_job_templates/?name={{ aigov_reset_workflow | urlencode }}"
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+  register: aigov_wfjt
+  no_log: true
+
+- name: "Launch Reset Demo Environment (cycle {{ aigov_cycle }})"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/workflow_job_templates/{{ aigov_wfjt.json.results[0].id }}/launch/"
+    method: POST
+    body_format: json
+    body: {}
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+    status_code: [200, 201]
+  register: aigov_reset_launch
+  changed_when: true
+  no_log: true
+
+- name: "Wait for the reset (cycle {{ aigov_cycle }})"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/workflow_jobs/{{ aigov_reset_launch.json.id }}/"
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+  register: aigov_reset_job
+  until: aigov_reset_job.json.status in ['successful', 'failed', 'error', 'canceled']
+  retries: 90
+  delay: 10
+  no_log: true
+
+- name: "Check the reset succeeded (cycle {{ aigov_cycle }})"
+  ansible.builtin.assert:
+    that: aigov_reset_job.json.status == 'successful'
+    fail_msg: "Reset Demo Environment (workflow job {{ aigov_reset_launch.json.id }}) ended {{ aigov_reset_job.json.status }}."
+    quiet: true
+
+# ---- 2. WF-01 in automation orchestrator ------------------------------------------------------------------
+- name: "Log in to automation orchestrator (cycle {{ aigov_cycle }})"
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/ao_login.yml
+
+- name: "Run WF-01 (cycle {{ aigov_cycle }})"
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/run_one.yml
+  vars:
+    aigov_ao_workflow_name: "{{ aigov_wf01_name }}"
+    aigov_ao_input: {}
+    aigov_ao_use_published: true
+    aigov_ao_wait: true
+    aigov_ao_wait_retries: 180
+
+- name: "Record which WF-01 steps ran (cycle {{ aigov_cycle }})"
+  ansible.builtin.set_fact:
+    aigov_wf01_steps: >-
+      {{ dict((aigov_ao_activities.json.resources | default(aigov_ao_activities.json)) | map(attribute='activity_name', default='?')
+              | zip((aigov_ao_activities.json.resources | default(aigov_ao_activities.json)) | map(attribute='status', default='?'))) }}
+
+# ---- 3. Acceptance checks ----------------------------------------------------------------------------------
+- name: "Check acceptance A1-1 to A1-7 (cycle {{ aigov_cycle }})"
+  ansible.builtin.include_tasks: acceptance.yml
+
+- name: "Keep the cycle result (cycle {{ aigov_cycle }})"
+  ansible.builtin.set_fact:
+    aigov_e2e_results: >-
+      {{ aigov_e2e_results + [{'cycle': aigov_cycle, 'reset_job': aigov_reset_launch.json.id,
+         'execution_id': aigov_ao_execution.json.id, 'governance_run_id': aigov_run_ids | first | default(''),
+         'fingerprint': aigov_fingerprint, 'problems': aigov_problems | map('regex_replace', '^', 'cycle ' ~ aigov_cycle ~ ': ') | list}] }}

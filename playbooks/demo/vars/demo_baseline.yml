@@ -1,0 +1,50 @@
+---
+# The demo baseline: what each demo agent looks like before a demo (docs/plan/11 section 2).
+# AI Governance - Reset Demo Agents puts AWS back to exactly this. It must match
+# aws/cloudformation/aigov-demo-agents.yaml (a contract test compares them).
+#
+# managed_policies entries: "approved" = the approved least-privilege policy from the governance stack
+# (output ApprovedAgentRuntimePolicyArn); anything else is a policy ARN.
+aigov_demo_baseline:
+  - runtime: payments_dispute_assistant
+    runtime_arn_output: PaymentsAssistantRuntimeArn
+    role_name: aigov-demo-payments-dispute-assistant
+    managed_policies: [approved]
+    tags:
+      Environment: production
+      Owner: payments-ml@example.com
+      DataClassification: confidential
+      CostCenter: CC-1001
+      "aigov:demo": "true"
+
+  # The unregistered "shadow" agent: AdministratorAccess and restricted data, no owner tags.
+  - runtime: quick_helper_bot
+    runtime_arn_output: QuickHelperBotRuntimeArn
+    role_name: aigov-demo-quick-helper-bot
+    managed_policies: ["arn:aws:iam::aws:policy/AdministratorAccess"]
+    tags:
+      CreatedBy: dev-sandbox
+      DataClassification: restricted
+      "aigov:demo": "true"
+
+  - runtime: hr_faq_agent
+    runtime_arn_output: HrFaqAgentRuntimeArn
+    role_name: aigov-demo-hr-faq-agent
+    managed_policies: [approved]
+    tags:
+      Environment: production
+      Owner: hr-digital@example.com
+      DataClassification: internal
+      CostCenter: CC-2040
+      "aigov:demo": "true"
+
+  - runtime: research_runtime
+    runtime_arn_output: ResearchRuntimeArn
+    role_name: aigov-demo-research-runtime
+    managed_policies: [approved]
+    tags:
+      Environment: development
+      Owner: research-lab@example.com
+      DataClassification: internal
+      CostCenter: CC-3300
+      "aigov:demo": "true"

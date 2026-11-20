@@ -1,0 +1,92 @@
+---
+# Stage 1 acceptance A1-1 to A1-7 (docs/plan/09 section 6.1) against the Inventory API (evaluator role), and the
+# end-state fingerprint used for A1-8. Sets aigov_problems, aigov_fingerprint and aigov_run_ids.
+- name: Read the agents
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: agent_overview
+    aigov_api_query: select=name,registration_status,compliance_status,risk_category,risk_score&missing_since=is.null&order=name
+
+- name: Keep the agents
+  ansible.builtin.set_fact:
+    aigov_agents: "{{ aigov_api_response | items2dict(key_name='name', value_name='compliance_status') }}"
+    aigov_agent_rows: "{{ aigov_api_response }}"
+
+- name: Read the open findings
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: findings_open
+    aigov_api_query: select=agent_name,policy_id,finding_type,deterministic_explanation,ai_explanation
+
+- name: Keep the findings
+  ansible.builtin.set_fact:
+    aigov_findings: "{{ aigov_api_response }}"
+
+- name: Read the latest assessments
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: agent_assessment
+    aigov_api_query: select=name,governance_run_id,policies_evaluated,open_findings_from_run
+
+- name: Keep the assessments
+  ansible.builtin.set_fact:
+    aigov_assessments: "{{ aigov_api_response }}"
+    aigov_run_ids: "{{ aigov_api_response | map(attribute='governance_run_id') | unique | list }}"
+
+- name: Read the governance run
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: governance_runs
+    aigov_api_query: "governance_run_id=eq.{{ aigov_run_ids | first | default('00000000-0000-0000-0000-000000000000') }}"
+
+- name: Evaluate the acceptance criteria
+  vars:
+    rows: "{{ aigov_agent_rows | items2dict(key_name='name', value_name='registration_status') }}"
+    risk: "{{ aigov_agent_rows | items2dict(key_name='name', value_name='risk_category') }}"
+    quick: "{{ aigov_findings | selectattr('agent_name', 'equalto', 'quick_helper_bot') | map(attribute='policy_id') | list }}"
+    research_mdl: >-
+      {{ aigov_findings | selectattr('agent_name', 'equalto', 'research_runtime') | selectattr('policy_id', 'equalto', 'AIGOV-MDL-001')
+         | selectattr('finding_type', 'equalto', 'insufficient_evidence') | list }}
+    explained: "{{ aigov_findings | selectattr('ai_explanation') | list | length }}"
+    run: "{{ aigov_api_response | first | default({}) }}"
+  ansible.builtin.set_fact:
+    aigov_problems: >-
+      {%- set p = [] -%}
+      {%- if rows.payments_dispute_assistant | default('') != 'registered' or aigov_agents.payments_dispute_assistant | default('') != 'compliant' -%}
+      {%- set _ = p.append('A1-1: payments_dispute_assistant is not registered and compliant') -%}{%- endif -%}
+      {%- if rows.quick_helper_bot | default('') != 'unregistered' or aigov_agents.quick_helper_bot | default('') != 'noncompliant'
+             or risk.quick_helper_bot | default('') != 'critical' or 'AIGOV-REG-001' not in quick or 'AIGOV-IAM-001' not in quick -%}
+      {%- set _ = p.append('A1-2: quick_helper_bot is not unregistered, noncompliant, critical with REG-001 and IAM-001 open') -%}{%- endif -%}
+      {%- if aigov_assessments | length != 4 or aigov_assessments | rejectattr('policies_evaluated', 'equalto', 10) | list | length > 0 -%}
+      {%- set _ = p.append('A1-3: not every agent has 10 policies evaluated: '
+                           ~ (aigov_assessments | map(attribute='policies_evaluated') | list)) -%}{%- endif -%}
+      {%- if aigov_wf01_steps.logic_needs_explanation | default('') != 'completed' or aigov_wf01_steps.activity_explain | default('') != 'completed'
+             or aigov_wf01_steps.activity_summary | default('') != 'completed' -%}
+      {%- set _ = p.append('A1-4: WF-01 did not branch to the AI step and complete: ' ~ aigov_wf01_steps) -%}{%- endif -%}
+      {%- if aigov_run_ids | length != 1 or run.agents_evaluated | default(0) != 4 or run.findings_opened | default(0) < 1
+             or (aigov_assessments | map(attribute='open_findings_from_run') | sum) != aigov_findings | length -%}
+      {%- set _ = p.append('A1-5: evaluations, results and findings are not correlated by one governance run') -%}{%- endif -%}
+      {%- if aigov_findings | rejectattr('deterministic_explanation') | list | length > 0
+             or explained < (0.9 * aigov_findings | length) -%}
+      {%- set _ = p.append('A1-6: ' ~ explained ~ ' of ' ~ (aigov_findings | length) ~ ' findings have an AI explanation (need 90%)') -%}{%- endif -%}
+      {%- if aigov_agents.research_runtime | default('') != 'unknown' or research_mdl | length != 1
+             or 'unknown' not in (research_mdl | first | default({})).deterministic_explanation | default('') | lower -%}
+      {%- set _ = p.append('A1-7: research_runtime is not unknown with a visible reason') -%}{%- endif -%}
+      {{ p }}
+    # Identical end state (A1-8): per agent its registration, status, risk and open findings (AI text varies by run)
+    aigov_fingerprint: >-
+      {%- set fp = [] -%}
+      {%- for a in aigov_agent_rows | sort(attribute='name') -%}
+      {%- set pol = aigov_findings | selectattr('agent_name', 'equalto', a.name) | map(attribute='policy_id') | sort | join(',') -%}
+      {%- set _ = fp.append([a.name, a.registration_status, a.compliance_status, a.risk_category, a.risk_score | string,
+                             pol if pol else '-'] | join('|')) -%}
+      {%- endfor -%}
+      {{ fp }}
