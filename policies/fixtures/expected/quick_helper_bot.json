@@ -34,7 +34,7 @@
       "policy_version": "1.0.0",
       "remediation": {
         "action_types": [
-          "agent_restrict_pending_review"
+          "bedrock_pause_agent_alias"
         ],
         "automatable": false,
         "summary": "Obtain a data-governance approval for the agent, or remove its access to the sensitive data."
@@ -114,8 +114,8 @@
       "remediation": {
         "action_types": [
           "iam_replace_managed_policy",
-          "iam_apply_permissions_boundary",
-          "iam_remove_inline_policy"
+          "iam_remove_inline_policy",
+          "iam_apply_permissions_boundary"
         ],
         "automatable": true,
         "summary": "Replace administrator-equivalent policies on the execution role with the approved least-privilege policy, or apply the approved permissions boundary."
@@ -223,8 +223,9 @@
       "policy_version": "1.0.0",
       "remediation": {
         "action_types": [
+          "agentcore_apply_governance_tags",
           "bedrock_apply_governance_tags",
-          "agent_restrict_pending_review"
+          "bedrock_pause_agent_alias"
         ],
         "automatable": false,
         "summary": "Register the agent with an approved owner and business purpose, or restrict it pending review."
@@ -287,6 +288,7 @@
       "policy_version": "1.0.0",
       "remediation": {
         "action_types": [
+          "agentcore_apply_governance_tags",
           "bedrock_apply_governance_tags"
         ],
         "automatable": true,

@@ -16,7 +16,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Remove the dangerous actions from the execution role or scope them to specific resources, after owner review.",
-		"action_types": ["iam_replace_managed_policy", "iam_remove_inline_policy"],
 		"automatable": false,
 	},
 }

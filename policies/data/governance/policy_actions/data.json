@@ -1,0 +1,12 @@
+{
+  "AIGOV-IAM-001": ["iam_replace_managed_policy", "iam_remove_inline_policy", "iam_apply_permissions_boundary"],
+  "AIGOV-REG-001": ["agentcore_apply_governance_tags", "bedrock_apply_governance_tags", "bedrock_pause_agent_alias"],
+  "AIGOV-TAG-001": ["agentcore_apply_governance_tags", "bedrock_apply_governance_tags"],
+  "AIGOV-DATA-001": ["bedrock_pause_agent_alias"],
+  "AIGOV-TOOL-001": ["bedrock_disable_action_group"],
+  "AIGOV-IAM-002": [],
+  "AIGOV-OWN-001": [],
+  "AIGOV-MDL-001": [],
+  "AIGOV-RSK-001": [],
+  "AIGOV-GRD-001": []
+}

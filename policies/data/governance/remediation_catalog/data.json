@@ -1,0 +1,42 @@
+{
+  "iam_replace_managed_policy": {
+    "summary": "Attach the approved least-privilege policy for the agent class, then detach administrator-equivalent managed policies (attach first, so a partial failure never leaves the agent without permissions).",
+    "platforms": ["aws.bedrock_agentcore_runtime", "aws.bedrock_agents_classic"],
+    "impact": "high", "reversible": true, "auto_eligible": false, "target": "execution_role"
+  },
+  "iam_apply_permissions_boundary": {
+    "summary": "Set the approved permissions boundary on the execution role (least disruptive containment).",
+    "platforms": ["aws.bedrock_agentcore_runtime", "aws.bedrock_agents_classic"],
+    "impact": "medium", "reversible": true, "auto_eligible": true, "target": "execution_role"
+  },
+  "iam_remove_inline_policy": {
+    "summary": "Delete an inline policy that grants administrator or dangerous actions (its document is saved in the pre-state).",
+    "platforms": ["aws.bedrock_agentcore_runtime", "aws.bedrock_agents_classic"],
+    "impact": "high", "reversible": true, "auto_eligible": false, "target": "execution_role"
+  },
+  "iam_tag_role": {
+    "summary": "Tag the execution role with governance tags.",
+    "platforms": ["aws.bedrock_agentcore_runtime", "aws.bedrock_agents_classic"],
+    "impact": "low", "reversible": true, "auto_eligible": true, "target": "execution_role"
+  },
+  "agentcore_apply_governance_tags": {
+    "summary": "Apply governance tags to the AgentCore runtime: values from the registry, or quarantine tags (aigov:status=noncompliant). Owner values are never invented.",
+    "platforms": ["aws.bedrock_agentcore_runtime"],
+    "impact": "low", "reversible": true, "auto_eligible": true, "target": "agent"
+  },
+  "bedrock_apply_governance_tags": {
+    "summary": "Apply governance tags to the Bedrock agent: values from the registry, or quarantine tags (aigov:status=noncompliant). Owner values are never invented.",
+    "platforms": ["aws.bedrock_agents_classic"],
+    "impact": "low", "reversible": true, "auto_eligible": true, "target": "agent"
+  },
+  "bedrock_disable_action_group": {
+    "summary": "Set the action group to DISABLED on the DRAFT version (aliases on numbered versions are not affected).",
+    "platforms": ["aws.bedrock_agents_classic"],
+    "impact": "medium", "reversible": true, "auto_eligible": false, "target": "agent"
+  },
+  "bedrock_pause_agent_alias": {
+    "summary": "Set the alias invocation state to REJECT_INVOCATIONS (the kill switch for a Bedrock Agents Classic agent).",
+    "platforms": ["aws.bedrock_agents_classic"],
+    "impact": "high", "reversible": true, "auto_eligible": false, "target": "agent"
+  }
+}

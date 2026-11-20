@@ -219,3 +219,16 @@ def test_demo_baseline_matches_cloudformation():
                   for p in cfn_policies]
         wanted = [w.replace("${AWS::Partition}", "aws") for w in wanted]
         assert wanted == b["managed_policies"], b["role_name"]
+
+
+# ---- Remediation profiles (policies/data, policies/overlays) -----------------------------------------------
+
+
+def test_demo_overlay_matches_the_default_remediation_settings():
+    default = load(ROOT / "policies" / "data" / "governance" / "config" / "data.json")["remediation"]
+    overlay = {k: v for k, v in load(ROOT / "policies" / "overlays" / "demo" / "remediation.json").items() if k != "_comment"}
+    catalog = load(ROOT / "policies" / "data" / "governance" / "remediation_catalog" / "data.json")
+    assert set(overlay) == set(default), "the overlay must replace every remediation setting"
+    assert default["enabled"] is False and default["mode"] == "detect_only", "the committed default must stay detection-only"
+    assert overlay["allowed_accounts"] == [], "the account is filled in at publish time, never committed"
+    assert all(catalog[a]["auto_eligible"] for a in overlay["auto_remediation_actions"])

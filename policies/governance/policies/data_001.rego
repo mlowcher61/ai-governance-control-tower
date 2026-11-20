@@ -14,7 +14,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Obtain a data-governance approval for the agent, or remove its access to the sensitive data.",
-		"action_types": ["agent_restrict_pending_review"],
 		"automatable": false,
 	},
 }

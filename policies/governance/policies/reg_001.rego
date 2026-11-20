@@ -11,7 +11,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Register the agent with an approved owner and business purpose, or restrict it pending review.",
-		"action_types": ["bedrock_apply_governance_tags", "agent_restrict_pending_review"],
 		"automatable": false,
 	},
 }

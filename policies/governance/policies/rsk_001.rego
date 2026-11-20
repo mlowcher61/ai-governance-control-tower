@@ -11,7 +11,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Complete or renew the AI risk assessment and record it in the governance registry.",
-		"action_types": [],
 		"automatable": false,
 	},
 }

@@ -14,7 +14,6 @@ meta := {
 	"severity": "medium",
 	"remediation": {
 		"summary": "Move the agent to an approved foundation model, or request a model approval exception.",
-		"action_types": [],
 		"automatable": false,
 	},
 }

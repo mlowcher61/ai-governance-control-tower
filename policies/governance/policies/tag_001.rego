@@ -11,7 +11,6 @@ meta := {
 	"severity": "medium",
 	"remediation": {
 		"summary": "Add the missing governance tags (owner, environment, data classification, cost center) with valid values.",
-		"action_types": ["bedrock_apply_governance_tags"],
 		"automatable": true,
 	},
 }

@@ -163,6 +163,8 @@ aigov_platform_templates:
     extra_vars:
       aigov_platform_namespace: "{{ aigov_platform_namespace }}"
       aigov_publish_self_test: false
+      aigov_policy_profile: default
+      aigov_aws_account_id: "{{ aigov_aws_account_id | string }}"
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Apply Database Migrations

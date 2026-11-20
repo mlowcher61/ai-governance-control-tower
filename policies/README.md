@@ -33,6 +33,25 @@ Each policy answers `pass`, `fail`, `unknown` or `not_applicable`, with a plain 
 - **Risk score**: points per finding (weights in `data.json`). Categories: critical 70 or more, high 45-69,
   medium 21-44, low 20 or less. Unknown results add points, so incomplete evidence raises risk.
 
+## Remediation authorization (Stage 2)
+
+Two more policies decide whether a finding may be **fixed** automatically:
+
+- `governance/remediation/authz.rego` (`POST /v1/data/governance/remediation/authz/decision`): is the finding eligible
+  (remediation enabled, account allowlisted, a violation, attempts and cooldown, not exempt)? Which catalog action fits
+  the policy and platform? Must a human approve (production or unknown environment, medium or high impact, critical
+  severity, or an action not on the automatic list)?
+- `governance/remediation/route.rego` (`POST /v1/data/governance/remediation/route/decision`): `halt`, `simulate`,
+  `approval` or `auto`. Anything uncertain (the AI disagrees or its output is invalid, or the role may be shared) forces approval.
+
+The **action catalog** (`data/governance/remediation_catalog/data.json`) lists every remediation the solution can
+perform, with its impact and whether it is reversible. **`data/governance/policy_actions/data.json`** maps each policy
+to the actions that fix it. It is also the source of the `action_types` in each failing result.
+
+**Remediation is off in the committed settings** (`remediation.enabled: false`, `mode: detect_only`); a test enforces
+this. To demonstrate remediation, publish with `aigov_policy_profile: demo`. That applies `overlays/demo/remediation.json`
+and allows only the account in `aigov_aws_account_id`.
+
 ## Files
 
 | Path | What it is |
@@ -42,7 +61,8 @@ Each policy answers `pass`, `fail`, `unknown` or `not_applicable`, with a plain 
 | `governance/risk.rego` | The risk score |
 | `governance/evaluate.rego` | The entry point: `POST /v1/data/governance/evaluate/result` |
 | `data/governance/config/data.json` | **Your settings**: approved models, required tags, sensitive classifications, administrator policies, dangerous actions, risk weights and category thresholds, control IDs |
-| `tests/policies_test.rego` | Unit tests (55; coverage 99%) |
+| `governance/remediation/` | Remediation authorization and routing (Stage 2) |
+| `tests/*_test.rego` | Unit tests (84) |
 | `fixtures/inputs/`, `fixtures/expected/` | The four demo agents and their **golden decisions** |
 
 ## Control mapping

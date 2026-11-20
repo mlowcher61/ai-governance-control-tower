@@ -11,7 +11,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Disable the high-risk tool, or record its approval in the agent's registration (approved_tools).",
-		"action_types": ["bedrock_disable_action_group"],
 		"automatable": false,
 	},
 }

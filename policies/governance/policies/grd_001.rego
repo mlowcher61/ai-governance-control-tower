@@ -11,7 +11,6 @@ meta := {
 	"severity": "medium",
 	"remediation": {
 		"summary": "Attach an approved Amazon Bedrock guardrail to the agent.",
-		"action_types": ["bedrock_attach_guardrail"],
 		"automatable": false,
 	},
 }

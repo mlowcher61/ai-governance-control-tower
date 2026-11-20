@@ -28,6 +28,10 @@
     # Negative self-test: add one always-failing test to the candidate (never served). The job must then
     # REFUSE the bundle and leave the live policies unchanged.
     aigov_publish_self_test: false
+    # Policy profile: "default" (committed settings: remediation detect_only) or "demo" (policies/overlays/demo:
+    # remediation enabled for aigov_aws_account_id only).
+    aigov_policy_profile: default
+    aigov_aws_account_id: ""
     aigov_self_test_rego: |
       package governance.publish_self_test
 
@@ -66,9 +70,37 @@
         recurse: true
       register: aigov_rego_files
 
+    # find, not fileglob: on ansible-core 2.16 (the EE) fileglob does not match a wildcard directory (*/data.json)
+    - name: Find the policy data files
+      ansible.builtin.find:
+        paths: "{{ aigov_repo_root }}/policies/data/governance"
+        patterns: data.json
+        recurse: true
+      register: aigov_data_found
+
+    - name: Check the policy profile
+      ansible.builtin.assert:
+        that:
+          - aigov_policy_profile in ['default', 'demo']
+          - aigov_policy_profile == 'default' or aigov_aws_account_id | string is match('^\d{12}$')
+        fail_msg: aigov_policy_profile must be default or demo; the demo profile needs aigov_aws_account_id (12 digits).
+        quiet: true
+
+    # policies/data/governance/<name>/data.json becomes data.governance.<name> (config, remediation_catalog,
+    # policy_actions). The demo profile replaces config.remediation with policies/overlays/demo/remediation.json.
     - name: Build the bundle (ConfigMap keys cannot hold "/", so paths become "__")
       vars:
-        aigov_config: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/data/governance/config/data.json') | from_json }}"
+        aigov_data_files: "{{ aigov_data_found.files | map(attribute='path') | sort | list }}"
+        aigov_data: >-
+          {{ dict(aigov_data_files | map('dirname') | map('basename')
+                  | zip(query('ansible.builtin.file', *aigov_data_files) | map('from_json'))) }}
+        aigov_demo_remediation: >-
+          {{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/overlays/demo/remediation.json') | from_json
+             | dict2items | rejectattr('key', 'equalto', '_comment') | items2dict
+             | combine({'allowed_accounts': [aigov_aws_account_id | string]}) }}
+        aigov_config: >-
+          {{ aigov_data.config | combine({'bundle_revision': aigov_bundle_revision}
+             | combine({'remediation': aigov_demo_remediation} if aigov_policy_profile == 'demo' else {})) }}
         aigov_files: "{{ aigov_rego_files.files | map(attribute='path') | sort | list }}"
         aigov_keys: >-
           {{ aigov_files | map('regex_replace', '^.*/policies/governance/', 'governance/')
@@ -77,7 +109,8 @@
         aigov_bundle_rego: >-
           {{ dict(aigov_keys | zip(query('ansible.builtin.file', *aigov_files, rstrip=false))) }}
         aigov_bundle_data:
-          data.json: "{{ {'governance': {'config': aigov_config | combine({'bundle_revision': aigov_bundle_revision})}} | to_json }}"
+          data.json: "{{ {'governance': aigov_data | combine({'config': aigov_config})} | to_json }}"
+        aigov_expected_remediation: "{{ aigov_config.remediation }}"
 
     - name: Separate the serving policies from the tests
       ansible.builtin.set_fact:
@@ -195,7 +228,10 @@
           ansible.builtin.uri:
             url: "{{ aigov_opa_url }}/v1/data/governance/platform/info"
           register: aigov_info
-          until: aigov_info.status == 200 and (aigov_info.json.result.bundle_revision | default('')) == aigov_bundle_revision
+          until: >-
+            aigov_info.status == 200 and (aigov_info.json.result.bundle_revision | default('')) == aigov_bundle_revision
+            and (aigov_info.json.result.remediation.mode | default('')) == aigov_expected_remediation.mode
+            and (aigov_info.json.result.remediation.enabled | default('x')) == aigov_expected_remediation.enabled
           retries: 12
           delay: 5
 
@@ -256,5 +292,7 @@
     - name: Report the published bundle
       ansible.builtin.debug:
         msg: >-
-          Published governance policies {{ aigov_bundle_revision }} to {{ aigov_opa_url }}:
-          {{ aigov_info.json.result.policies | join(', ') }}.
+          Published governance policies {{ aigov_bundle_revision }} (profile {{ aigov_policy_profile }}: remediation
+          {{ 'enabled, mode ' ~ aigov_info.json.result.remediation.mode ~ ', accounts ' ~ (aigov_info.json.result.remediation.allowed_accounts | join(', '))
+             if aigov_info.json.result.remediation.enabled else 'disabled (' ~ aigov_info.json.result.remediation.mode ~ ')' }})
+          to {{ aigov_opa_url }}: {{ aigov_info.json.result.policies | join(', ') }}.

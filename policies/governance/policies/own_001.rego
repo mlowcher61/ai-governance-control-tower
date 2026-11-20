@@ -11,7 +11,6 @@ meta := {
 	"severity": "high",
 	"remediation": {
 		"summary": "Assign an approved owner to the agent in the governance registry.",
-		"action_types": [],
 		"automatable": false,
 	},
 }

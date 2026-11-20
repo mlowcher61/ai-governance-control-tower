@@ -92,6 +92,11 @@ result_with_assumptions(meta, decision, explanation, evidence, extra) := {
 	"controls": object.get(cfg.controls, meta.policy_id, []),
 }
 
-remediation_for(meta, "fail") := meta.remediation
+# The remediation actions come from data.governance.policy_actions (one source for the policies and for
+# remediation authorization, governance.remediation.authz).
+remediation_for(meta, "fail") := object.union(
+	meta.remediation,
+	{"action_types": object.get(data.governance.policy_actions, meta.policy_id, [])},
+)
 
 remediation_for(_, decision) := null if decision != "fail"

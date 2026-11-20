@@ -1,0 +1,9 @@
+{
+  "_comment": "Demo profile (Publish Governance Policies with aigov_policy_profile=demo). Replaces data.governance.config.remediation. allowed_accounts is filled with aigov_aws_account_id at publish time. The committed default stays detect_only.",
+  "enabled": true,
+  "mode": "enforce",
+  "allowed_accounts": [],
+  "auto_remediation_actions": ["agentcore_apply_governance_tags", "bedrock_apply_governance_tags", "iam_tag_role"],
+  "max_attempts": 3,
+  "cooldown_minutes": 60
+}

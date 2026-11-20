@@ -12,7 +12,6 @@ meta := {
 	"severity": "critical",
 	"remediation": {
 		"summary": "Replace administrator-equivalent policies on the execution role with the approved least-privilege policy, or apply the approved permissions boundary.",
-		"action_types": ["iam_replace_managed_policy", "iam_apply_permissions_boundary", "iam_remove_inline_policy"],
 		"automatable": true,
 	},
 }
