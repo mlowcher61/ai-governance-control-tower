@@ -37,3 +37,7 @@ for f in $(ls "$dir"/V[0-9][0-9][0-9]__*.sql | sort); do
   applied=$((applied + 1))
 done
 echo "migrations complete: $applied applied, current version $(psql_q -c 'SELECT max(version) FROM aigov.schema_migrations')"
+# Tell PostgREST to reload its schema cache, so new API functions are callable at once (it listens on channel
+# "pgrst"). Sent on every run, also when nothing was applied, so a run repairs a cache that missed a change.
+psql -X -v ON_ERROR_STOP=1 -q -c "NOTIFY pgrst, 'reload schema'"
+echo "PostgREST schema cache reload requested"
