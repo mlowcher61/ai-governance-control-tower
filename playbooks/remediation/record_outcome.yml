@@ -1,0 +1,111 @@
+---
+# AI Governance - Record Remediation Outcome (task T2.09; WF-02 outcome nodes; docs/plan/04 section 3)
+#
+# Records how a WF-02 run ended for a finding (api.record_outcome; rejected, failed, verification_failed and rolled_back
+# start the finding's cooldown). aigov_outcome is either one outcome, or "from_remediation": the outcome is derived from
+# the remediation record - failed, verification_failed, escalated (Execute refused: nothing was changed; the remediation
+# is skipped), rolled_back, or escalated (rollback failed). It also publishes rollback_offer: yes when the remediation
+# failed or failed verification and a pre-state exists, so WF-02 can ask a human whether to roll back.
+#
+# Credentials: "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/outcome.
+- name: AI Governance - record a remediation outcome
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_governance_run_id: ""
+    aigov_finding_id: ""
+    aigov_remediation_id: ""
+    aigov_outcome: ""
+    aigov_reason: ""
+    aigov_known_outcomes: [remediated, detect_only, denied, simulated, rejected, expired, failed, verification_failed,
+                           rolled_back, escalated, no_longer_detected, missing_evidence, assessment_error, halted]
+    aigov_status_outcomes:
+      failed: failed
+      verification_failed: verification_failed
+      skipped: escalated
+      rolled_back: rolled_back
+      rollback_failed: escalated
+      verified: remediated
+      rejected: rejected
+      expired: expired
+  tasks:
+    - name: Check the inputs
+      ansible.builtin.assert:
+        that:
+          - aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+          - aigov_finding_id is match('^[0-9a-fA-F-]{36}$') or aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+          - aigov_outcome in aigov_known_outcomes or aigov_outcome == 'from_remediation'
+          - aigov_outcome != 'from_remediation' or aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+        fail_msg: >-
+          Pass aigov_governance_run_id, aigov_finding_id (or aigov_remediation_id), and aigov_outcome (one of
+          {{ aigov_known_outcomes | join(', ') }}, or from_remediation with aigov_remediation_id).
+        quiet: true
+
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Read the remediation record
+      when: aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+      block:
+        - name: Read the remediation
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_remediation
+            aigov_api_body: {remediation_id: "{{ aigov_remediation_id }}"}
+
+        - name: Keep the remediation
+          ansible.builtin.set_fact:
+            aigov_rem: "{{ aigov_api_response }}"
+
+    - name: Decide the outcome
+      ansible.builtin.set_fact:
+        aigov_final: >-
+          {{ aigov_status_outcomes[aigov_rem.status] | default('escalated') if aigov_outcome == 'from_remediation' else aigov_outcome }}
+        aigov_finding: "{{ aigov_rem.finding_id if aigov_rem is defined else aigov_finding_id }}"
+        # a boolean: ansible-core 2.16 turns a templated 'yes'/'no' into a boolean anyway
+        aigov_rollback_offer: >-
+          {{ aigov_rem is defined and aigov_rem.status in ['failed', 'verification_failed']
+             and (aigov_rem.pre_state | default({}, true)).identity is defined }}
+
+    - name: Record the outcome
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_outcome
+        aigov_api_body: >-
+          {{ {'governance_run_id': aigov_governance_run_id, 'finding_id': aigov_finding, 'outcome': aigov_final,
+              'reasons': ([aigov_reason] if aigov_reason | length > 0 else [])
+                         + ([('remediation ' ~ aigov_rem.status)] if aigov_rem is defined else [])}
+             | combine({'remediation_id': aigov_remediation_id} if aigov_rem is defined else {}) }}
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out: >-
+          {{ {'outcome': aigov_final, 'finding_id': aigov_finding, 'remediation_id': aigov_remediation_id,
+              'remediation_status': aigov_rem.status | default(''),
+              'rollback_offer': 'yes' if aigov_rollback_offer | bool else 'no',
+              'cooldown_until': aigov_api_response.cooldown_until | default('', true)} }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/outcome'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/outcome: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the outcome
+      ansible.builtin.debug:
+        var: aigov_out
+
+    - name: Publish the outcome for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

@@ -80,8 +80,9 @@ def policy_input_refresh(stored, record):
     return out
 
 
-def reassessment_outcome(result, policy_id):
-    """compliant / noncompliant / missing_evidence / error for one policy of an evaluation result."""
+def reassessment_outcome(result, policy_id, platform=None):
+    """compliant / noncompliant / missing_evidence / error for one policy of an evaluation result, with the policy's
+    candidate remediation actions (catalog actions for other platforms removed) and its remediation summary."""
     if not isinstance(result, dict) or result.get("overall_status") == "error" or result.get("input_errors"):
         return dict(assessment="error", decision=None, severity=None)
     for r in result.get("results") or []:
@@ -89,7 +90,12 @@ def reassessment_outcome(result, policy_id):
             decision = r.get("decision")
             assessment = {"pass": "compliant", "not_applicable": "compliant", "fail": "noncompliant",
                           "unknown": "missing_evidence"}.get(decision, "error")
-            return dict(assessment=assessment, decision=decision, severity=r.get("severity"))
+            rem = r.get("remediation") or {}
+            platform = platform or ""
+            actions = [a for a in rem.get("action_types") or []
+                       if not (platform == "aws.bedrock_agentcore_runtime" and a.startswith("bedrock_"))]
+            return dict(assessment=assessment, decision=decision, severity=r.get("severity"),
+                        candidate_actions=actions, remediation_summary=rem.get("summary") or "")
     return dict(assessment="error", decision=None, severity=None)
 
 

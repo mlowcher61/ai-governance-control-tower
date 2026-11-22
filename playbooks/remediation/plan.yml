@@ -26,7 +26,8 @@
     aigov_finding_id: ""
     # The AI step's structured output (WF-02 activity_recommend): an object, JSON text, or empty
     aigov_ai_recommendation: {}
-    aigov_plan: {remediation_id: "", route: halt, reason: "not planned", action_type: none, approval_summary: "", rollback_available: "no"}
+    aigov_plan: {remediation_id: "", route: halt, reason: "not planned", action_type: none, approval_summary: "", rollback_available: "no",
+                 halt_outcome: halted, route_precheck: ""}
   tasks:
     - name: Plan, and report any problem as route=halt
       block:
@@ -217,12 +218,24 @@
                          or (aigov_authz.selected_action == 'agentcore_apply_governance_tags' and aigov_dry_tags is succeeded) }}
 
         # ---- 4. AI recommendation (advisory) and blast radius ----------------------------------------------------
+        # The AI step is advisory and may fail (WF-02 continues on failure): anything that is not a JSON object counts
+        # as no recommendation, which forces approval; it never stops the plan.
         - name: Read the AI recommendation (an object, JSON text, or nothing)
+          block:
+            - name: Parse the AI recommendation
+              ansible.builtin.set_fact:
+                aigov_ai_rec: >-
+                  {{ aigov_ai_recommendation if aigov_ai_recommendation is mapping
+                     else (aigov_ai_recommendation | from_json
+                           if aigov_ai_recommendation is string and aigov_ai_recommendation | trim is match('^[{]') else {}) }}
+          rescue:
+            - name: Treat unreadable AI output as no recommendation
+              ansible.builtin.set_fact:
+                aigov_ai_rec: {}
+
+        - name: Accept only an object as the AI recommendation
           ansible.builtin.set_fact:
-            aigov_ai_rec: >-
-              {{ aigov_ai_recommendation if aigov_ai_recommendation is mapping
-                 else (aigov_ai_recommendation | from_json if aigov_ai_recommendation is string and aigov_ai_recommendation | trim | length > 0
-                       else {}) }}
+            aigov_ai_rec: "{{ aigov_ai_rec if aigov_ai_rec is mapping else {} }}"
 
         - name: Check the AI recommendation and compute the blast radius
           vars:
@@ -293,21 +306,33 @@
                   status: "{{ {'approval': 'awaiting_approval', 'auto': 'approved', 'simulate': 'skipped'}[aigov_route.route] }}"
                   aap_job_id: "{{ (tower_job_id | default(awx_job_id) | default(0)) | int }}"
 
+        - name: Write the approval summary (automation orchestrator shows at most 2000 characters)
+          vars:
+            aigov_summary_full: >-
+              {{ lookup('ansible.builtin.template', 'templates/approval_summary.md.j2')
+                 if aigov_route.route in ['auto', 'approval', 'simulate'] else '' }}
+          ansible.builtin.set_fact:
+            aigov_summary: >-
+              {{ aigov_summary_full if aigov_summary_full | length <= 2000
+                 else aigov_summary_full[:1880] ~ '\n\n... (shortened; the full plan is in the remediation record)' }}
+
         - name: Build the plan artifacts
           ansible.builtin.set_fact:
             aigov_plan: >-
               {{ {'remediation_id': aigov_remediation_id | default(''), 'route': aigov_route.route, 'reason': aigov_route.reason,
                   'action_type': aigov_authz.selected_action, 'rollback_available': 'yes' if aigov_rollback | bool else 'no',
                   'ai_agrees': aigov_ai.ai_agrees if aigov_ai.ai_agrees in ['yes', 'no', 'invalid'] else 'unknown',
-                  'blast_radius': aigov_blast.shared_role,
-                  'approval_summary': lookup('ansible.builtin.template', 'templates/approval_summary.md.j2')
-                                      if aigov_route.route in ['auto', 'approval', 'simulate'] else ''} }}
+                  'blast_radius': aigov_blast.shared_role, 'route_precheck': aigov_authz.route_precheck | default(''),
+                  'halt_outcome': aigov_authz.route_precheck if aigov_authz.route_precheck | default('') in ['detect_only', 'denied']
+                                  else 'halted',
+                  'approval_summary': aigov_summary} }}
 
       rescue:
         - name: Report the problem as route=halt
           ansible.builtin.set_fact:
             aigov_plan: >-
-              {{ aigov_plan | combine({'route': 'halt', 'remediation_id': aigov_remediation_id | default(''),
+              {{ aigov_plan | combine({'route': 'halt', 'remediation_id': aigov_remediation_id | default(''), 'halt_outcome': 'halted',
+                                       'route_precheck': (aigov_authz | default({})).route_precheck | default(''),
                                        'reason': ('not planned: ' if ansible_failed_result.assertion is defined else 'planning failed: ')
                                                  ~ ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
 

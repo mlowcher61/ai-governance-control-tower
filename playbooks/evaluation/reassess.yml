@@ -5,6 +5,7 @@
 # (registration and IDs from the inventory), asks OPA, and records the evaluation (purpose pre_remediation by default,
 # which never changes findings). The finding's policy decides the assessment:
 #   compliant (pass or not applicable: the finding is stale), noncompliant, missing_evidence (unknown), or error.
+# It also publishes the policy's candidate remediation actions and summary (input of the WF-02 AI step).
 # The inventory itself is not rewritten: the decision is independent of the last discovery run.
 #
 # Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role",
@@ -148,12 +149,15 @@
 
         - name: Derive the assessment for the finding's policy
           vars:
-            aigov_outcome: "{{ aigov_opa.json.result | mlowcher61.ai_governance.reassessment_outcome(aigov_finding.policy_id) }}"
+            aigov_outcome: >-
+              {{ aigov_opa.json.result | mlowcher61.ai_governance.reassessment_outcome(aigov_finding.policy_id, aigov_stored.agent.platform) }}
           ansible.builtin.set_fact:
             aigov_reassess: >-
               {{ {'assessment': aigov_outcome.assessment, 'evaluation_id': aigov_api_response.evaluation_id,
                   'current_severity': aigov_outcome.severity | default('', true), 'policy_decision': aigov_outcome.decision | default('', true),
-                  'overall_status': aigov_opa.json.result.overall_status} }}
+                  'overall_status': aigov_opa.json.result.overall_status,
+                  'candidate_actions': (aigov_outcome.candidate_actions | default([])) | join(','),
+                  'remediation_summary': aigov_outcome.remediation_summary | default('')} }}
 
       rescue:
         - name: Report the error as the assessment

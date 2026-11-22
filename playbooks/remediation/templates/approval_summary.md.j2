@@ -1,6 +1,8 @@
 ### Remediation approval - {{ aigov_ctx.agent_name }}
 
-**Finding:** {{ aigov_ctx.policy_id }} ({{ aigov_ctx.severity }}) - {{ aigov_ctx.deterministic_explanation }}
+**Remediation ID:** `{{ aigov_remediation_id | default('-') }}`
+
+**Finding:** {{ aigov_ctx.policy_id }} ({{ aigov_ctx.severity }}) - {{ aigov_ctx.deterministic_explanation | truncate(450) }}
 
 **Agent:** `{{ aigov_ctx.agent_name }}` ({{ aigov_ctx.platform }}, account {{ aigov_ctx.account_ref }}, {{ aigov_ctx.region }}, environment {{ aigov_ctx.environment }})
 

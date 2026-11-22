@@ -1,46 +1,95 @@
 ---
-# AI Governance - Record Approval Decision (task T2.05, interim; hardened in T2.10)
+# AI Governance - Record Approval Decision (tasks T2.05, T2.08, T2.09)
 #
-# Records a human decision (api.record_approval):
+# Records a human decision in the inventory (api.record_approval):
 #   kind remediation - on a remediation that awaits approval: approved lets Execute run, rejected re-opens the finding;
-#   kind rollback    - on a failed or verification_failed remediation: approved lets Rollback run (T2.08).
-# The database refuses an approval by the agent's registered owner (separation of duties, docs/plan/04 section 8),
-# and refuses any remediation that is not awaiting approval.
+#   kind rollback    - on a failed or verification_failed remediation: approved lets Rollback run.
+# The database refuses an approval by the agent's registered owner (separation of duties, docs/plan/04 section 8).
 #
-# INTERIM: the decision and approver are launch variables, so only administrators may launch this template.
-# T2.10 replaces them with the decision read from the automation orchestrator approvals API
-# (GET /api/v1/approvals?execution_id=...), so the approver identity cannot be typed in.
+# Two sources:
+#   ao (WF-02) - the decision is READ from the automation orchestrator approvals API: the decided approval of the WF-02
+#                approval node (aigov_ao_approval_node) whose prompt names this remediation. The approver, notes, time
+#                and AO approval ID come from AO, so nobody types them in.
+#   manual     - interim, for testing outside WF-02: the decision and approver are launch variables (administrators only).
 #
-# Credentials: "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/approval_decision.
+# Credentials: "AI Governance - Inventory API (remediator)"; for ao also "AI Governance - Automation Orchestrator".
+# Artifacts: schemas/artifacts.v1.json#/$defs/approval_decision.
 - name: AI Governance - record an approval decision
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_ao_validate_certs: false
+    aigov_approval_source: manual
+    aigov_approval_kind: remediation
     aigov_remediation_id: ""
+    # manual source
     aigov_decision: ""
     aigov_decided_by: ""
     aigov_decision_notes: ""
     aigov_ao_approval_id: ""
-    aigov_approval_kind: remediation
+    # ao source
+    aigov_ao_workflow_name: AI Governance - WF-02 Closed-Loop Remediation
+    aigov_ao_approval_node: "{{ 'approval_rollback' if aigov_approval_kind == 'rollback' else 'approval_remediation' }}"
   tasks:
     - name: Check the inputs
       ansible.builtin.assert:
         that:
           - aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
-          - aigov_decision in ['approved', 'rejected']
-          - aigov_decided_by | trim | length > 0
-          - aigov_decision_notes | trim | length > 0
           - aigov_approval_kind in ['remediation', 'rollback']
+          - aigov_approval_source in ['manual', 'ao']
+          - aigov_approval_source == 'ao' or aigov_decision in ['approved', 'rejected']
+          - aigov_approval_source == 'ao' or aigov_decided_by | trim | length > 0
+          - aigov_approval_source == 'ao' or aigov_decision_notes | trim | length > 0
         fail_msg: >-
-          Pass aigov_remediation_id, aigov_decision (approved or rejected), aigov_decided_by, aigov_decision_notes and
-          aigov_approval_kind (remediation or rollback).
+          Pass aigov_remediation_id and aigov_approval_kind (remediation or rollback). With aigov_approval_source=manual
+          also pass aigov_decision (approved or rejected), aigov_decided_by and aigov_decision_notes.
         quiet: true
 
     - name: Check the Inventory API credential (remediator)
       ansible.builtin.include_role:
         name: mlowcher61.ai_governance.inventory_api
+
+    - name: Read the decision from automation orchestrator
+      when: aigov_approval_source == 'ao'
+      block:
+        - name: Log in to automation orchestrator
+          ansible.builtin.include_tasks: "{{ aigov_repo_root }}/ao_workflows/tasks/ao_login.yml"
+
+        - name: Read the most recent approvals
+          ansible.builtin.uri:
+            url: "{{ aigov_ao_api }}/approvals?limit=100&sort=-updated_at"
+            headers: "{{ aigov_ao_headers }}"
+            validate_certs: "{{ aigov_ao_validate_certs }}"
+          register: aigov_ao_approvals
+
+        - name: Find the decided approval for this remediation
+          vars:
+            aigov_matches: >-
+              {{ aigov_ao_approvals.json.resources
+                 | selectattr('approval_node_id', 'equalto', aigov_ao_approval_node)
+                 | selectattr('workflow_context.workflow_name', 'equalto', aigov_ao_workflow_name)
+                 | selectattr('prompt', 'string') | selectattr('prompt', 'search', aigov_remediation_id)
+                 | selectattr('status', 'in', ['approved', 'rejected', 'expired']) | list }}
+          ansible.builtin.set_fact:
+            aigov_ao_approval: "{{ aigov_matches | first | default({}) }}"
+
+        - name: Check a decided approval was found
+          ansible.builtin.assert:
+            that: aigov_ao_approval.id is defined
+            fail_msg: >-
+              No decided {{ aigov_ao_approval_node }} approval of "{{ aigov_ao_workflow_name }}" names remediation
+              {{ aigov_remediation_id }} in automation orchestrator.
+            quiet: true
+
+        - name: Take the decision from automation orchestrator
+          ansible.builtin.set_fact:
+            aigov_decision: "{{ aigov_ao_approval.status }}"
+            aigov_decided_by: "{{ (aigov_ao_approval.decided_by | default({}, true)).name | default('', true) }}"
+            aigov_decision_notes: "{{ aigov_ao_approval.decision_notes | default('', true) }}"
+            aigov_ao_approval_id: "{{ aigov_ao_approval.id }}"
+            aigov_decided_at: "{{ aigov_ao_approval.decided_at | default('', true) }}"
 
     - name: Record the decision
       ansible.builtin.include_role:
@@ -49,10 +98,14 @@
       vars:
         aigov_api_rpc: record_approval
         aigov_api_body: >-
-          {{ {'remediation_id': aigov_remediation_id, 'decision': aigov_decision, 'decided_by': aigov_decided_by | trim,
-              'decision_notes': aigov_decision_notes | trim, 'kind': aigov_approval_kind,
-              'prompt': 'recorded by AAP job ' ~ (tower_job_id | default(awx_job_id) | default('local')) ~ ' (interim, T2.05)'}
-             | combine({'ao_approval_id': aigov_ao_approval_id} if aigov_ao_approval_id | length > 0 else {}) }}
+          {{ {'remediation_id': aigov_remediation_id, 'decision': aigov_decision, 'kind': aigov_approval_kind,
+              'prompt': ('automation orchestrator approval ' ~ aigov_ao_approval_node ~ ' of ' ~ aigov_ao_workflow_name)
+                        if aigov_approval_source == 'ao'
+                        else 'recorded by AAP job ' ~ (tower_job_id | default(awx_job_id) | default('local')) ~ ' (manual)'}
+             | combine({'decided_by': aigov_decided_by | trim} if aigov_decided_by | trim | length > 0 else {})
+             | combine({'decision_notes': aigov_decision_notes | trim} if aigov_decision_notes | trim | length > 0 else {})
+             | combine({'ao_approval_id': aigov_ao_approval_id} if aigov_ao_approval_id | length > 0 else {})
+             | combine({'decided_at': aigov_decided_at} if aigov_decided_at | default('') | length > 0 else {}) }}
 
     - name: Build the artifacts
       ansible.builtin.set_fact:
@@ -60,6 +113,8 @@
           remediation_id: "{{ aigov_remediation_id }}"
           decision: "{{ aigov_decision }}"
           kind: "{{ aigov_approval_kind }}"
+          decided_by: "{{ aigov_decided_by | trim }}"
+          source: "{{ aigov_approval_source }}"
           remediation_status: "{{ aigov_api_response.remediation_status }}"
 
     - name: Check the artifacts against their contract

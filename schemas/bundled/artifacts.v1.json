@@ -20,7 +20,8 @@
         "decision": {
           "enum": [
             "approved",
-            "rejected"
+            "rejected",
+            "expired"
           ]
         },
         "remediation_status": {
@@ -33,6 +34,15 @@
           "enum": [
             "remediation",
             "rollback"
+          ]
+        },
+        "decided_by": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "manual",
+            "ao"
           ]
         }
       }
@@ -607,6 +617,60 @@
         ]
       }
     },
+    "outcome": {
+      "title": "AI Governance - Record Remediation Outcome",
+      "type": "object",
+      "required": [
+        "outcome",
+        "finding_id",
+        "remediation_id",
+        "remediation_status",
+        "rollback_offer",
+        "cooldown_until"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "remediated",
+            "detect_only",
+            "denied",
+            "simulated",
+            "rejected",
+            "expired",
+            "failed",
+            "verification_failed",
+            "rolled_back",
+            "escalated",
+            "no_longer_detected",
+            "missing_evidence",
+            "assessment_error",
+            "halted"
+          ]
+        },
+        "finding_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "remediation_id": {
+          "type": "string"
+        },
+        "remediation_status": {
+          "type": "string"
+        },
+        "rollback_offer": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "cooldown_until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "plan": {
       "title": "AI Governance - Plan Remediation",
       "type": "object",
@@ -638,7 +702,8 @@
           "type": "string"
         },
         "approval_summary": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 2000
         },
         "rollback_available": {
           "enum": [
@@ -660,6 +725,18 @@
             "no",
             "unknown"
           ]
+        },
+        "route_precheck": {
+          "type": "string",
+          "description": "OPA authorization pre-check: eligible, detect_only, denied, ... (empty when planning failed before OPA)."
+        },
+        "halt_outcome": {
+          "enum": [
+            "detect_only",
+            "denied",
+            "halted"
+          ],
+          "description": "The outcome WF-02 records when route is halt."
         }
       },
       "if": {
@@ -716,6 +793,13 @@
           "type": "string"
         },
         "error_summary": {
+          "type": "string"
+        },
+        "candidate_actions": {
+          "type": "string",
+          "description": "Comma-separated catalog actions that fix the finding's policy on this platform (OPA policy_actions); input of the WF-02 AI step."
+        },
+        "remediation_summary": {
           "type": "string"
         }
       }

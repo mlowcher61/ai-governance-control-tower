@@ -211,10 +211,11 @@ aigov_remediation_templates:
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Record Approval Decision
-    description: "T2.05 (interim, hardened in T2.10) - record a human approval or rejection; the agent owner cannot approve"
+    description: "T2.05/T2.09 - record a human decision; WF-02 reads it from the AO approvals API (source ao); the agent owner cannot approve"
     playbook: playbooks/remediation/record_approval.yml
     credentials:
       - AI Governance - Inventory API (remediator)
+      - AI Governance - Automation Orchestrator
     ask_variables_on_launch: true
     timeout: 120
     extra_vars:
@@ -223,6 +224,7 @@ aigov_remediation_templates:
       aigov_decided_by: ""
       aigov_decision_notes: ""
       aigov_approval_kind: remediation
+      aigov_approval_source: manual
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Verify Remediation
@@ -259,6 +261,21 @@ aigov_remediation_templates:
       spec:
         - {question_name: Governance run ID, variable: aigov_governance_run_id, type: text, required: true, min: 36, max: 36, default: ""}
         - {question_name: Remediation ID, variable: aigov_remediation_id, type: text, required: true, min: 36, max: 36, default: ""}
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Record Remediation Outcome
+    description: "T2.09 - record how a WF-02 run ended (outcome, cooldown) and whether a rollback can be offered"
+    playbook: playbooks/remediation/record_outcome.yml
+    credentials:
+      - AI Governance - Inventory API (remediator)
+    ask_variables_on_launch: true
+    timeout: 120
+    extra_vars:
+      aigov_governance_run_id: ""
+      aigov_finding_id: ""
+      aigov_remediation_id: ""
+      aigov_outcome: ""
+      aigov_reason: ""
     <<: *aigov_jt_defaults
 
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type

@@ -262,3 +262,10 @@ def test_tag_rollback_restores_only_the_remediation_keys():
 
 def test_unknown_action_rollback_is_manual():
     assert remediation_rollback_plan("bedrock_pause_agent_alias", {}, {}, {}, APPROVED, BOUNDARY)["mode"] == "manual"
+
+
+def test_reassessment_outcome_lists_candidate_actions_for_the_platform():
+    result = _load("expected", "quick_helper_bot")
+    out = reassessment_outcome(result, "AIGOV-REG-001", "aws.bedrock_agentcore_runtime")
+    assert out["candidate_actions"] == ["agentcore_apply_governance_tags"] and out["remediation_summary"]
+    assert "bedrock_pause_agent_alias" in reassessment_outcome(result, "AIGOV-REG-001")["candidate_actions"]
