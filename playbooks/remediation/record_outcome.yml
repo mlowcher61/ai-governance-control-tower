@@ -77,12 +77,39 @@
         name: mlowcher61.ai_governance.inventory_api
         tasks_from: rpc
       vars:
+        aigov_api_accept_status: [200, 400]
         aigov_api_rpc: record_outcome
         aigov_api_body: >-
           {{ {'governance_run_id': aigov_governance_run_id, 'finding_id': aigov_finding, 'outcome': aigov_final,
               'reasons': ([aigov_reason] if aigov_reason | length > 0 else [])
                          + ([('remediation ' ~ aigov_rem.status)] if aigov_rem is defined else [])}
              | combine({'remediation_id': aigov_remediation_id} if aigov_rem is defined else {}) }}
+
+    - name: Fail on any other Inventory API error
+      ansible.builtin.fail:
+        msg: "Inventory API record_outcome returned HTTP 400: {{ aigov_api_response }}"
+      when: aigov_api_status | int == 400 and (aigov_api_response.message | default('')) != 'unknown finding_id'
+
+    # A run started for a finding that does not exist (WF-02 assessment_error branch) still leaves a trace.
+    - name: Audit the outcome of a run for an unknown finding
+      when: aigov_api_status | int == 400
+      block:
+        - name: Append the audit event
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: append_audit_event
+            aigov_api_body:
+              event:
+                event_type: remediation.outcome_unknown_finding
+                governance_run_id: "{{ aigov_governance_run_id }}"
+                source_ref: "{{ tower_job_id | default(awx_job_id) | default('local') | string }}"
+                details: {outcome: "{{ aigov_final }}", requested_finding_id: "{{ aigov_finding }}", reason: "{{ aigov_reason }}"}
+
+        - name: Keep the response shape
+          ansible.builtin.set_fact:
+            aigov_api_response: {cooldown_until: ""}
 
     - name: Build the artifacts
       ansible.builtin.set_fact:
