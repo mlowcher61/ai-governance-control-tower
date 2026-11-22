@@ -245,6 +245,7 @@ nodes:
     position: {x: 2340, y: 400}
     parameters:
       strategy: any
+      n_required: 1
 
   - id: activity_execute
     name: Execute the remediation
@@ -303,6 +304,7 @@ nodes:
     position: {x: 3640, y: 560}
     parameters:
       strategy: any
+      n_required: 1
 
   - id: activity_outcome_failure
     name: "Outcome: failed"
