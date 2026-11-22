@@ -72,6 +72,7 @@ Details and evidence are in [../progress-log.md](../progress-log.md).
 | Remediation profiles | Committed default **detect_only**; demo profile `policies/overlays/demo/remediation.json` applied at publish time with the account filled in | Remediation cannot be switched on by a commit alone; the account ID never lives in Git |
 | Q-12 / Q-13 / Q-16 defaults | Adopted in `policies/data/governance/config/data.json`: approved models `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `anthropic.claude-3-5-haiku-20241022-v1:0`; tags `Owner`, `Environment`, `DataClassification`, `CostCenter`; `assume_production` | Proposed defaults; customers change them in `data.json` |
 | Approvals before WF-02 exists | **Record approvals with the interim AAP job Record Approval Decision** (admins only) rather than waiting for the AO approval step; the AO approval comes with WF-02 (T2.09) and T2.10 makes the job read decisions from the AO approvals API | Lets Execute Remediation be tested on its own now. User decision (2026-11-22); the user recorded the first approval (job 316) |
+| Remediations stranded by failed WF-02 runs | **Record the user's AO decision from AO, then execute, verify and record each with the AAP jobs; reset the demo and run WF-02 on fresh findings** | The approvals were real (given in AO), so finishing them keeps the record honest. User decisions (2026-11-22) |
 
 ## 2. Assumptions
 

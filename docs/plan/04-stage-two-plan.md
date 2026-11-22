@@ -30,7 +30,7 @@
 3. **Business outcomes never fail a job.** Remediation, verification, and rollback playbooks wrap their work in `block`/`rescue` and always publish `status` via `set_stats` (AD-04). A job failure in AO therefore means an infrastructure error (EE pull, credentials, timeout), and it is handled as a workflow error.
 4. **OPA values consumed by AO are strings.** Fields such as `"approval_required": "yes"` are strings because AO expressions have no boolean literals 🟡.
 5. **Node IDs** follow the `activity_*` and `logic_*` convention (prefix `approval_` for approval nodes).
-6. **Branch merges use an explicit `converge` node with `strategy: any`** (✅ AO OpenAPI 1.3.0 `ConvergeNodeParameters`). In the diagram, every arrow into `activity_remediate` and `activity_finalize` from exclusive branches passes through a converge node (`logic_join_execute`, `logic_join_finalize`). This avoids relying on implicit OR-join behavior.
+6. **No branch merges (revised in T2.09).** The original design merged exclusive branches with a `converge` node (`strategy: any`). On AO API 1.3.2 a step is skipped as soon as any incoming branch is skipped, for `converge` nodes and multiple edges alike (VERIFIED.md, executions `24c8f3f9` and `f108e75b`). As built, WF-02 has no step with more than one incoming edge: the automatic route has its own execute chain, Execute → Verify → Outcome run in a straight line, and each branch ends in its own outcome node. The diagram below shows the original design; `ao_workflows/definitions/wf02_closed_loop_remediation.yml` is authoritative.
 7. **Native node settings** (✅ OpenAPI):
    - `aap_job_template` and `http_request` nodes set `settings.timeout` and `settings.retry_policy` (`max_retries`, `initial_interval`, `max_interval`, `backoff_coefficient`). Retries apply only to the read-only steps: context, reassess, authz, and verify. **Execute and Rollback use `max_retries: 0`.**
    - The `agentic` node sets `settings.continue_on_failure: true`, so an LLM failure never blocks the workflow; the Plan job then treats AI fields as missing, which forces approval.
@@ -126,11 +126,12 @@ Expression syntax follows the reference exports 🟡: `${node_id.artifacts.X}` f
 
 | Behavior | Assumption | Fallback |
 |---|---|---|
-| ~~OR-join on exclusive branches~~ | ✅ Resolved: explicit `converge` (`strategy: any`) | — |
+| OR-join on exclusive branches | ❌ The planned explicit `converge` (`strategy: any`) does NOT work for exclusive branches (T2.09, see "Joining exclusive branches" below) | No joins |
 | ~~Agentic node failure~~ | ✅ Resolved: `settings.continue_on_failure: true` | Plan job treats missing AI fields as `ai_agrees=unknown`, which forces approval |
 | ~~Approval timeout parameter~~ | ✅ Resolved: `decision_window` (seconds) | — |
-| Execution ID available as an expression | Unknown | `activity_finalize` locates the execution through `GET /api/v1/executions?workflow_id=…` and matches `governance_run_id` in activity outputs; event-triggered runs store the execution ID at creation time |
-| `http_request` response structure | `${id.body.result.*}` (seen in `sales.demos`) | Wrap the OPA call in a JT that exposes `set_stats` |
+| Execution ID available as an expression | ✅ Not needed (T2.09): approvals are found through `GET /api/v1/approvals` by workflow name, approval node and the remediation ID in the prompt | — |
+| `http_request` response structure | Not used (T2.09): Plan queries OPA with the live pre-state, so WF-02 has no `http_request` node | — |
+| Joining exclusive branches | ❌ (T2.09): on AO API 1.3.2 a step is skipped when ANY incoming branch is skipped, for `converge` nodes and multiple edges alike | WF-02 has no joins: the automatic route has its own execute chain; Execute → Verify → Outcome run in a straight line |
 
 ## 4. API request and response contracts
 

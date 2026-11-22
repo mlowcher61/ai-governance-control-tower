@@ -536,6 +536,83 @@ manual case needs a failed IAM remediation.
 
 ---
 
+## 2026-11-22 - T2.09 WF-02 Closed-Loop Remediation
+
+**Built.**
+- **WF-02** (`ao_workflows/definitions/wf02_closed_loop_remediation.yml`, 33 steps), loaded from YAML by the loader job.
+  For one finding: Get Finding Context → Reassess (live) → switch on the assessment:
+  - compliant → outcome `no_longer_detected`;
+  - missing evidence → outcome `missing_evidence`;
+  - noncompliant → AI recommendation (advisory, continue on failure) → Plan → route switch;
+  - anything else → outcome `assessment_error`.
+
+  The route switch:
+  - `approval` → AO approval → record the decision from AO → Execute → Verify → outcome → (rollback offered) AO rollback
+    approval → record it from AO → Rollback → outcome;
+  - `auto` → its own copy of that execute chain;
+  - `simulate` → outcome `simulated`;
+  - anything else → the halt outcome (`detect_only`, `denied` or `halted`).
+
+  A rejection is recorded from AO, followed by the `rejected` outcome.
+- **Record Approval Decision, source `ao`**: finds the decided approval in `GET /api/v1/approvals`, matched on the WF-02
+  workflow name, the approval node and the remediation ID in the prompt. It takes the approver, notes, time and AO
+  approval ID from AO. The manual source stays for testing outside WF-02.
+- **Record Remediation Outcome** job: one outcome, or `from_remediation` (derived from the remediation record), plus
+  `rollback_offer`. A run for an unknown finding is audited instead of failing.
+- **V011**: `record_outcome` accepts `no_longer_detected`, `missing_evidence`, `assessment_error`, `halted`.
+- Plan:
+  - unreadable AI output counts as no recommendation (forces approval, never halts);
+  - the approval summary starts with the remediation ID and is capped at AO's 2000-character prompt limit;
+  - publishes `route_precheck` and `halt_outcome`.
+- Reassess publishes the policy's candidate actions (for the platform) and remediation summary for the AI prompt.
+
+**Deviations from the design (docs/plan/04 sections 2-3), and why.**
+1. **No OPA `http_request` node.** Plan already asks OPA with the live pre-state; a separate call without it could
+   select a different action.
+2. **The route switch defaults to the halt outcome, never to Execute.**
+3. **No joins.** On AO API 1.3.2 a step is skipped as soon as ANY incoming branch is skipped:
+   - a `converge` node was skipped in execution `24c8f3f9`;
+   - a step with two incoming edges was skipped in `f108e75b`.
+
+   Execute → Verify → Outcome now run in a straight line (Verify reports `error` without changes when nothing was
+   executed). The automatic route has its own chain, and each branch ends in its own outcome node.
+4. **Approval capture moved forward from T2.10.** It was needed so Execute can run after an AO approval. Finalize and
+   notify stay in T2.10.
+
+**Problems found and fixed.**
+- AO validation: `converge` with `strategy: any` needs `n_required` (job 356).
+- An outcome for an unknown finding failed (job 366); it is now audited.
+- **Record Approval Decision ignored the AO decision** (execution `9e55d522`, job 382). The job template defines
+  `aigov_decision` as an extra var, and extra vars override `set_fact`, so the value read from AO became `""`. The
+  decision now lives in internal facts (proved on ansible-core 2.16).
+- The two join failures above (`24c8f3f9`, `f108e75b`).
+
+**Recovery (user decisions).** The failed runs left remediations that the user had approved in AO but that never
+executed: `16cd4b47`, `38a1dbd1` and `a308dde1`. Each blocked its finding. The user chose:
+- to record the AO decision from AO (job 385);
+- then to execute, verify and record each one with the AAP jobs (jobs 401-408 and 443-446). All verifications failed
+  honestly (quarantine tags do not fix REG-001 or TAG-001);
+- then to reset the demo (workflow job 409), re-detect with WF-01 (execution `52256fcf`) and republish the demo profile
+  (job 420).
+
+**Results on mk6hb** (see `ao_workflows/reference/VERIFIED.md`):
+
+| Branch | Execution | Result |
+|---|---|---|
+| Assessment error | `1154be7e` | outcome `assessment_error` (job 379) |
+| Missing evidence | `27838776` | outcome `missing_evidence` (job 369) |
+| Halted (no automated fix) | `2e33123a` | AI ran, Plan `halt`, outcome `denied` (job 372) |
+| **Approval → execute → verify → rollback** | `292eac34` | user approved in AO → recorded from AO (434) → executed (435) → `verification_failed` (436, 438) → user approved the rollback in AO → recorded (439) → `rolled_back` (441, 442) |
+
+**Not shown live.**
+- The `rejected` branch: the user approved run `f108e75b` instead of rejecting it.
+- The automatic route and the simulate route: no demo agent qualifies.
+- The compliant (stale finding) branch.
+
+These are for T2.12 (failure suite and E2E).
+
+---
+
 ## Open items (2026-11-22)
 
 | Item | Notes |
@@ -546,6 +623,8 @@ manual case needs a failed IAM remediation.
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
 | `claude-work-access` has an extra `project-user` assignment | `project-admin` covers it; can be removed |
 | Demo profile published on mk6hb | Still on. `quick_helper_bot` IAM-001 was remediated and verified, so the demo is off its baseline and Check Inventory fails (job 331) until Reset Demo Environment runs. Republish with `aigov_policy_profile: default` to turn remediation off |
-| Interim approval recording | Record Approval Decision takes the approver as a launch variable (admins only) until T2.10 reads decisions from the AO approvals API |
+| Manual approval recording | WF-02 records decisions from the AO approvals API; the manual source of Record Approval Decision remains for tests outside WF-02 (administrators only) |
+| Quarantine tags on `quick_helper_bot` | Remediation `a308dde1` (TAG-001) was executed and failed verification; its tags stay until a rollback or the next Reset Demo Environment |
+| WF-02 branches not shown live | `rejected`, automatic, simulate, compliant: T2.12 |
 | OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |

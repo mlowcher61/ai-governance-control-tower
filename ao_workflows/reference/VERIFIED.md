@@ -34,6 +34,41 @@ AAP job 224 (**AI Governance - Stage 1 End-to-End Test**) ran three cycles of th
 (the reset leaves no explained findings), and all Stage 1 acceptance criteria (A1-1 to A1-9) passed with an identical end
 state in every cycle.
 
+## WF-02 - AI Governance Closed-Loop Remediation
+
+| Item | Evidence |
+|---|---|
+| Definition | `ao_workflows/definitions/wf02_closed_loop_remediation.yml` (33 steps, no step with more than one incoming edge) |
+| Target | automation orchestrator API 1.3.2, cluster mk6hb, project `default`; AAP controller 4.8.13 |
+| Date | 2026-11-22 |
+| Validation and load | Valid; created by AAP job 360 (id `f935d80f-bd64-4b62-9b8c-cd259d78a22e`), current structure loaded by job 426 |
+
+| Branch | Execution | Path (AAP jobs) |
+|---|---|---|
+| Assessment error (unknown finding ID) | `1154be7e-12db-44f9-9d45-0510ecf92dcc` | context 374 -> reassess 377 `error` -> outcome `assessment_error` 379 (audited against the unknown ID) |
+| Missing evidence | `27838776-a3b5-48b8-b8d0-21f340d83ea9` | context 363 -> reassess 367 `missing_evidence` -> outcome 369 (never remediated) |
+| Noncompliant, no automated fix (halted) | `2e33123a-0ce9-490f-9765-30cb28e869a8` | context 364 -> reassess 368 -> AI -> plan 370 `halt` -> outcome `denied` 372 |
+| **Noncompliant -> human approval -> execute -> verify -> approved rollback** | `292eac34-92c3-495c-939b-70412536ccd7` | context 428 -> reassess 430 -> AI (agrees) -> plan 431 `approval` -> **AO approval by the user** -> recorded from AO 434 -> execute 435 `succeeded` -> verify 436 `verification_failed` (quarantine tags do not register a shadow agent) -> outcome 438 (rollback offered) -> **AO rollback approval by the user** -> recorded from AO 439 -> rollback 441 `rolled_back` -> outcome 442 |
+
+Behavior confirmed on this AO build:
+
+- A `switch` uses ports `case_0`, `case_1`, ... and `default_port: default`; an `approval` node uses ports `approved`
+  and `rejected`.
+- **A step is skipped as soon as ANY of its incoming branches is skipped.** A `converge` node (strategy `any`,
+  `n_required: 1`) was skipped when the route switch chose approval (execution `24c8f3f9`), and so was a step with
+  two incoming edges (execution `f108e75b`). Exclusive branches therefore never join: the automatic route has its own
+  copy of the execute chain. Joins work only for branches that all run.
+- A `converge` with `strategy: any` requires `n_required` (validation).
+- The approval prompt resolves `${activity_plan.artifacts.approval_summary}`; AO limits it to 2000 characters, so Plan
+  caps the summary. The approval node's output carries `decision`, `decided_by` (`admin-f0eb7edf97a2575d`) and
+  `decision_notes`; the approvals API (`GET /api/v1/approvals?sort=-updated_at`) returns the same decision with
+  `workflow_context.workflow_name`, which Record Approval Decision uses to find it.
+- `${activity_recommend.result.content}` (an object) reaches the AAP job as a dict.
+- Not needed: an execution ID expression. Approvals are matched by workflow, approval node and remediation ID.
+
+Not yet shown live: the `rejected` approval branch, the automatic route, the simulate route, and the compliant (stale
+finding) branch. See docs/progress-log.md.
+
 ## Earlier proofs (T0.08)
 
 | Workflow | Execution |

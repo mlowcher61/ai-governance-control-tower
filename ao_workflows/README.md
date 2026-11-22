@@ -110,6 +110,7 @@ Step 2 needs AAP API access (`AAP_SERVER` and `AAP_API_TOKEN`), and the AAP cred
 | Workflow | File | What it does |
 |---|---|---|
 | AI Governance - WF-01 Governance Assessment | `definitions/wf01_governance_assessment.yml` | Discover → Evaluate → (findings to explain?) → AI explanation, advisory → Record AI Explanations → Publish Assessment Summary. Verified on mk6hb: see [reference/VERIFIED.md](reference/VERIFIED.md) |
+| AI Governance - WF-02 Closed-Loop Remediation | `definitions/wf02_closed_loop_remediation.yml` | Input `finding_id`. Get Finding Context → Reassess (live) → still noncompliant? → AI recommendation (advisory) → Plan (OPA authorization, dry run, route) → **approval in AO** → Record Approval Decision (read from AO) → Execute → Verify → outcome → **rollback approval in AO** → Rollback. Other outcomes: no longer detected, missing evidence, assessment error, halted/denied/detect-only, simulated, rejected. Verified on mk6hb: see [reference/VERIFIED.md](reference/VERIFIED.md) |
 | AI Governance - Loader Test (as code) | `definitions/t0_loader_test.yml` | Smallest proof that the loader works |
 | AI Governance - LLM Smoke Test (as code) | `definitions/t0_llm_smoke_test.yml` | Proves the LLM integration returns structured output |
 
