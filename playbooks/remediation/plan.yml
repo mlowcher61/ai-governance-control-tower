@@ -238,11 +238,16 @@
 
         # WF-02 passes the WHOLE AI step output (${activity_recommend}): when the AI step failed, AO has no "result" to
         # resolve and a reference to ${activity_recommend.result.content} would fail the Plan step (F-04, T2.12).
+        # Shapes seen on AO API 1.3.2: success {agent_type, id, result: {content}, status, timestamp};
+        # failure {error, output, status, invocation_id, ...}.
         - name: Take the recommendation out of an automation orchestrator step output
           ansible.builtin.set_fact:
             aigov_ai_rec: >-
               {{ (((aigov_ai_rec.result | default({}, true)).content | default({}, true))
-                  if aigov_ai_rec is mapping and aigov_ai_rec.invocation_id is defined else aigov_ai_rec) }}
+                  if aigov_ai_rec is mapping and aigov_ai_rec.summary is not defined
+                     and (aigov_ai_rec.result is defined or aigov_ai_rec.invocation_id is defined
+                          or aigov_ai_rec.agent_type is defined or aigov_ai_rec.error is defined)
+                  else aigov_ai_rec) }}
 
         - name: Accept only an object as the AI recommendation
           ansible.builtin.set_fact:
