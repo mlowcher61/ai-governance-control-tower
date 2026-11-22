@@ -9,3 +9,6 @@ collections:
     version: "6.1.0"   # 6.1.1 artifact on the private hub fails hash verification
   - name: kubernetes.core
     version: "6.6.0"
+  # ServiceNow incidents for WF-02 outcomes (T2.10)
+  - name: servicenow.itsm
+    version: "2.17.0"

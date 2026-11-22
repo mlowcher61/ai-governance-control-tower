@@ -264,12 +264,13 @@ aigov_remediation_templates:
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Record Remediation Outcome
-    description: "T2.09 - record how a WF-02 run ended (outcome, cooldown) and whether a rollback can be offered"
+    description: "T2.09/T2.10 - record how a WF-02 run ended, check the audit trail is complete, and open/update/resolve the ServiceNow incident"
     playbook: playbooks/remediation/record_outcome.yml
     credentials:
       - AI Governance - Inventory API (remediator)
+      - AI Governance - ServiceNow
     ask_variables_on_launch: true
-    timeout: 120
+    timeout: 300
     extra_vars:
       aigov_governance_run_id: ""
       aigov_finding_id: ""

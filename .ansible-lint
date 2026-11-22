@@ -10,6 +10,7 @@ exclude_paths:
   - collections/ansible_collections/ansible/
   - collections/ansible_collections/infra/
   - collections/ansible_collections/kubernetes/
+  - collections/ansible_collections/servicenow/
 kinds:
   - tasks: "**/playbooks/**/tasks/*.yml"
   - vars: "**/playbooks/**/vars/*.yml"

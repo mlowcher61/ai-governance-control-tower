@@ -17,6 +17,9 @@
 #     So the automatic route has its own copy of the execute -> verify -> outcome -> rollback chain (suffix _auto).
 # Deviations from the design document, and why: see docs/progress-log.md (T2.09).
 #
+# Every branch ends in Record Remediation Outcome, which also finalizes the run (T2.10): audit completeness check
+# and a ServiceNow incident (opened, updated or resolved per finding).
+#
 # Names, not IDs: the loader resolves job templates, credentials, the LLM model and the approvers.
 name: AI Governance - WF-02 Closed-Loop Remediation
 description: >-
@@ -347,6 +350,18 @@ nodes:
       aigov_ao_approval_node: approval_rollback
     settings: {timeout: 300}
 
+  - id: activity_outcome_rollback_rejected
+    name: "Outcome: rollback rejected, a person must act"
+    type: aap_job_template
+    position: {x: 3900, y: 320}
+    job_template: AI Governance - Record Remediation Outcome
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_outcome: escalated
+      aigov_reason: the rollback was rejected; the failed remediation needs a person
+    settings: {timeout: 300}
+
   # ---- Automatic (OPA permits it): execute, verify, outcome, approval-gated rollback (straight line, no joins) ----------------------
   - id: activity_execute_auto
     name: Execute the remediation (automatic)
@@ -453,6 +468,18 @@ nodes:
       aigov_ao_approval_node: approval_rollback_auto
     settings: {timeout: 300}
 
+  - id: activity_outcome_rollback_rejected_auto
+    name: "Outcome: rollback rejected, a person must act (automatic)"
+    type: aap_job_template
+    position: {x: 3640, y: 700}
+    job_template: AI Governance - Record Remediation Outcome
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_outcome: escalated
+      aigov_reason: the rollback was rejected; the failed remediation needs a person
+    settings: {timeout: 300}
+
 edges:
   - {from: trigger_manual, to: activity_context}
   - {from: activity_context, to: activity_reassess}
@@ -487,3 +514,5 @@ edges:
   - {from: approval_rollback_auto, from_port: rejected, to: activity_record_rollback_rejection_auto}
   - {from: activity_record_rollback_approval_auto, to: activity_rollback_auto}
   - {from: activity_rollback_auto, to: activity_outcome_rollback_auto}
+  - {from: activity_record_rollback_rejection, to: activity_outcome_rollback_rejected}
+  - {from: activity_record_rollback_rejection_auto, to: activity_outcome_rollback_rejected_auto}

@@ -61,6 +61,12 @@ aigov_api_token_ttl_days: 90
 # automation orchestrator (T0.08). AO route URL, e.g. https://ao.apps.example.com (empty = skip the AO
 # credential and job templates). See ao_workflows/README.md.
 aigov_ao_url: ""
+
+# ServiceNow incidents for WF-02 outcomes (T2.10). The URL is not a secret; the username and password are entered in
+# the AAP credential "AI Governance - ServiceNow" (or exported as AIGOV_SERVICENOW_USERNAME / AIGOV_SERVICENOW_PASSWORD
+# when running configure_aap.yml). Leave empty to skip notifications (they are still audited).
+aigov_servicenow_instance: ""
+aigov_servicenow_assignment_group: ""
 # Namespace of the AO installation (used by "AI Governance - Configure AO Network Allowlist").
 aigov_ao_namespace: automation-orchestrator
 # LLM model the AI explanation step uses (name in the AO LLM integration); recorded with each explanation.

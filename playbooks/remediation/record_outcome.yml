@@ -1,5 +1,11 @@
 ---
-# AI Governance - Record Remediation Outcome (task T2.09; WF-02 outcome nodes; docs/plan/04 section 3)
+# AI Governance - Record Remediation Outcome (tasks T2.09, T2.10; WF-02 outcome nodes; docs/plan/04 sections 3, 8)
+#
+# Every WF-02 branch ends here, so this job also FINALIZES the run (T2.10):
+#   * audit completeness: api.audit_completeness checks every event the run's remediations imply and the hash chain;
+#   * notification: a ServiceNow incident per finding (tasks/notify_servicenow.yml) - opened or updated for outcomes
+#     that need a person, resolved for remediated / no_longer_detected; the result is audited (notification.*).
+#   Neither can fail the job: an incomplete audit or a ServiceNow problem is reported in the artifacts and the audit.
 #
 # Records how a WF-02 run ended for a finding (api.record_outcome; rejected, failed, verification_failed and rolled_back
 # start the finding's cooldown). aigov_outcome is either one outcome, or "from_remediation": the outcome is derived from
@@ -7,7 +13,8 @@
 # is skipped), rolled_back, or escalated (rollback failed). It also publishes rollback_offer: yes when the remediation
 # failed or failed verification and a pre-state exists, so WF-02 can ask a human whether to roll back.
 #
-# Credentials: "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/outcome.
+# Credentials: "AI Governance - Inventory API (remediator)", "AI Governance - ServiceNow".
+# Artifacts: schemas/artifacts.v1.json#/$defs/outcome.
 - name: AI Governance - record a remediation outcome
   hosts: localhost
   connection: local
@@ -30,6 +37,11 @@
       verified: remediated
       rejected: rejected
       expired: expired
+    # ServiceNow: outcomes that need a person, and outcomes that resolve the finding's incident
+    aigov_servicenow_open_outcomes: [failed, verification_failed, escalated, rolled_back, rejected, expired, missing_evidence,
+                                     denied, assessment_error, halted]
+    aigov_servicenow_resolve_outcomes: [remediated, no_longer_detected]
+    aigov_servicenow_assignment_group: ""
   tasks:
     - name: Check the inputs
       ansible.builtin.assert:
@@ -85,14 +97,19 @@
                          + ([('remediation ' ~ aigov_rem.status)] if aigov_rem is defined else [])}
              | combine({'remediation_id': aigov_remediation_id} if aigov_rem is defined else {}) }}
 
+    - name: Keep the outcome response
+      ansible.builtin.set_fact:
+        aigov_cooldown: "{{ (aigov_api_response | default({}, true)).cooldown_until | default('', true) if aigov_api_status | int == 200 else '' }}"
+        aigov_unknown_finding: "{{ aigov_api_status | int == 400 and (aigov_api_response.message | default('')) == 'unknown finding_id' }}"
+
     - name: Fail on any other Inventory API error
       ansible.builtin.fail:
         msg: "Inventory API record_outcome returned HTTP 400: {{ aigov_api_response }}"
-      when: aigov_api_status | int == 400 and (aigov_api_response.message | default('')) != 'unknown finding_id'
+      when: aigov_api_status | int == 400 and not (aigov_unknown_finding | bool)
 
     # A run started for a finding that does not exist (WF-02 assessment_error branch) still leaves a trace.
     - name: Audit the outcome of a run for an unknown finding
-      when: aigov_api_status | int == 400
+      when: aigov_unknown_finding | bool
       block:
         - name: Append the audit event
           ansible.builtin.include_role:
@@ -107,9 +124,66 @@
                 source_ref: "{{ tower_job_id | default(awx_job_id) | default('local') | string }}"
                 details: {outcome: "{{ aigov_final }}", requested_finding_id: "{{ aigov_finding }}", reason: "{{ aigov_reason }}"}
 
-        - name: Keep the response shape
-          ansible.builtin.set_fact:
-            aigov_api_response: {cooldown_until: ""}
+    # ---- Finalize (T2.10): audit completeness and notification ----------------------------------------------------
+    - name: Read the finding for the notification
+      when: not (aigov_unknown_finding | bool)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: get_finding_context
+        aigov_api_body: {finding_id: "{{ aigov_finding }}"}
+
+    - name: Keep the finding
+      ansible.builtin.set_fact:
+        aigov_fctx: "{{ {} if aigov_unknown_finding | bool else aigov_api_response }}"
+
+    - name: Check the audit trail of the run is complete
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_accept_status: [200, 400]
+        aigov_api_rpc: audit_completeness
+        aigov_api_body: {governance_run_id: "{{ aigov_governance_run_id }}"}
+
+    - name: Keep the audit result
+      ansible.builtin.set_fact:
+        aigov_audit: >-
+          {{ aigov_api_response if aigov_api_status | int == 200
+             else {'complete': false, 'missing': ['audit check failed: ' ~ (aigov_api_response.message | default('error'))]} }}
+
+    - name: Notify ServiceNow
+      ansible.builtin.include_tasks: tasks/notify_servicenow.yml
+      vars:
+        aigov_note:
+          outcome: "{{ aigov_final }}"
+          finding_id: "{{ aigov_finding }}"
+          remediation_id: "{{ aigov_remediation_id }}"
+          governance_run_id: "{{ aigov_governance_run_id }}"
+          policy_id: "{{ aigov_fctx.policy_id | default('') }}"
+          agent_name: "{{ aigov_fctx.agent_name | default('') }}"
+          severity: "{{ aigov_fctx.severity | default('') }}"
+          explanation: "{{ aigov_fctx.deterministic_explanation | default('') }}"
+          reason: "{{ aigov_reason if aigov_reason | length > 0 else ('remediation ' ~ aigov_rem.status if aigov_rem is defined else '') }}"
+          audit_complete: "{{ 'yes' if aigov_audit.complete | bool else 'no' }}"
+          audit_missing: "{{ aigov_audit.missing | join('; ') }}"
+
+    - name: Audit the notification
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: append_audit_event
+        aigov_api_body:
+          event: >-
+            {{ {'event_type': 'notification.' ~ aigov_notification.result, 'governance_run_id': aigov_governance_run_id,
+                'source_ref': (tower_job_id | default(awx_job_id) | default('local')) | string,
+                'details': {'channel': 'servicenow', 'outcome': aigov_final, 'incident': aigov_notification.incident,
+                            'error': aigov_notification.error, 'audit_complete': aigov_audit.complete | bool,
+                            'audit_missing': aigov_audit.missing}}
+               | combine({'finding_id': aigov_finding} if not (aigov_unknown_finding | bool) else {})
+               | combine({'remediation_action_id': aigov_remediation_id} if aigov_rem is defined else {}) }}
 
     - name: Build the artifacts
       ansible.builtin.set_fact:
@@ -117,7 +191,10 @@
           {{ {'outcome': aigov_final, 'finding_id': aigov_finding, 'remediation_id': aigov_remediation_id,
               'remediation_status': aigov_rem.status | default(''),
               'rollback_offer': 'yes' if aigov_rollback_offer | bool else 'no',
-              'cooldown_until': aigov_api_response.cooldown_until | default('', true)} }}
+              'cooldown_until': aigov_cooldown,
+              'audit_complete': 'yes' if aigov_audit.complete | bool else 'no',
+              'audit_missing': aigov_audit.missing | join('; '),
+              'notification': aigov_notification.result, 'incident': aigov_notification.incident} }}
 
     - name: Check the artifacts against their contract
       ansible.builtin.assert:

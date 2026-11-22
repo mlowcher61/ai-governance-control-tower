@@ -1,0 +1,95 @@
+---
+# Notify ServiceNow about a WF-02 outcome (task T2.10), with the certified servicenow.itsm collection.
+# Input: aigov_note {outcome, finding_id, remediation_id, governance_run_id, policy_id, agent_name, severity, explanation,
+#                    reason, audit_complete, audit_missing}.
+# One incident per finding (correlation ID aigov-finding-<finding_id>):
+#   outcomes that need a person -> open the incident, or add a work note to the open one;
+#   remediated / no_longer_detected -> resolve the open incident;
+#   simulated / detect_only -> nothing.
+# Sets aigov_notification {result: created|updated|resolved|not_needed|skipped|failed, incident, error}. Never fails:
+# a ServiceNow problem is reported (and audited by the caller), it does not change the governance outcome.
+- name: Decide what ServiceNow needs
+  ansible.builtin.set_fact:
+    aigov_sn_action: >-
+      {{ 'open' if aigov_note.outcome in aigov_servicenow_open_outcomes
+         else ('resolve' if aigov_note.outcome in aigov_servicenow_resolve_outcomes else 'none') }}
+    aigov_sn_configured: "{{ lookup('ansible.builtin.env', 'SN_HOST') | length > 0 }}"
+    aigov_sn_correlation: "aigov-finding-{{ aigov_note.finding_id }}"
+    aigov_sn_text: |-
+      AI governance outcome: {{ aigov_note.outcome }}
+      Finding: {{ aigov_note.policy_id | default('-', true) }} ({{ aigov_note.severity | default('-', true) }})
+      Agent: {{ aigov_note.agent_name | default('-', true) }}
+      {{ aigov_note.explanation | default('', true) | truncate(600) }}
+      Reason: {{ aigov_note.reason | default('-', true) }}
+      Finding ID: {{ aigov_note.finding_id }}
+      Remediation ID: {{ aigov_note.remediation_id | default('-', true) }}
+      Governance run: {{ aigov_note.governance_run_id }}
+      Audit trail complete: {{ aigov_note.audit_complete }}{{ (' (missing: ' ~ aigov_note.audit_missing ~ ')') if aigov_note.audit_missing else '' }}
+
+- name: Report that ServiceNow is not needed or not configured
+  when: aigov_sn_action == 'none' or not (aigov_sn_configured | bool)
+  ansible.builtin.set_fact:
+    aigov_notification:
+      result: "{{ 'not_needed' if aigov_sn_action == 'none' else 'skipped' }}"
+      incident: ""
+      error: "{{ '' if aigov_sn_action == 'none' else 'no ServiceNow instance in the credential AI Governance - ServiceNow' }}"
+
+- name: Open, update or resolve the incident
+  when: aigov_sn_action != 'none' and (aigov_sn_configured | bool)
+  block:
+    - name: Find the open incident for this finding
+      servicenow.itsm.incident_info:
+        sysparm_query: "correlation_id={{ aigov_sn_correlation }}^active=true"
+      register: aigov_sn_existing
+
+    - name: Keep the open incident
+      ansible.builtin.set_fact:
+        aigov_sn_incident: "{{ aigov_sn_existing.records | first | default({}) }}"
+
+    - name: Open an incident
+      when: aigov_sn_action == 'open' and aigov_sn_incident.number is not defined
+      servicenow.itsm.incident:
+        state: new
+        short_description: >-
+          AI governance: {{ aigov_note.policy_id | default('finding', true) }} on {{ aigov_note.agent_name | default('an AI agent', true) }}
+          - {{ aigov_note.outcome | replace('_', ' ') }}
+        description: "{{ aigov_sn_text }}"
+        urgency: "{{ {'critical': 'high', 'high': 'high', 'medium': 'medium'}[aigov_note.severity | default('low', true)] | default('low') }}"
+        impact: medium
+        other: >-
+          {{ {'correlation_id': aigov_sn_correlation, 'correlation_display': 'AI Governance Control Tower'}
+             | combine({'assignment_group': aigov_servicenow_assignment_group}
+                       if aigov_servicenow_assignment_group | default('', true) | length > 0 else {}) }}
+      register: aigov_sn_created
+
+    - name: Add a work note to the open incident
+      when: aigov_sn_action == 'open' and aigov_sn_incident.number is defined
+      servicenow.itsm.incident:
+        number: "{{ aigov_sn_incident.number }}"
+        other:
+          work_notes: "{{ aigov_sn_text }}"
+
+    - name: Resolve the open incident
+      when: aigov_sn_action == 'resolve' and aigov_sn_incident.number is defined
+      servicenow.itsm.incident:
+        number: "{{ aigov_sn_incident.number }}"
+        state: resolved
+        close_code: Solved (Permanently)
+        close_notes: "{{ aigov_sn_text }}"
+
+    - name: Report the notification
+      ansible.builtin.set_fact:
+        aigov_notification:
+          result: >-
+            {{ ('updated' if aigov_sn_incident.number is defined else 'created') if aigov_sn_action == 'open'
+               else ('resolved' if aigov_sn_incident.number is defined else 'not_needed') }}
+          incident: >-
+            {{ aigov_sn_incident.number | default((aigov_sn_created.record | default({})).number | default('', true)) }}
+          error: ""
+  rescue:
+    - name: Report the ServiceNow problem (the outcome stands)
+      ansible.builtin.set_fact:
+        aigov_notification:
+          result: failed
+          incident: ""
+          error: "{{ ((ansible_failed_result.msg | default('ServiceNow error')) | string)[:300] }}"

@@ -626,7 +626,11 @@
         "remediation_id",
         "remediation_status",
         "rollback_offer",
-        "cooldown_until"
+        "cooldown_until",
+        "audit_complete",
+        "audit_missing",
+        "notification",
+        "incident"
       ],
       "additionalProperties": false,
       "properties": {
@@ -668,6 +672,28 @@
             "string",
             "null"
           ]
+        },
+        "audit_complete": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "audit_missing": {
+          "type": "string"
+        },
+        "notification": {
+          "enum": [
+            "created",
+            "updated",
+            "resolved",
+            "not_needed",
+            "skipped",
+            "failed"
+          ]
+        },
+        "incident": {
+          "type": "string"
         }
       }
     },
