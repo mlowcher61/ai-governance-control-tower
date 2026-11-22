@@ -613,6 +613,60 @@ These are for T2.12 (failure suite and E2E).
 
 ---
 
+## 2026-11-22 - T2.10 Approval capture, Finalize Audit and Notify
+
+**Built.**
+- Approval capture was done in T2.09: Record Approval Decision reads each decision from the AO approvals API.
+- **V012 `api.audit_completeness(governance_run_id)`** (remediator, auditor). For every remediation of the run it
+  requires the events its status implies:
+  - planned;
+  - a human approval decision when OPA required approval (or the expiry);
+  - executing plus executed or failed;
+  - verification passed or failed;
+  - the finding resolved after verification;
+  - for a rollback, a human rollback approval plus the rollback result.
+
+  It also requires an outcome for the run, and checks that the hash chain is intact from the run's first event.
+- **Record Remediation Outcome finalizes every WF-02 branch.** After recording the outcome it runs the completeness
+  check, then notifies ServiceNow (`playbooks/remediation/tasks/notify_servicenow.yml`, certified `servicenow.itsm`
+  2.17.0). There is one incident per finding (correlation ID `aigov-finding-<id>`):
+  - outcomes that need a person (failed, verification failed, escalated, rolled back, rejected, expired, missing
+    evidence, denied, assessment error, halted) open the incident, or add a work note to the open one;
+  - remediated and no longer detected resolve it;
+  - simulated and detect-only do nothing.
+
+  The result is audited (`notification.created`, `updated`, `resolved`, `skipped`, `failed` or `not_needed`) and
+  published with `audit_complete` and `audit_missing`. Neither an incomplete audit nor a ServiceNow problem fails the run.
+- Credential type and credential **AI Governance - ServiceNow** (env `SN_HOST`, `SN_USERNAME`, `SN_PASSWORD`). It is
+  created once and never overwritten. An empty instance means notifications are skipped. The collection is pinned for
+  project sync, the EE definition and CI.
+- WF-02: the rollback-rejected branches end in an outcome step (`escalated`), so every branch is finalized.
+- Decision (user): **notify through ServiceNow incidents** (13-open-questions section 1.2).
+
+**Problem found and fixed before deploying.** The unknown-finding audit call reset the HTTP status the outcome step
+relied on. The status is now captured right after `record_outcome`.
+
+**Tests.**
+- V012 SQL tests: a complete run, a missing rollback approval, a run without events, and a tampered event breaking the
+  chain.
+- The notification tasks on ansible-core 2.16: not needed, not configured (skipped), configured but unreachable
+  (reported as failed, run continues), and the urgency and assignment-group expressions.
+- Schema examples (172).
+
+**Results on mk6hb.** V012 applied (job 449); WF-02 updated (job 450).
+
+| Run | Execution | Result |
+|---|---|---|
+| Missing evidence, ServiceNow empty | `9c95822d` | job 455: audit complete, notification `skipped` (audited) |
+| Missing evidence, ServiceNow set | `4ac2a227` | job 459: audit complete, incident **INC0011650 created** |
+| Same finding again | `dd5723d8` | job 463: audit complete, **work note added to INC0011650** |
+
+**Not shown live.** Resolving an incident needs a finding that first gets an incident and is later remediated. For
+example, reject a WF-02 run for IAM-001 (incident opened), then after the 60-minute cooldown approve a new run (verified,
+so the incident is resolved). This also proves the rejected branch, so it belongs in T2.12.
+
+---
+
 ## Open items (2026-11-22)
 
 | Item | Notes |
@@ -625,6 +679,7 @@ These are for T2.12 (failure suite and E2E).
 | Demo profile published on mk6hb | Still on. `quick_helper_bot` IAM-001 was remediated and verified, so the demo is off its baseline and Check Inventory fails (job 331) until Reset Demo Environment runs. Republish with `aigov_policy_profile: default` to turn remediation off |
 | Manual approval recording | WF-02 records decisions from the AO approvals API; the manual source of Record Approval Decision remains for tests outside WF-02 (administrators only) |
 | Quarantine tags on `quick_helper_bot` | Remediation `a308dde1` (TAG-001) was executed and failed verification; its tags stay until a rollback or the next Reset Demo Environment |
-| WF-02 branches not shown live | `rejected`, automatic, simulate, compliant: T2.12 |
+| WF-02 branches not shown live | `rejected`, automatic, simulate, compliant, and ServiceNow incident resolve: T2.12 (reject an IAM-001 run, then approve one after the cooldown) |
+| ServiceNow incident INC0011650 | Opened by the T2.10 test for finding `48d2d805` (MDL-001, missing evidence); close it in ServiceNow when no longer needed |
 | OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |
