@@ -12,8 +12,9 @@
 #   * Approval decisions are read back from the automation orchestrator approvals API by Record Approval Decision
 #     (source ao) and written to the inventory before Execute or Rollback may run; the database enforces this.
 #   * Execute and Rollback load everything from the remediation record and re-check before acting.
-#   * Exclusive branches join by giving the next step several incoming edges, NOT a converge node: on this AO build
-#     (API 1.3.2) a converge is skipped as soon as one of its branches is skipped (execution 24c8f3f9, 2026-11-22).
+#   * No step joins exclusive branches: on this AO build (API 1.3.2) a step is skipped as soon as ANY of its incoming
+#     branches is skipped, whether the join is a converge node (execution 24c8f3f9) or several edges (f108e75b).
+#     So the automatic route has its own copy of the execute -> verify -> outcome -> rollback chain (suffix _auto).
 # Deviations from the design document, and why: see docs/progress-log.md (T2.09).
 #
 # Names, not IDs: the loader resolves job templates, credentials, the LLM model and the approvers.
@@ -240,12 +241,11 @@ nodes:
       aigov_outcome: from_remediation
     settings: {timeout: 300}
 
-  # ---- Execute and verify --------------------------------------------------------------------------------------
-
+  # ---- After approval: execute, verify, outcome, approval-gated rollback (straight line, no joins) ----------------------
   - id: activity_execute
     name: Execute the remediation
     type: aap_job_template
-    position: {x: 2600, y: 400}
+    position: {x: 2340, y: 240}
     job_template: AI Governance - Execute Remediation
     extra_vars:
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
@@ -254,17 +254,12 @@ nodes:
       timeout: 900
       retry_policy: {max_retries: 0}
 
-  - id: logic_execute_ok
-    name: Executed?
-    type: condition
-    position: {x: 2860, y: 400}
-    parameters:
-      condition: "${activity_execute.artifacts.status} == 'succeeded'"
-
+  # Verify runs after every execution: for a remediation that was not executed it reports status=error and changes
+  # nothing, and the outcome below is derived from the remediation record.
   - id: activity_verify
     name: Verify independently
     type: aap_job_template
-    position: {x: 3120, y: 300}
+    position: {x: 2600, y: 240}
     job_template: AI Governance - Verify Remediation
     extra_vars:
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
@@ -273,31 +268,10 @@ nodes:
       timeout: 900
       retry_policy: {max_retries: 1, initial_interval: 30, max_interval: 60, backoff_coefficient: 2}
 
-  - id: logic_verified
-    name: Verified?
-    type: condition
-    position: {x: 3380, y: 300}
-    parameters:
-      condition: "${activity_verify.artifacts.status} == 'verified'"
-
-  - id: activity_outcome_remediated
-    name: "Outcome: remediated"
+  - id: activity_outcome
+    name: "Outcome: remediated, failed or verification failed"
     type: aap_job_template
-    position: {x: 3640, y: 200}
-    job_template: AI Governance - Record Remediation Outcome
-    extra_vars:
-      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
-      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
-      aigov_outcome: remediated
-      aigov_reason: verified independently; finding resolved
-    settings: {timeout: 300}
-
-  # ---- Failure and approval-gated rollback ---------------------------------------------------------------------
-
-  - id: activity_outcome_failure
-    name: "Outcome: failed"
-    type: aap_job_template
-    position: {x: 3900, y: 560}
+    position: {x: 2860, y: 240}
     job_template: AI Governance - Record Remediation Outcome
     extra_vars:
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
@@ -308,17 +282,17 @@ nodes:
   - id: logic_rollback_offer
     name: Rollback possible?
     type: condition
-    position: {x: 4160, y: 560}
+    position: {x: 3120, y: 240}
     parameters:
-      condition: "${activity_outcome_failure.artifacts.rollback_offer} == 'yes'"
+      condition: "${activity_outcome.artifacts.rollback_offer} == 'yes'"
 
   - id: approval_rollback
     name: Approve the rollback
     type: approval
-    position: {x: 4420, y: 480}
+    position: {x: 3380, y: 240}
     prompt: >-
       Roll back remediation ${activity_plan.artifacts.remediation_id} (${activity_plan.artifacts.action_type}) of
-      ${activity_context.artifacts.agent_name}? Outcome so far: ${activity_outcome_failure.artifacts.outcome}.
+      ${activity_context.artifacts.agent_name}? Outcome so far: ${activity_outcome.artifacts.outcome}.
       Rolling back restores the state before the remediation, which may RE-INTRODUCE the risk. Re-attaching
       administrator policies is never automated: in that case the job lists the steps for a person instead.
     decision_window: 3600
@@ -329,18 +303,19 @@ nodes:
   - id: activity_record_rollback_approval
     name: Record the rollback approval
     type: aap_job_template
-    position: {x: 4680, y: 400}
+    position: {x: 3640, y: 160}
     job_template: AI Governance - Record Approval Decision
     extra_vars:
       aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
       aigov_approval_kind: rollback
       aigov_approval_source: ao
+      aigov_ao_approval_node: approval_rollback
     settings: {timeout: 300}
 
   - id: activity_rollback
     name: Roll back
     type: aap_job_template
-    position: {x: 4940, y: 400}
+    position: {x: 3900, y: 160}
     job_template: AI Governance - Rollback Remediation
     extra_vars:
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
@@ -352,7 +327,7 @@ nodes:
   - id: activity_outcome_rollback
     name: "Outcome: rollback"
     type: aap_job_template
-    position: {x: 5200, y: 400}
+    position: {x: 4160, y: 160}
     job_template: AI Governance - Record Remediation Outcome
     extra_vars:
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
@@ -363,13 +338,121 @@ nodes:
   - id: activity_record_rollback_rejection
     name: Record the rollback rejection
     type: aap_job_template
-    position: {x: 4680, y: 600}
+    position: {x: 3640, y: 320}
     job_template: AI Governance - Record Approval Decision
     extra_vars:
       aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
       aigov_approval_kind: rollback
       aigov_approval_source: ao
+      aigov_ao_approval_node: approval_rollback
     settings: {timeout: 300}
+
+  # ---- Automatic (OPA permits it): execute, verify, outcome, approval-gated rollback (straight line, no joins) ----------------------
+  - id: activity_execute_auto
+    name: Execute the remediation (automatic)
+    type: aap_job_template
+    position: {x: 2080, y: 620}
+    job_template: AI Governance - Execute Remediation
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+    settings:
+      timeout: 900
+      retry_policy: {max_retries: 0}
+
+  # Verify runs after every execution: for a remediation that was not executed it reports status=error and changes
+  # nothing, and the outcome below is derived from the remediation record.
+  - id: activity_verify_auto
+    name: Verify independently (automatic)
+    type: aap_job_template
+    position: {x: 2340, y: 620}
+    job_template: AI Governance - Verify Remediation
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+    settings:
+      timeout: 900
+      retry_policy: {max_retries: 1, initial_interval: 30, max_interval: 60, backoff_coefficient: 2}
+
+  - id: activity_outcome_auto
+    name: "Outcome: remediated, failed or verification failed (automatic)"
+    type: aap_job_template
+    position: {x: 2600, y: 620}
+    job_template: AI Governance - Record Remediation Outcome
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_outcome: from_remediation
+    settings: {timeout: 300}
+
+  - id: logic_rollback_offer_auto
+    name: Rollback possible? (automatic)
+    type: condition
+    position: {x: 2860, y: 620}
+    parameters:
+      condition: "${activity_outcome_auto.artifacts.rollback_offer} == 'yes'"
+
+  - id: approval_rollback_auto
+    name: Approve the rollback (automatic)
+    type: approval
+    position: {x: 3120, y: 620}
+    prompt: >-
+      Roll back remediation ${activity_plan.artifacts.remediation_id} (${activity_plan.artifacts.action_type}) of
+      ${activity_context.artifacts.agent_name}? Outcome so far: ${activity_outcome_auto.artifacts.outcome}.
+      Rolling back restores the state before the remediation, which may RE-INTRODUCE the risk. Re-attaching
+      administrator policies is never automated: in that case the job lists the steps for a person instead.
+    decision_window: 3600
+    fallback_decision: reject
+    settings:
+      continue_on_failure: true
+
+  - id: activity_record_rollback_approval_auto
+    name: Record the rollback approval (automatic)
+    type: aap_job_template
+    position: {x: 3380, y: 540}
+    job_template: AI Governance - Record Approval Decision
+    extra_vars:
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_approval_kind: rollback
+      aigov_approval_source: ao
+      aigov_ao_approval_node: approval_rollback_auto
+    settings: {timeout: 300}
+
+  - id: activity_rollback_auto
+    name: Roll back (automatic)
+    type: aap_job_template
+    position: {x: 3640, y: 540}
+    job_template: AI Governance - Rollback Remediation
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+    settings:
+      timeout: 900
+      retry_policy: {max_retries: 0}
+
+  - id: activity_outcome_rollback_auto
+    name: "Outcome: rollback (automatic)"
+    type: aap_job_template
+    position: {x: 3900, y: 540}
+    job_template: AI Governance - Record Remediation Outcome
+    extra_vars:
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_outcome: from_remediation
+    settings: {timeout: 300}
+
+  - id: activity_record_rollback_rejection_auto
+    name: Record the rollback rejection (automatic)
+    type: aap_job_template
+    position: {x: 3380, y: 700}
+    job_template: AI Governance - Record Approval Decision
+    extra_vars:
+      aigov_remediation_id: "${activity_plan.artifacts.remediation_id}"
+      aigov_approval_kind: rollback
+      aigov_approval_source: ao
+      aigov_ao_approval_node: approval_rollback_auto
+    settings: {timeout: 300}
+
 edges:
   - {from: trigger_manual, to: activity_context}
   - {from: activity_context, to: activity_reassess}
@@ -381,22 +464,26 @@ edges:
   - {from: activity_recommend, to: activity_plan}
   - {from: activity_plan, to: logic_route}
   - {from: logic_route, from_port: case_0, to: approval_remediation}
-  - {from: logic_route, from_port: case_1, to: activity_execute}
   - {from: logic_route, from_port: case_2, to: activity_outcome_simulated}
   - {from: logic_route, from_port: default, to: activity_outcome_halted}
   - {from: approval_remediation, from_port: approved, to: activity_record_approval}
   - {from: approval_remediation, from_port: rejected, to: activity_record_rejection}
   - {from: activity_record_rejection, to: activity_outcome_rejected}
+  - {from: logic_route, from_port: case_1, to: activity_execute_auto}
   - {from: activity_record_approval, to: activity_execute}
-  - {from: activity_execute, to: logic_execute_ok}
-  - {from: logic_execute_ok, from_port: "true", to: activity_verify}
-  - {from: logic_execute_ok, from_port: "false", to: activity_outcome_failure}
-  - {from: activity_verify, to: logic_verified}
-  - {from: logic_verified, from_port: "true", to: activity_outcome_remediated}
-  - {from: logic_verified, from_port: "false", to: activity_outcome_failure}
-  - {from: activity_outcome_failure, to: logic_rollback_offer}
+  - {from: activity_execute, to: activity_verify}
+  - {from: activity_verify, to: activity_outcome}
+  - {from: activity_outcome, to: logic_rollback_offer}
   - {from: logic_rollback_offer, from_port: "true", to: approval_rollback}
   - {from: approval_rollback, from_port: approved, to: activity_record_rollback_approval}
   - {from: approval_rollback, from_port: rejected, to: activity_record_rollback_rejection}
   - {from: activity_record_rollback_approval, to: activity_rollback}
   - {from: activity_rollback, to: activity_outcome_rollback}
+  - {from: activity_execute_auto, to: activity_verify_auto}
+  - {from: activity_verify_auto, to: activity_outcome_auto}
+  - {from: activity_outcome_auto, to: logic_rollback_offer_auto}
+  - {from: logic_rollback_offer_auto, from_port: "true", to: approval_rollback_auto}
+  - {from: approval_rollback_auto, from_port: approved, to: activity_record_rollback_approval_auto}
+  - {from: approval_rollback_auto, from_port: rejected, to: activity_record_rollback_rejection_auto}
+  - {from: activity_record_rollback_approval_auto, to: activity_rollback_auto}
+  - {from: activity_rollback_auto, to: activity_outcome_rollback_auto}
