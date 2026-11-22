@@ -160,7 +160,9 @@ nodes:
     extra_vars:
       aigov_finding_id: "${trigger.finding_id}"
       aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
-      aigov_ai_recommendation: "${activity_recommend.result.content}"
+      # The whole AI step output: when the AI step fails there is no result to resolve, and a reference to
+      # ${activity_recommend.result.content} would fail this step (F-04). Plan takes result.content itself.
+      aigov_ai_recommendation: "${activity_recommend}"
     settings:
       timeout: 600
 

@@ -180,7 +180,7 @@ nodes:
     extra_vars:
       aigov_finding_id: ${trigger.finding_id}
       aigov_governance_run_id: ${activity_context.artifacts.governance_run_id}
-      aigov_ai_recommendation: ${activity_recommend.result.content}
+      aigov_ai_recommendation: ${activity_recommend}
     settings:
       timeout: 600
   - id: logic_route
