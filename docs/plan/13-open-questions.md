@@ -55,7 +55,7 @@ Items marked **🔑 DECISION** need your approval before implementation starts. 
 
 The demo agent's role is tagged by the demo CloudFormation stack. The alternative, an IAM path such as `/aigov-agents/`, works similarly, but a role's path cannot be changed after creation, which makes it impractical for existing customer roles.
 
-### 1.2 Decisions made during implementation (2026-11-19 to 2026-11-20)
+### 1.2 Decisions made during implementation (2026-11-19 to 2026-11-22)
 
 Details and evidence are in [../progress-log.md](../progress-log.md).
 
@@ -71,6 +71,7 @@ Details and evidence are in [../progress-log.md](../progress-log.md).
 | Remediation approval scope (T2.01) | Approval for **every environment except development and sandbox** (unknown counts as production), and for actions the catalog marks not automatically eligible | Fail-closed, like the governance policies; the plan required approval for production only |
 | Remediation profiles | Committed default **detect_only**; demo profile `policies/overlays/demo/remediation.json` applied at publish time with the account filled in | Remediation cannot be switched on by a commit alone; the account ID never lives in Git |
 | Q-12 / Q-13 / Q-16 defaults | Adopted in `policies/data/governance/config/data.json`: approved models `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `anthropic.claude-3-5-haiku-20241022-v1:0`; tags `Owner`, `Environment`, `DataClassification`, `CostCenter`; `assume_production` | Proposed defaults; customers change them in `data.json` |
+| Approvals before WF-02 exists | **Record approvals with the interim AAP job Record Approval Decision** (admins only) rather than waiting for the AO approval step; the AO approval comes with WF-02 (T2.09) and T2.10 makes the job read decisions from the AO approvals API | Lets Execute Remediation be tested on its own now. User decision (2026-11-22); the user recorded the first approval (job 316) |
 
 ## 2. Assumptions
 
