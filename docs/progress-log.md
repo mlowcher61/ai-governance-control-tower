@@ -480,6 +480,62 @@ Check Inventory now fails (job 331) as expected: it compares with the demo basel
 
 ---
 
+## 2026-11-22 - T2.08 Rollback Remediation
+
+**Built.**
+- **AI Governance - Rollback Remediation** (`playbooks/remediation/rollback.yml`; AWS bootstrap + remediation role +
+  Inventory API remediator). The job template takes only the two IDs (survey) and runs one at a time.
+  - Preconditions (refused, nothing changed): the remediation is `failed` or `verification_failed`, a human-approved
+    rollback approval is recorded, and a pre-state exists.
+  - Rollback plan (filter `remediation_rollback_plan`), from the pre-state and what AWS shows now:
+    - `nothing`: already at the pre-state;
+    - `automated`: every step is allowed to `AIGovRemediationRole`. That covers detaching the approved policy after a
+      partial failure, removing a boundary that was not there before, and undoing governance tags (only the keys the
+      remediation added; other tags are kept);
+    - `manual`: a step would re-attach a non-approved policy (for example AdministratorAccess), set another boundary or
+      recreate an inline policy. The remediation role is denied these by design (**Q-11, decision a**). Nothing is
+      changed, and the steps are listed in the artifacts and in a `rollback.manual_required` audit event.
+  - Automated: runs the steps, re-reads AWS, requires the pre-state to be restored, and stores `rolled_back` or
+    `rollback_failed`. The database requires the rollback approval for both.
+- **Record Approval Decision** takes `aigov_approval_kind` (`remediation` or `rollback`).
+- Contract `artifacts.v1.json#/$defs/rollback`.
+
+**Problem found and fixed.** `agentcore_runtime_info` first lists all runtimes (`ListAgentRuntimes`), which the
+remediation role may not do. Execute's post-state had silently recorded no runtime tags. `agentcore_runtime_tags` now
+returns `tags_before`. A check-mode call with no tags reads them using only `ListTagsForResource`, and Execute and
+Rollback both use it, so the role did not have to be widened.
+
+**Tests.** The rollback plan in unit tests (89 in total):
+- replacing an admin policy rolls back manually;
+- a partial failure rolls back automatically;
+- the pre-state needs nothing;
+- boundary rollback is automated or manual depending on the previous boundary;
+- inline rollback is manual;
+- tags are restored for the remediation's keys only;
+- an unknown action is manual.
+
+Also schema examples (158) and the Rollback Jinja on ansible-core 2.16 (automated tags, manual admin).
+
+**Results on mk6hb** (`quick_helper_bot` AIGOV-REG-001, remediation `9368225f-8c95-4184-9084-762fc4219138`):
+
+| Step | Job | Result |
+|---|---|---|
+| Plan | 337 | `approval`: quarantine tags (`aigov:status`, `aigov:finding`, `aigov:policy`) |
+| Remediation approved by the user | 338 | `approved` |
+| Execute | 340 | `succeeded`: tags added |
+| Verify | 341 | `verification_failed`: REG-001 still fails (tags contain a shadow agent but do not register it), 0 regressions, agent READY |
+| Rollback without a rollback approval | 343 | `refused`, nothing changed |
+| Rollback approved by the user | 344 | `kind: rollback`, `approved` |
+| Rollback | 346 | `rolled_back`: removed exactly the three tags; the pre-state was confirmed from AWS |
+| Rollback again | 348 | `refused` (already rolled back) |
+| Rollback of the verified IAM fix `320f53ea…` | 349 | `refused` (verified remediations are not rolled back) |
+| Get Finding Context | 351 | REG-001 `open` again (the real fix is registering the agent) |
+
+**Not shown live.** `manual_required` and `rollback_failed`: covered by unit tests and the 2.16 simulation. A live
+manual case needs a failed IAM remediation.
+
+---
+
 ## Open items (2026-11-22)
 
 | Item | Notes |
