@@ -432,6 +432,54 @@ Agents restores the original policies.
 
 ---
 
+## 2026-11-22 - T2.07 Verify Remediation
+
+**Built.**
+- **AI Governance - Verify Remediation** (`playbooks/remediation/verify.yml`; AWS bootstrap + **discovery** role +
+  Inventory API remediator):
+  1. For IAM actions, IAM policy simulation of the administrator probes (`admin_probe_actions` from OPA), retried 6 × 10 s
+     until they are denied (IAM is eventually consistent).
+  2. Independent re-collection of the agent with the read-only discovery role and the discovery adapter, never the
+     remediation role. Then an OPA evaluation with purpose `verification`.
+  3. `api.record_verification` decides. Problems before the decision give `status: error` and leave the remediation
+     unchanged, so Verify can run again. The functional smoke test (P1) is not implemented (`functional_check: skipped`).
+- **V010 `api.record_verification`**: in one transaction it records the verification evaluation and computes two checks
+  itself:
+  - the target policy decision;
+  - regressions: policies that passed in the agent's last evaluation before the remediation and fail now.
+
+  It combines them with the AWS checks the job reports (probes denied, agent READY). If all pass, the remediation is
+  `verified` and `api.close_finding` resolves the finding as `remediated`. Otherwise it is `verification_failed`, with a
+  check-by-check report in the record and the audit. A regression also opens a new finding.
+- Filters `remediation_probe_check` and `remediation_simulation_checks`. Contract `artifacts.v1.json#/$defs/verify`.
+
+**Decision.** Verify must both record an evaluation and change the remediation, and AAP allows only one credential of
+each custom type per template. So the decision is one remediator database function, and the remediator also reads
+`api.evaluation_inputs` (the privilege-matrix test was updated). The database, not the playbook, decides "verified",
+as with the other safety rules.
+
+**Tests.** V010 SQL tests:
+- grants;
+- invalid check values refused;
+- verified, with the finding resolved as remediated;
+- a second verification refused;
+- a regression (TAG-001 pass to fail) fails and opens a new finding;
+- an admin probe still allowed fails even when OPA says pass.
+
+Also unit tests (82), schema examples (150), and the Verify Jinja on ansible-core 2.16.
+
+**Results on mk6hb.** V010 applied (job 326). **Verify (job 327): `verified`.** Details: IAM-001 `pass`, 0 regressions,
+probes `all_denied`, agent `READY`, finding `resolved` (remediated), verification evaluation `4597cdca`. This is the
+first full closed loop on the demo: detect, plan, human approval, execute, verify, resolve. A second Verify makes no
+decision (job 329, `error`, remediation unchanged).
+
+Check Inventory now fails (job 331) as expected: it compares with the demo baseline, which still expects IAM-001 on
+`quick_helper_bot`. Reset Demo Environment restores the baseline.
+
+**Not shown live.** `verification_failed` (regression, probes still allowed, agent not READY): covered by the SQL tests.
+
+---
+
 ## Open items (2026-11-22)
 
 | Item | Notes |
@@ -441,7 +489,7 @@ Agents restores the original policies.
 | Live demonstration of finding auto-close | Covered by SQL tests; not shown live yet (the reset resolves findings as `demo_reset`). A good Stage 2 demo moment: renew HR's risk assessment and re-run WF-01 |
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
 | `claude-work-access` has an extra `project-user` assignment | `project-admin` covers it; can be removed |
-| Demo profile published on mk6hb | Still on; remediation `320f53ea…` executed and awaits verification (T2.07). Republish with `aigov_policy_profile: default` to turn remediation off |
+| Demo profile published on mk6hb | Still on. `quick_helper_bot` IAM-001 was remediated and verified, so the demo is off its baseline and Check Inventory fails (job 331) until Reset Demo Environment runs. Republish with `aigov_policy_profile: default` to turn remediation off |
 | Interim approval recording | Record Approval Decision takes the approver as a launch variable (admins only) until T2.10 reads decisions from the AO approvals API |
 | OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |
