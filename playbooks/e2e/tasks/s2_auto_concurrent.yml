@@ -1,0 +1,144 @@
+---
+# Automatic branch + F-12 (two WF-02 runs for the same finding at once) + F-06 (no agent-controlled text in the prompt).
+# quick_helper_bot is tagged development, so REG-001's tag fix needs no approval. Plan jobs run one at a time, so the
+# second plan finds the first remediation active and halts. The automatic run fails verification (quarantine tags do not
+# register an agent), offers a rollback and pauses at its approval; this test cancels it there.
+- name: Log in to automation orchestrator (automatic branch)
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/ao_login.yml
+
+- name: Start two WF-02 runs for REG-001 (automatic branch)
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/run_one.yml
+  vars:
+    aigov_ao_workflow_name: "{{ aigov_wf02_name }}"
+    aigov_ao_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-REG-001'] }}"}
+    aigov_ao_use_published: true
+    aigov_ao_wait: false
+  loop: [1, 2]
+
+- name: Collect the two execution IDs (automatic branch)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions?limit=10&sort=-created_at"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: s2_recent
+
+- name: Keep the two runs (automatic branch)
+  ansible.builtin.set_fact:
+    s2_pair: >-
+      {{ (s2_recent.json.resources | selectattr('workflow_name', 'equalto', aigov_wf02_name)
+          | selectattr('input_data.finding_id', 'equalto', s2_findings['quick_helper_bot|AIGOV-REG-001'])
+          | map(attribute='id') | list)[:2] }}
+
+- name: Wait until both runs end or pause at an approval (automatic branch)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ item }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  loop: "{{ s2_pair }}"
+  register: s2_pair_state
+  until: s2_pair_state.json.status in ['completed', 'completed_with_errors', 'failed', 'cancelled'] or (s2_pair_state.json.approval_pending | bool)
+  retries: 150
+  delay: 20
+
+- name: Read both runs' activities (automatic branch)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ item }}/activities?limit=100"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  loop: "{{ s2_pair }}"
+  register: s2_pair_acts
+
+- name: Cancel a run paused at an approval (automatic branch)
+  when: item.json.approval_pending | bool and item.json.status not in ['completed', 'completed_with_errors', 'failed', 'cancelled']
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ item.json.id }}/cancel"
+    method: POST
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 202, 204]
+  loop: "{{ s2_pair_state.results }}"
+  loop_control:
+    label: "{{ item.json.id }}"
+
+- name: Index the two runs (automatic branch)
+  ansible.builtin.set_fact:
+    s2_runs: >-
+      {{ s2_pair_acts.results | map(attribute='json.resources')
+         | map('items2dict', key_name='activity_name', value_name='output_data') | list }}
+    s2_runs_status: >-
+      {{ s2_pair_acts.results | map(attribute='json.resources')
+         | map('items2dict', key_name='activity_name', value_name='status') | list }}
+    s2_runs_input: >-
+      {{ s2_pair_acts.results | map(attribute='json.resources')
+         | map('items2dict', key_name='activity_name', value_name='input_data') | list }}
+
+- name: Tell the automatic run from the halted one (automatic branch)
+  ansible.builtin.set_fact:
+    s2_auto_i: "{{ 0 if s2_runs_status[0].activity_execute_auto | default('') == 'completed' else 1 }}"
+
+- name: Read quick_helper_bot's description (F-06)
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: agent_overview
+    aigov_api_query: "select=agent_id&name=eq.quick_helper_bot"
+
+- name: Read its stored policy input (F-06)
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: evaluation_inputs
+    aigov_api_query: "agent_id=eq.{{ aigov_api_response[0].agent_id }}"
+
+- name: Check the three cases (automatic branch)
+  vars:
+    a: "{{ s2_runs[s2_auto_i | int] }}"
+    a_status: "{{ s2_runs_status[s2_auto_i | int] }}"
+    h: "{{ s2_runs[1 - (s2_auto_i | int)] }}"
+    desc: "{{ ((aigov_api_response[0].input.agent | default({})).attributes | default({})).description | default('', true) }}"
+    prompt: "{{ s2_runs_input[s2_auto_i | int].activity_recommend | default({}) | to_json }}"
+  ansible.builtin.set_fact:
+    s2_auto_ok: >-
+      {{ a.activity_plan.artifacts.route | default('') == 'auto' and a.activity_execute_auto.artifacts.status | default('') == 'succeeded'
+         and a.activity_outcome_auto.artifacts.outcome | default('') == 'verification_failed'
+         and a_status.approval_rollback_auto | default('') == 'waiting' }}
+    s2_conc_ok: >-
+      {{ h.activity_outcome_halted.artifacts.outcome | default('') == 'halted'
+         and 'active remediation' in h.activity_plan.artifacts.reason | default('') }}
+    s2_f06_ok: "{{ desc | length > 0 and desc not in prompt and prompt | length > 2 }}"
+    s2_auto_detail: >-
+      automatic run: route {{ a.activity_plan.artifacts.route | default('?') }}, execute
+      {{ a.activity_execute_auto.artifacts.status | default('?') }}, outcome {{ a.activity_outcome_auto.artifacts.outcome | default('?') }},
+      rollback approval {{ a_status.approval_rollback_auto | default('?') }}
+    s2_conc_detail: >-
+      second run: outcome {{ h.activity_outcome_halted.artifacts.outcome | default('?') }}, plan reason
+      {{ (h.activity_plan.artifacts.reason | default('?'))[:160] }}
+    s2_f06_detail: >-
+      agent description "{{ desc[:60] }}" {{ 'absent from' if desc not in prompt else 'FOUND in' }} the AI step input
+      ({{ prompt | length }} characters)
+
+- name: Record the automatic branch
+  ansible.builtin.include_tasks: s2_record.yml
+  vars:
+    s2_case: branch automatic (no approval) -> verification failed -> rollback offered
+    s2_ok: "{{ s2_auto_ok }}"
+    s2_detail: "{{ s2_auto_detail }}"
+    s2_ref: "{{ s2_pair[s2_auto_i | int] }}"
+
+- name: Record F-12
+  ansible.builtin.include_tasks: s2_record.yml
+  vars:
+    s2_case: F-12 concurrent runs for one finding
+    s2_ok: "{{ s2_conc_ok }}"
+    s2_detail: "{{ s2_conc_detail }}"
+    s2_ref: "{{ s2_pair[1 - (s2_auto_i | int)] }}"
+
+- name: Record F-06
+  ansible.builtin.include_tasks: s2_record.yml
+  vars:
+    s2_case: F-06 agent-controlled text never reaches the AI prompt
+    s2_ok: "{{ s2_f06_ok }}"
+    s2_detail: "{{ s2_f06_detail }}"
+    s2_ref: "{{ s2_pair[s2_auto_i | int] }}"

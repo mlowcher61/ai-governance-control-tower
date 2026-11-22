@@ -1,0 +1,269 @@
+---
+# AI Governance - Stage 2 Automated Test (task T2.12; docs/plan/09 sections 5 and 6.2)
+#
+# Runs every WF-02 branch and failure case that needs no human, through automation orchestrator, and checks each
+# outcome. The human cases (approval, rejection, rollback approval, approval expiry) are run interactively; see
+# docs/progress-log.md (T2.12). Order matters: each case leaves nothing that blocks a later one, and any approval a run
+# pauses at is cancelled (this test never decides an approval).
+#
+#   setup    Reset Demo Environment + WF-01 (fresh findings; the default profile: remediation off)
+#   F-16     detect-only default            -> outcome detect_only
+#   demo profile published
+#   branch   missing evidence               -> outcome missing_evidence
+#   branch   assessment error (unknown ID)  -> outcome assessment_error
+#   branch   no automated fix (OWN-001)     -> outcome denied
+#   F-15     account not allowlisted        -> outcome denied (allowlist)
+#   branch   simulate (mode dry_run)        -> outcome simulated
+#   F-17     stale finding (tags added)     -> reassess compliant, outcome no_longer_detected
+#   scenario development_environment + discovery + evaluation (REG-001's tag fix becomes automatic)
+#   F-05     invalid AI output (Plan preview: valid AI -> auto, invalid -> approval)
+#   F-04     AI step fails (probe workflow, invalid LLM key) -> Plan preview approval
+#   branch   automatic + F-12 concurrent runs + F-06 prompt injection
+#   teardown Reset Demo Environment + WF-01, demo profile (cooldown aigov_s2_final_cooldown_minutes), WF-02 test copy loaded
+#
+# Credentials: the AAP credential (aigov_aap_credential), "AI Governance - Automation Orchestrator",
+# "AI Governance - Inventory API (evaluator)".
+- name: AI Governance - Stage 2 automated test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_ao_validate_certs: false
+    aigov_reset_workflow: AI Governance - Reset Demo Environment
+    aigov_wf01_name: AI Governance - WF-01 Governance Assessment
+    aigov_wf02_name: AI Governance - WF-02 Closed-Loop Remediation
+    aigov_probe_name: AI Governance - AI Failure Probe (test)
+    aigov_test_llm_credential: AI Governance - Invalid LLM Key (test)
+    aigov_s2_final_cooldown_minutes: 60
+    aigov_s2_unknown_finding: 00000000-0000-4000-8000-0000000000aa
+    s2_results: []
+  tasks:
+    - name: Check the Inventory API credential (evaluator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Connect to AAP with the attached credential
+      ansible.builtin.include_tasks: tasks/aap_connection.yml
+
+    # ---- Setup ------------------------------------------------------------------------------------------------
+    - name: Reset the demo and detect again
+      ansible.builtin.include_tasks: tasks/s2_reset.yml
+
+    - name: Read the open findings
+      ansible.builtin.include_tasks: tasks/s2_findings.yml
+
+    # ---- F-16 detect-only default (the reset publishes the default profile) ------------------------------------------
+    - name: F-16 detect-only default
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: F-16 detect-only default
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-IAM-001'] }}"}
+        s2_expect:
+          activity_plan: {route: halt}
+          activity_outcome_halted: {outcome: detect_only}
+
+    - name: Publish the demo profile
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Publish Governance Policies
+        s2_vars: {aigov_policy_profile: demo}
+
+    # ---- Branches that end before remediation ---------------------------------------------------------------------
+    - name: Branch missing evidence
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: branch missing evidence
+        s2_input: {finding_id: "{{ s2_findings['research_runtime|AIGOV-MDL-001'] }}"}
+        s2_expect:
+          activity_reassess: {assessment: missing_evidence}
+          activity_outcome_missing_evidence: {outcome: missing_evidence, audit_complete: "yes"}
+
+    - name: Branch assessment error
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: branch assessment error (unknown finding)
+        s2_input: {finding_id: "{{ aigov_s2_unknown_finding }}"}
+        s2_expect:
+          activity_reassess: {assessment: error}
+          activity_outcome_assessment_error: {outcome: assessment_error}
+
+    - name: Branch no automated fix
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: branch noncompliant without an automated fix (halted)
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-OWN-001'] }}"}
+        s2_expect:
+          activity_reassess: {assessment: noncompliant}
+          activity_plan: {route: halt}
+          activity_outcome_halted: {outcome: denied}
+
+    - name: Publish the demo profile with another allowlisted account
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Publish Governance Policies
+        s2_vars: {aigov_policy_profile: demo, aigov_demo_allowed_accounts: ["000000000000"]}
+
+    - name: F-15 account not allowlisted
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: F-15 account not allowlisted
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-TAG-001'] }}"}
+        s2_expect:
+          activity_plan: {route: halt, reason: "~allowlist"}
+          activity_outcome_halted: {outcome: denied}
+
+    - name: Publish the demo profile in dry-run mode
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Publish Governance Policies
+        s2_vars: {aigov_policy_profile: demo, aigov_demo_mode: dry_run}
+
+    - name: Branch simulate
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: branch simulate (dry run)
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-TAG-001'] }}"}
+        s2_expect:
+          activity_plan: {route: simulate}
+          activity_outcome_simulated: {outcome: simulated}
+
+    - name: Publish the demo profile (enforce)
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Publish Governance Policies
+        s2_vars: {aigov_policy_profile: demo}
+
+    # ---- F-17 stale finding --------------------------------------------------------------------------------------
+    - name: Add the required production tags (TAG-001 becomes compliant)
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Set Demo Scenario
+        s2_vars: {aigov_scenario: required_tags}
+
+    - name: F-17 stale finding
+      ansible.builtin.include_tasks: tasks/s2_wf.yml
+      vars:
+        s2_case: F-17 stale finding (branch compliant)
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-TAG-001'] }}"}
+        s2_expect:
+          activity_reassess: {assessment: compliant}
+          activity_outcome_no_longer_detected: {outcome: no_longer_detected}
+
+    # ---- Development environment: REG-001's tag fix becomes automatic ----------------------------------------------
+    - name: Tag quick_helper_bot as development
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Set Demo Scenario
+        s2_vars: {aigov_scenario: development_environment}
+
+    - name: Discover the new state
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Discover AI Agents
+        s2_vars: {}
+
+    - name: Evaluate it
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Evaluate Governance Policies
+        s2_vars: {aigov_governance_run_id: "{{ s2_job.artifacts.governance_run_id }}"}
+
+    - name: Get a remediation run for REG-001
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Get Finding Context
+        s2_vars: {aigov_finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-REG-001'] }}"}
+
+    - name: Keep the run and the AI fixtures
+      ansible.builtin.set_fact:
+        s2_reg_run: "{{ s2_job.artifacts.governance_run_id }}"
+        s2_reg_env: "{{ s2_job.artifacts.environment }}"
+        s2_ai_valid:
+          summary: The agent is not registered; quarantine tags make that visible until it is.
+          risk_explanation: An unregistered agent has no accountable owner.
+          agrees_with_selected_action: "yes"
+          recommended_action: agentcore_apply_governance_tags
+          rationale: Tagging is low impact and reversible.
+          operational_considerations: [Tell the account owner]
+          confidence: high
+        s2_ai_invalid: "{{ lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/examples/ai-recommendation/invalid/tries-to-approve.json') | from_json }}"
+
+    # ---- F-05 invalid AI output (Plan preview records nothing) ------------------------------------------------------
+    - name: F-05 baseline - a valid, agreeing AI recommendation
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Plan Remediation
+        s2_vars: {aigov_finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-REG-001'] }}", aigov_governance_run_id: "{{ s2_reg_run }}",
+                  aigov_ai_recommendation: "{{ s2_ai_valid }}", aigov_plan_preview: true}
+
+    - name: Keep the baseline route
+      ansible.builtin.set_fact:
+        s2_f05_baseline: "{{ s2_job }}"
+
+    - name: F-05 - an invalid AI recommendation
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Plan Remediation
+        s2_vars: {aigov_finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-REG-001'] }}", aigov_governance_run_id: "{{ s2_reg_run }}",
+                  aigov_ai_recommendation: "{{ s2_ai_invalid }}", aigov_plan_preview: true}
+
+    - name: Record F-05
+      ansible.builtin.include_tasks: tasks/s2_record.yml
+      vars:
+        s2_case: F-05 invalid AI output forces approval
+        s2_ok: >-
+          {{ s2_reg_env == 'development' and s2_f05_baseline.artifacts.route | default('') == 'auto'
+             and s2_job.artifacts.route | default('') == 'approval' and s2_job.artifacts.ai_agrees | default('') == 'invalid'
+             and s2_job.artifacts.preview | default('') == 'yes' and 'AI assessment' in s2_job.artifacts.approval_summary | default('') }}
+        s2_detail: >-
+          environment {{ s2_reg_env }}; valid AI -> {{ s2_f05_baseline.artifacts.route | default('?') }}
+          (job {{ s2_f05_baseline.id }}); invalid AI -> {{ s2_job.artifacts.route | default('?') }}, ai_agrees
+          {{ s2_job.artifacts.ai_agrees | default('?') }} (job {{ s2_job.id }})
+        s2_ref: "jobs {{ s2_f05_baseline.id }}, {{ s2_job.id }}"
+
+    # ---- F-04 AI step fails ---------------------------------------------------------------------------------------
+    - name: F-04 AI step failure
+      ansible.builtin.include_tasks: tasks/s2_f04.yml
+
+    # ---- Automatic branch, F-12 concurrency, F-06 prompt injection --------------------------------------------------
+    - name: Automatic branch with a concurrent run
+      ansible.builtin.include_tasks: tasks/s2_auto_concurrent.yml
+
+    # ---- Teardown ---------------------------------------------------------------------------------------------------
+    - name: Reset the demo and detect again (teardown)
+      ansible.builtin.include_tasks: tasks/s2_reset.yml
+
+    - name: Publish the demo profile for the interactive session
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Publish Governance Policies
+        s2_vars: {aigov_policy_profile: demo, aigov_demo_cooldown_minutes: "{{ aigov_s2_final_cooldown_minutes }}"}
+
+    - name: Load the WF-02 test copy (short approval window, F-08)
+      ansible.builtin.include_tasks: tasks/s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Apply AO Workflows
+        s2_vars: {aigov_ao_workflows: [tests/wf02_test_short_approval.yml]}
+
+    - name: Summarize the Stage 2 automated test
+      ansible.builtin.set_fact:
+        s2_summary:
+          passed: "{{ s2_results | selectattr('ok') | list | length }}"
+          failed: "{{ s2_results | rejectattr('ok') | list | length }}"
+          results: "{{ s2_results }}"
+
+    - name: Show the Stage 2 automated test result
+      ansible.builtin.debug:
+        var: s2_summary
+
+    - name: Publish the result
+      ansible.builtin.set_stats:
+        data: {stage2_automated: "{{ s2_summary }}"}
+        per_host: false
+
+    - name: Fail unless every case passed
+      ansible.builtin.assert:
+        that: s2_results | rejectattr('ok') | list | length == 0
+        fail_msg: "Failed cases: {{ s2_results | rejectattr('ok') | map(attribute='case') | join(', ') }}"
+        quiet: true

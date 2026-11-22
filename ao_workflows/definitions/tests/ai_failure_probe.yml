@@ -1,0 +1,63 @@
+---
+# TEST ONLY (task T2.12, failure case F-04, docs/plan/09): what happens when the AI step fails.
+# The agentic step uses an AO credential with an invalid API key ("AI Governance - Invalid LLM Key (test)", created by
+# the Stage 2 automated test) and continue_on_failure, like WF-02. Its output goes to Plan Remediation in PREVIEW mode
+# (nothing is recorded): Plan must treat the failed AI output as no recommendation, which forces approval.
+name: AI Governance - AI Failure Probe (test)
+description: >-
+  TEST ONLY (F-04): an AI step with an invalid LLM key, followed by Plan Remediation in preview mode.
+  Managed by ai-governance-control-tower; edit ao_workflows/definitions/tests/ai_failure_probe.yml.
+publish: true
+triggers:
+  - id: trigger_manual
+    name: Probe a finding
+    type: manual_trigger
+    position: {x: 0, y: 200}
+    parameters:
+      input_schema:
+        type: object
+        required: [finding_id]
+        properties:
+          finding_id: {type: string}
+nodes:
+  - id: activity_context
+    name: Get finding context
+    type: aap_job_template
+    position: {x: 260, y: 200}
+    job_template: AI Governance - Get Finding Context
+    extra_vars:
+      aigov_finding_id: "${trigger.finding_id}"
+    settings: {timeout: 300}
+
+  - id: activity_recommend
+    name: Recommend a fix (AI with an invalid key)
+    type: agentic
+    position: {x: 520, y: 200}
+    llm_credential: AI Governance - Invalid LLM Key (test)
+    prompt: |
+      Recommend one remediation action for governance finding ${activity_context.artifacts.policy_id}.
+    response_schema:
+      type: object
+      required: [summary, recommended_action]
+      properties:
+        summary: {type: string}
+        recommended_action: {type: string}
+    settings:
+      timeout: 120
+      continue_on_failure: true
+
+  - id: activity_plan
+    name: Plan (preview)
+    type: aap_job_template
+    position: {x: 780, y: 200}
+    job_template: AI Governance - Plan Remediation
+    extra_vars:
+      aigov_finding_id: "${trigger.finding_id}"
+      aigov_governance_run_id: "${activity_context.artifacts.governance_run_id}"
+      aigov_ai_recommendation: "${activity_recommend.result.content}"
+      aigov_plan_preview: true
+    settings: {timeout: 600}
+edges:
+  - {from: trigger_manual, to: activity_context}
+  - {from: activity_context, to: activity_recommend}
+  - {from: activity_recommend, to: activity_plan}

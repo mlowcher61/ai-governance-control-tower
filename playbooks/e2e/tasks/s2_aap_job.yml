@@ -1,0 +1,48 @@
+---
+# Launch the AAP job template s2_jt (name) with s2_vars, wait, and set s2_job {id, status, artifacts}.
+- name: "Find the job template - {{ s2_jt }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/job_templates/?name={{ s2_jt | urlencode }}"
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+  register: s2_jt_found
+  no_log: true
+
+- name: "Launch - {{ s2_jt }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/job_templates/{{ s2_jt_found.json.results[0].id }}/launch/"
+    method: POST
+    body_format: json
+    body: {extra_vars: "{{ s2_vars | default({}) }}"}
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+    status_code: [200, 201]
+  register: s2_launch
+  no_log: true
+
+- name: "Wait - {{ s2_jt }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_aap_url }}/api/controller/v2/jobs/{{ s2_launch.json.id }}/"
+    headers: "{{ aigov_aap_auth_headers }}"
+    url_username: "{{ omit if aigov_aap_auth_headers else aigov_aap_user }}"
+    url_password: "{{ omit if aigov_aap_auth_headers else aigov_aap_password }}"
+    force_basic_auth: "{{ not aigov_aap_auth_headers }}"
+    validate_certs: "{{ aigov_aap_verify }}"
+  register: s2_job_state
+  until: s2_job_state.json.status in ['successful', 'failed', 'error', 'canceled']
+  retries: 180
+  delay: 10
+  no_log: true
+
+- name: "Keep the job result - {{ s2_jt }}"
+  ansible.builtin.set_fact:
+    s2_job:
+      id: "{{ s2_launch.json.id }}"
+      status: "{{ s2_job_state.json.status }}"
+      artifacts: "{{ s2_job_state.json.artifacts | default({}) }}"

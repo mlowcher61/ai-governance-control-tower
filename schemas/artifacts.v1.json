@@ -372,6 +372,13 @@
             "halted"
           ],
           "description": "The outcome WF-02 records when route is halt."
+        },
+        "preview": {
+          "enum": [
+            "yes",
+            "no"
+          ],
+          "description": "yes: a preview (testing); nothing was recorded, so remediation_id is empty."
         }
       },
       "if": {
@@ -382,6 +389,11 @@
               "approval",
               "simulate"
             ]
+          },
+          "preview": {
+            "not": {
+              "const": "yes"
+            }
           }
         }
       },

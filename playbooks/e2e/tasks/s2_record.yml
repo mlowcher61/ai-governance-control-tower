@@ -1,0 +1,9 @@
+---
+# Append one result: s2_case (name), s2_ok (bool), s2_detail (text), s2_ref (execution or job IDs).
+- name: "Record the result - {{ s2_case }}"
+  ansible.builtin.set_fact:
+    s2_results: "{{ s2_results + [{'case': s2_case, 'ok': s2_ok | bool, 'detail': s2_detail | string, 'ref': s2_ref | default('') | string}] }}"
+
+- name: "Show the result - {{ s2_case }}"
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if s2_ok | bool else 'FAIL' }} {{ s2_case }}: {{ s2_detail }} ({{ s2_ref | default('') }})"

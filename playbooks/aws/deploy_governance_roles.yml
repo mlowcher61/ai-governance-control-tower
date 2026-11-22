@@ -48,6 +48,8 @@
           DiscoveryExternalId: "{{ aigov_discovery_external_id }}"
           RemediationExternalId: "{{ aigov_remediation_external_id }}"
           DemoResetExternalId: "{{ aigov_demo_reset_external_id }}"
+          # TEST ONLY (F-09): denies iam:DetachRolePolicy to the remediation role while true
+          TestFaultDenyDetach: "{{ 'true' if aigov_test_fault_deny_detach | default(false) | bool else 'false' }}"
         tags:
           aigov:component: governance
           aigov:managed-by: ai-governance-control-tower

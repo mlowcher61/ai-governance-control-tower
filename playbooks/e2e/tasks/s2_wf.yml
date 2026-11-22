@@ -1,0 +1,85 @@
+---
+# Run one automation orchestrator workflow case and check it.
+#   s2_case          name of the case (for the report)
+#   s2_wf_name       workflow name (default WF-02)
+#   s2_input         trigger input, for example {finding_id: ...}
+#   s2_expect        {activity_name: {artifact: value, ...}} - each activity must have COMPLETED with these artifacts
+#                    (a value starting with ~ means 'contains')
+#   s2_stop_waiting  optional approval activity the run is EXPECTED to pause at (it must be waiting; the run is cancelled)
+- name: "Log in to automation orchestrator - {{ s2_case }}"
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/ao_login.yml
+
+- name: "Start the workflow - {{ s2_case }}"
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/run_one.yml
+  vars:
+    aigov_ao_workflow_name: "{{ s2_wf_name | default(aigov_wf02_name) }}"
+    aigov_ao_input: "{{ s2_input }}"
+    aigov_ao_use_published: true
+    aigov_ao_wait: false
+
+- name: "Wait until the run ends or pauses at an approval - {{ s2_case }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ aigov_ao_execution.json.id }}"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: s2_exec
+  until: s2_exec.json.status in ['completed', 'completed_with_errors', 'failed', 'cancelled'] or (s2_exec.json.approval_pending | bool)
+  retries: 150
+  delay: 20
+
+- name: "Read the activities - {{ s2_case }}"
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ aigov_ao_execution.json.id }}/activities?limit=100"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  register: s2_acts
+
+# The automated test never leaves an approval pending: a run paused at an approval is cancelled (an unexpected pause
+# also fails the expectations below, because the expected activities did not complete).
+- name: "Cancel a run paused at an approval - {{ s2_case }}"
+  when: s2_exec.json.approval_pending | bool and s2_exec.json.status not in ['completed', 'completed_with_errors', 'failed', 'cancelled']
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/executions/{{ aigov_ao_execution.json.id }}/cancel"
+    method: POST
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 202, 204]
+
+- name: "Index the activities - {{ s2_case }}"
+  ansible.builtin.set_fact:
+    s2_by_name: >-
+      {{ dict(s2_acts.json.resources | map(attribute='activity_name')
+              | zip(s2_acts.json.resources | map('combine', {}) | list)) }}
+
+- name: "Check the expectations - {{ s2_case }}"
+  vars:
+    s2_problems: >-
+      {%- set p = [] -%}
+      {%- for name, arts in s2_expect.items() -%}
+      {%- set a = s2_by_name[name] | default({}) -%}
+      {%- if a.status | default('') not in ['completed', 'waiting'] -%}
+      {%- set _ = p.append(name ~ ' is ' ~ (a.status | default('absent'))) -%}
+      {%- else -%}
+      {%- for k, v in arts.items() -%}
+      {%- set got = ((a.output_data | default({}, true)).artifacts | default({}, true))[k] | default('?') -%}
+      {%- set bad = (v[1:] not in got | string) if (v | string)[:1] == '~' else (got | string != v | string) -%}
+      {%- if bad -%}{%- set _ = p.append(name ~ '.' ~ k ~ ' = ' ~ got ~ ' (expected ' ~ v ~ ')') -%}{%- endif -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- if s2_stop_waiting | default('') | length > 0 and (s2_by_name[s2_stop_waiting] | default({})).status | default('') != 'waiting' -%}
+      {%- set _ = p.append(s2_stop_waiting ~ ' is not waiting') -%}
+      {%- endif -%}
+      {{ p }}
+  ansible.builtin.set_fact:
+    s2_case_problems: "{{ s2_problems }}"
+    s2_case_path: >-
+      {{ s2_acts.json.resources | rejectattr('status', 'in', ['skipped', 'pending']) | sort(attribute='created_at')
+         | map(attribute='activity_name') | list }}
+
+- name: "Record - {{ s2_case }}"
+  ansible.builtin.include_tasks: s2_record.yml
+  vars:
+    s2_ok: "{{ s2_case_problems | length == 0 }}"
+    s2_detail: "{{ s2_case_problems | join('; ') if s2_case_problems else 'path ' ~ (s2_case_path | join(' > ')) }}"
+    s2_ref: "{{ aigov_ao_execution.json.id }}"

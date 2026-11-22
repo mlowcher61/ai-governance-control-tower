@@ -27,8 +27,11 @@ aigov_aws_templates:
       - AI Governance - AWS Discovery Role
       - AI Governance - AWS Remediation Role
       - AI Governance - AWS Demo Reset Role
+    # aigov_test_fault_deny_detach: true is the TEST ONLY switch for failure case F-09 (docs/plan/09)
+    ask_variables_on_launch: true
     extra_vars:
       aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_test_fault_deny_detach: false
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Deploy Demo Agents
@@ -129,6 +132,18 @@ aigov_demo_templates:
     <<: *aigov_jt_defaults
 
 aigov_e2e_templates:
+  - name: AI Governance - Set Demo Scenario
+    description: "T2.12 - put quick_helper_bot into a test state (development_environment or required_tags); Reset Demo Environment undoes it"
+    playbook: playbooks/demo/set_scenario.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Demo Reset Role
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_scenario: ""
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Stage 1 End-to-End Test
     description: "T1.13 - three cycles of Reset Demo Environment + WF-01, checking acceptance A1-1 to A1-9 and an identical end state"
     playbook: playbooks/e2e/stage1_e2e.yml
@@ -139,6 +154,19 @@ aigov_e2e_templates:
     ask_variables_on_launch: true
     extra_vars:
       aigov_e2e_cycles: 3
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Stage 2 Automated Test
+    description: "T2.12 - every WF-02 branch and failure case that needs no human (F-04 to F-06, F-12, F-15 to F-17); resets the demo"
+    playbook: playbooks/e2e/stage2_automated.yml
+    credentials:
+      - "{{ aigov_aap_credential }}"
+      - AI Governance - Automation Orchestrator
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    timeout: 14400
+    extra_vars:
+      aigov_s2_final_cooldown_minutes: 60
     <<: *aigov_jt_defaults
 
 # T2.03+: closed-loop remediation (Stage 2)

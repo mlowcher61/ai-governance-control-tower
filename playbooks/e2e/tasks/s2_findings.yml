@@ -1,0 +1,15 @@
+---
+# Read the open findings: s2_findings["<agent>|<policy>"] = finding ID.
+- name: Read the open findings
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: view
+  vars:
+    aigov_api_view: findings_open
+    aigov_api_query: "select=finding_id,agent_name,policy_id"
+
+- name: Index the open findings by agent and policy
+  ansible.builtin.set_fact:
+    s2_findings: >-
+      {{ dict(aigov_api_response | map(attribute='agent_name') | zip(aigov_api_response | map(attribute='policy_id'))
+              | map('join', '|') | zip(aigov_api_response | map(attribute='finding_id'))) }}

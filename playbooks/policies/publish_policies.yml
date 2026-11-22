@@ -82,6 +82,7 @@
       ansible.builtin.assert:
         that:
           - aigov_policy_profile in ['default', 'demo']
+          - aigov_demo_mode | default('enforce', true) in ['enforce', 'dry_run']
           - aigov_policy_profile == 'default' or aigov_aws_account_id | string is match('^\d{12}$')
         fail_msg: aigov_policy_profile must be default or demo; the demo profile needs aigov_aws_account_id (12 digits).
         quiet: true
@@ -95,10 +96,16 @@
         aigov_data: >-
           {{ dict(aigov_data_files | map('dirname') | map('basename')
                   | zip(query('ansible.builtin.file', *aigov_data_files) | map('from_json'))) }}
+        # Demo options (testing, docs/plan/09): aigov_demo_mode (enforce or dry_run), aigov_demo_allowed_accounts
+        # (default: the demo account), aigov_demo_cooldown_minutes (default: the overlay's value).
         aigov_demo_remediation: >-
           {{ lookup('ansible.builtin.file', aigov_repo_root ~ '/policies/overlays/demo/remediation.json') | from_json
              | dict2items | rejectattr('key', 'equalto', '_comment') | items2dict
-             | combine({'allowed_accounts': [aigov_aws_account_id | string]}) }}
+             | combine({'allowed_accounts': aigov_demo_allowed_accounts | default([aigov_aws_account_id | string], true)
+                                            | map('string') | list,
+                        'mode': aigov_demo_mode | default('enforce', true)})
+             | combine({'cooldown_minutes': aigov_demo_cooldown_minutes | int}
+                       if aigov_demo_cooldown_minutes | default('', true) | string | length > 0 else {}) }}
         aigov_config: >-
           {{ aigov_data.config | combine({'bundle_revision': aigov_bundle_revision}
              | combine({'remediation': aigov_demo_remediation} if aigov_policy_profile == 'demo' else {})) }}

@@ -33,6 +33,16 @@ Parameters:
     Type: String
     Default: "arn:aws:bedrock:*::foundation-model/amazon.nova-*"
     Description: Foundation models an approved agent runtime may invoke.
+  TestFaultDenyDetach:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: >-
+      TEST ONLY (failure case F-09, docs/plan/09). "true" denies iam:DetachRolePolicy to the remediation role, so a
+      remediation fails between "attach the approved policy" and "detach the administrator policy". Keep "false".
+
+Conditions:
+  TestFaultDenyDetachOn: !Equals [!Ref TestFaultDenyDetach, "true"]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -334,6 +344,13 @@ Resources:
                   - bedrock-agentcore:DeleteAgentRuntime
                   - bedrock:DeleteAgent
                 Resource: "*"
+              - !If
+                - TestFaultDenyDetachOn
+                - Sid: TestFaultDenyDetach
+                  Effect: Deny
+                  Action: iam:DetachRolePolicy
+                  Resource: "*"
+                - !Ref AWS::NoValue
       Tags:
         - Key: aigov:component
           Value: governance

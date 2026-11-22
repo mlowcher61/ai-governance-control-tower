@@ -1,0 +1,1 @@
+{"remediation_id": "", "route": "approval", "reason": "approval required: the AI recommendation is invalid", "action_type": "agentcore_apply_governance_tags", "approval_summary": "preview", "rollback_available": "yes", "ai_agrees": "invalid", "preview": "yes"}

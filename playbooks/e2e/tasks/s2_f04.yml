@@ -1,0 +1,67 @@
+---
+# F-04: the AI step fails. An AO credential with an invalid API key drives the agentic step of the probe workflow
+# (ao_workflows/definitions/tests/ai_failure_probe.yml); Plan (preview) must then require approval.
+- name: Log in to automation orchestrator (F-04)
+  ansible.builtin.include_tasks: ../../../ao_workflows/tasks/ao_login.yml
+
+- name: Read AO credentials, credential types and projects (F-04)
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/{{ item }}?limit=100"
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+  loop: [credentials, credential_types, projects]
+  register: s2_ao_lists
+
+- name: Create the test credential with an invalid LLM key (F-04)
+  when: s2_ao_lists.results[0].json.resources | selectattr('name', 'equalto', aigov_test_llm_credential) | list | length == 0
+  ansible.builtin.uri:
+    url: "{{ aigov_ao_api }}/credentials"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ aigov_test_llm_credential }}"
+      description: TEST ONLY (failure case F-04) - an invalid LLM API key
+      credential_type_id: "{{ s2_ao_lists.results[1].json.resources | selectattr('name', 'equalto', 'LLM Provider') | map(attribute='id') | first }}"
+      project_id: "{{ s2_ao_lists.results[2].json.resources | selectattr('name', 'equalto', 'default') | map(attribute='id') | first }}"
+      inputs: {api_key: invalid-key-for-the-ai-failure-test}
+    headers: "{{ aigov_ao_headers }}"
+    validate_certs: "{{ aigov_ao_validate_certs }}"
+    status_code: [200, 201, 403]
+  register: s2_test_cred
+
+- name: Run F-04 when the test credential exists
+  when: (s2_test_cred.status | default(201)) | int != 403
+  block:
+    - name: Load the AI failure probe (F-04)
+      ansible.builtin.include_tasks: s2_aap_job.yml
+      vars:
+        s2_jt: AI Governance - Apply AO Workflows
+        s2_vars: {aigov_ao_workflows: [tests/ai_failure_probe.yml]}
+
+    - name: F-04 AI step failure
+      ansible.builtin.include_tasks: s2_wf.yml
+      vars:
+        s2_case: F-04 AI step failure forces approval
+        s2_wf_name: "{{ aigov_probe_name }}"
+        s2_input: {finding_id: "{{ s2_findings['quick_helper_bot|AIGOV-REG-001'] }}"}
+        s2_expect:
+          activity_plan: {route: approval, ai_agrees: invalid, preview: "yes"}
+
+    - name: Record what automation orchestrator did with the failed AI step (F-04)
+      ansible.builtin.include_tasks: s2_record.yml
+      vars:
+        s2_case: F-04 observation - AI step status
+        s2_ok: true
+        s2_detail: >-
+          activity_recommend {{ (s2_by_name['activity_recommend'] | default({})).status | default('absent') }};
+          error {{ ((s2_by_name['activity_recommend'] | default({})).error_details | default('', true) | string)[:200] }}
+        s2_ref: "{{ aigov_ao_execution.json.id }}"
+
+- name: Record that F-04 could not run (F-04)
+  when: (s2_test_cred.status | default(201)) | int == 403
+  ansible.builtin.include_tasks: s2_record.yml
+  vars:
+    s2_case: F-04 AI step failure forces approval
+    s2_ok: false
+    s2_detail: the AO service account may not create the test credential; create "{{ aigov_test_llm_credential }}" (type LLM Provider) once
+    s2_ref: ""

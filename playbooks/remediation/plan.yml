@@ -9,6 +9,7 @@
 #   5. ask OPA for the route (governance.remediation.route): auto, approval, simulate or halt;
 #   6. record the remediation (api.begin_remediation; the action is always OPA's choice) and move it to
 #      awaiting_approval (approval), approved (auto) or skipped (simulate); write the approval summary.
+# With aigov_plan_preview=true (testing) step 6 records nothing: the route is reported with preview=yes.
 # Every problem gives route=halt with the reason; nothing is changed in AWS.
 #
 # Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role",
@@ -26,6 +27,8 @@
     aigov_finding_id: ""
     # The AI step's structured output (WF-02 activity_recommend): an object, JSON text, or empty
     aigov_ai_recommendation: {}
+    # Preview (testing, docs/plan/09 F-04/F-05): compute and report the route without recording a remediation
+    aigov_plan_preview: false
     aigov_plan: {remediation_id: "", route: halt, reason: "not planned", action_type: none, approval_summary: "", rollback_available: "no",
                  halt_outcome: halted, route_precheck: ""}
   tasks:
@@ -272,7 +275,7 @@
 
         # ---- 6. Record the remediation -------------------------------------------------------------------------------
         - name: Record the planned remediation
-          when: aigov_route.route in ['auto', 'approval', 'simulate']
+          when: aigov_route.route in ['auto', 'approval', 'simulate'] and not (aigov_plan_preview | bool)
           block:
             - name: Begin the remediation (the action is OPA's selected action)
               ansible.builtin.include_role:
@@ -323,6 +326,7 @@
                   'action_type': aigov_authz.selected_action, 'rollback_available': 'yes' if aigov_rollback | bool else 'no',
                   'ai_agrees': aigov_ai.ai_agrees if aigov_ai.ai_agrees in ['yes', 'no', 'invalid'] else 'unknown',
                   'blast_radius': aigov_blast.shared_role, 'route_precheck': aigov_authz.route_precheck | default(''),
+                  'preview': 'yes' if aigov_plan_preview | bool else 'no',
                   'halt_outcome': aigov_authz.route_precheck if aigov_authz.route_precheck | default('') in ['detect_only', 'denied']
                                   else 'halted',
                   'approval_summary': aigov_summary} }}
