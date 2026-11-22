@@ -104,9 +104,11 @@
       {{ a.activity_plan.artifacts.route | default('') == 'auto' and a.activity_execute_auto.artifacts.status | default('') == 'succeeded'
          and a.activity_outcome_auto.artifacts.outcome | default('') == 'verification_failed'
          and a_status.approval_rollback_auto | default('') == 'waiting' }}
+    # The second plan is refused either by the finding's status (already remediating) or by the database's
+    # one-active-remediation rule, depending on timing; both are correct.
     s2_conc_ok: >-
       {{ h.activity_outcome_halted.artifacts.outcome | default('') == 'halted'
-         and 'active remediation' in h.activity_plan.artifacts.reason | default('') }}
+         and (h.activity_plan.artifacts.reason | default('')) is search('active remediation|Finding is (remediating|remediation_planned|awaiting_approval|verifying)') }}
     s2_f06_ok: "{{ desc | length > 0 and desc not in prompt and prompt | length > 2 }}"
     s2_auto_detail: >-
       automatic run: route {{ a.activity_plan.artifacts.route | default('?') }}, execute
