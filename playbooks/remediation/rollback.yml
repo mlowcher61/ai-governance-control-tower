@@ -1,0 +1,254 @@
+---
+# AI Governance - Rollback Remediation (task T2.08, WF-02 node activity_rollback; docs/plan/04 section 9.2)
+#
+# Restores the pre-state of a remediation that failed or failed verification, after a HUMAN approved the rollback
+# (api.record_approval kind=rollback). Never automatic: restoring the pre-state may re-introduce the risk.
+#   1. Preconditions (refused, nothing changed): the remediation is failed or verification_failed, a rollback approval
+#      is recorded, and a pre-state exists.
+#   2. Rollback plan (filter remediation_rollback_plan), from the pre-state and what AWS shows now:
+#        nothing   - already at the pre-state;
+#        automated - every step is allowed to AIGovRemediationRole (detach the approved policy after a partial failure,
+#                    remove a boundary that was not there, undo governance tags);
+#        manual    - a step would re-attach a non-approved policy (for example AdministratorAccess), set another
+#                    boundary or recreate an inline policy. The remediation role is denied these BY DESIGN (open question
+#                    Q-11, decision a): nothing is changed, the steps are listed and audited for a person to do.
+#   3. Automated: run the steps, re-read AWS, and store rolled_back (back at the pre-state) or rollback_failed.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Remediation Role",
+# "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/rollback.
+- name: AI Governance - roll back a remediation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_governance_run_id: ""
+    aigov_remediation_id: ""
+    aigov_phase: precheck
+    aigov_rb: {remediation_id: "", status: refused, mode: none, changed: "no", summary: "", manual_steps: "", error_summary: ""}
+  tasks:
+    - name: Check, roll back, and report every problem
+      block:
+        # ---- 1. Preconditions -----------------------------------------------------------------------------------
+        - name: Check the inputs and credentials
+          ansible.builtin.assert:
+            that:
+              - aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_remediation_role_arn | default('') | length > 0
+            fail_msg: Pass aigov_remediation_id and aigov_governance_run_id, and attach the AWS remediation role credential.
+            quiet: true
+
+        - name: Check the Inventory API credential (remediator)
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+
+        - name: Read the remediation record
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_remediation
+            aigov_api_body: {remediation_id: "{{ aigov_remediation_id }}"}
+
+        - name: Keep the record
+          ansible.builtin.set_fact:
+            aigov_rem: "{{ aigov_api_response }}"
+            aigov_rb: "{{ aigov_rb | combine({'remediation_id': aigov_remediation_id}) }}"
+
+        - name: Check the rollback may run
+          ansible.builtin.assert:
+            that:
+              - aigov_rem.governance_run_id == aigov_governance_run_id
+              - aigov_rem.status in ['failed', 'verification_failed']
+              - aigov_rem.approvals | selectattr('kind', 'equalto', 'rollback') | selectattr('decision', 'equalto', 'approved') | list | length > 0
+              - aigov_rem.pre_state.identity is defined
+            fail_msg: >-
+              Remediation is {{ aigov_rem.status }} (run {{ aigov_rem.governance_run_id }}); a rollback needs a failed or
+              verification_failed remediation of this run, an approved rollback approval, and a recorded pre-state.
+            quiet: true
+
+        - name: Read the finding context
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_finding_context
+            aigov_api_body: {finding_id: "{{ aigov_rem.finding_id }}"}
+
+        - name: Keep the context
+          ansible.builtin.set_fact:
+            aigov_ctx: "{{ aigov_api_response }}"
+
+        - name: Read the approved policy and boundary from the governance stack
+          amazon.aws.cloudformation_info:
+            stack_name: "{{ aigov_governance_stack_name }}"
+            region: "{{ aigov_aws_region }}"
+          register: aigov_gov_stack
+
+        - name: Assume the remediation role
+          amazon.aws.sts_assume_role:
+            role_arn: "{{ aigov_remediation_role_arn }}"
+            external_id: "{{ aigov_remediation_external_id }}"
+            role_session_name: "aigov-{{ aigov_governance_run_id }}-rb{{ tower_job_id | default(awx_job_id) | default('local') }}"
+            duration_seconds: 900
+            region: "{{ aigov_ctx.region }}"
+          register: aigov_assumed
+          no_log: true
+
+        - name: Keep the session
+          ansible.builtin.set_fact:
+            aigov_gov: "{{ aigov_gov_stack.cloudformation[aigov_governance_stack_name].stack_outputs }}"
+            aigov_aws:
+              access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+              secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+              session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+          no_log: true
+
+        - name: Read the current state
+          ansible.builtin.include_tasks: tasks/rollback_read_state.yml
+
+        # ---- 2. Rollback plan -----------------------------------------------------------------------------------
+        - name: Work out the rollback
+          ansible.builtin.set_fact:
+            aigov_plan: >-
+              {{ aigov_rem.action_type | mlowcher61.ai_governance.remediation_rollback_plan(
+                   aigov_rem.pre_state, aigov_state.identity, aigov_state.runtime_tags,
+                   aigov_gov.ApprovedAgentRuntimePolicyArn, aigov_gov.AgentRuntimeBoundaryPolicyArn,
+                   ((aigov_rem.post_state | default({}, true)).action_result | default({})).detail.tags_added | default({})) }}
+
+        - name: Keep the plan
+          ansible.builtin.set_fact:
+            aigov_rb: >-
+              {{ aigov_rb | combine({'mode': aigov_plan.mode, 'summary': aigov_plan.summary | join('; '),
+                                     'manual_steps': aigov_plan.manual_steps | join('; ')}) }}
+
+        - name: Record that a person must do the rollback (nothing is changed)
+          when: aigov_plan.mode == 'manual'
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: append_audit_event
+            aigov_api_body:
+              event:
+                event_type: rollback.manual_required
+                governance_run_id: "{{ aigov_governance_run_id }}"
+                agent_id: "{{ aigov_ctx.agent_id }}"
+                finding_id: "{{ aigov_ctx.finding_id }}"
+                remediation_action_id: "{{ aigov_remediation_id }}"
+                source_ref: "{{ tower_job_id | default(awx_job_id) | default('local') | string }}"
+                details: {action_type: "{{ aigov_rem.action_type }}", manual_steps: "{{ aigov_plan.manual_steps }}", summary: "{{ aigov_plan.summary }}"}
+
+        # ---- 3. Automated rollback ------------------------------------------------------------------------------
+        - name: Enter the rollback phase
+          when: aigov_plan.mode in ['automated', 'nothing']
+          ansible.builtin.set_fact:
+            aigov_phase: rollback
+
+        - name: Restore the managed policies and the boundary
+          when: aigov_plan.mode == 'automated' and (aigov_plan.managed_policies is not none or aigov_plan.boundary is not none)
+          mlowcher61.ai_governance.iam_role_managed_policies:
+            access_key: "{{ aigov_aws.access_key }}"
+            secret_key: "{{ aigov_aws.secret_key }}"
+            session_token: "{{ aigov_aws.session_token }}"
+            region: "{{ aigov_ctx.region }}"
+            role_name: "{{ aigov_ctx.execution_role | regex_replace('^.*/', '') }}"
+            managed_policies: "{{ aigov_plan.managed_policies if aigov_plan.managed_policies is not none else [] }}"
+            purge_policies: "{{ aigov_plan.managed_policies is not none }}"
+            permissions_boundary: "{{ aigov_plan.boundary if aigov_plan.boundary is not none else omit }}"
+          register: aigov_rb_iam
+
+        - name: Restore the runtime tags
+          when: aigov_plan.mode == 'automated' and aigov_plan.tags is not none
+          mlowcher61.ai_governance.agentcore_runtime_tags:
+            access_key: "{{ aigov_aws.access_key }}"
+            secret_key: "{{ aigov_aws.secret_key }}"
+            session_token: "{{ aigov_aws.session_token }}"
+            region: "{{ aigov_ctx.region }}"
+            resource_arn: "{{ aigov_ctx.resource_ref }}"
+            tags: "{{ aigov_plan.tags }}"
+            purge_tags: true
+          register: aigov_rb_tags
+
+        - name: Re-read the state after the rollback
+          when: aigov_phase == 'rollback'
+          ansible.builtin.include_tasks: tasks/rollback_read_state.yml
+
+        - name: Check the pre-state is restored
+          when: aigov_phase == 'rollback'
+          vars:
+            aigov_left: >-
+              {{ aigov_rem.action_type | mlowcher61.ai_governance.remediation_rollback_plan(
+                   aigov_rem.pre_state, aigov_state.identity, aigov_state.runtime_tags,
+                   aigov_gov.ApprovedAgentRuntimePolicyArn, aigov_gov.AgentRuntimeBoundaryPolicyArn,
+                   ((aigov_rem.post_state | default({}, true)).action_result | default({})).detail.tags_added | default({})) }}
+          ansible.builtin.assert:
+            that: aigov_left.mode == 'nothing'
+            fail_msg: "The pre-state is not restored: {{ aigov_left.summary | join('; ') }}"
+            quiet: true
+
+        - name: Report success
+          when: aigov_phase == 'rollback'
+          ansible.builtin.set_fact:
+            aigov_rb: >-
+              {{ aigov_rb | combine({'status': 'rolled_back',
+                                     'changed': 'yes' if (aigov_rb_iam.changed | default(false)) or (aigov_rb_tags.changed | default(false)) else 'no'}) }}
+
+        - name: Report the manual rollback
+          when: aigov_plan.mode == 'manual'
+          ansible.builtin.set_fact:
+            aigov_rb: "{{ aigov_rb | combine({'status': 'manual_required'}) }}"
+
+      rescue:
+        - name: Report the problem (refused before any change, rollback_failed during the rollback)
+          ansible.builtin.set_fact:
+            aigov_rb: >-
+              {{ aigov_rb | combine({'status': 'refused' if aigov_phase == 'precheck' else 'rollback_failed',
+                                     'error_summary': ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
+
+    - name: Store the rollback result
+      when: aigov_rb.status in ['rolled_back', 'rollback_failed']
+      block:
+        - name: Store the result
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: update_remediation
+            aigov_api_body: >-
+              {{ {'remediation_id': aigov_remediation_id, 'status': aigov_rb.status,
+                  'aap_job_id': (tower_job_id | default(awx_job_id) | default(0)) | int,
+                  'post_state': (aigov_rem.post_state | default({}, true)) | combine({'rollback': {
+                      'identity': aigov_state.identity | default(none), 'runtime_tags': aigov_state.runtime_tags | default({}),
+                      'summary': aigov_rb.summary, 'captured_at': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ')}})}
+                 | combine({'error': {'phase': 'rollback', 'message': aigov_rb.error_summary}} if aigov_rb.status == 'rollback_failed' else {}) }}
+      rescue:
+        - name: Report that the result could not be recorded
+          ansible.builtin.set_fact:
+            aigov_record_error: "{{ ((ansible_failed_result.msg | default('unknown error')) | string)[:400] }}"
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_rb | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/rollback'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/rollback: {{ aigov_rb }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        var: aigov_rb
+
+    - name: Publish the result for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_rb }}"
+        per_host: false
+
+    - name: Fail when the result could not be recorded in the inventory
+      ansible.builtin.fail:
+        msg: "The rollback ran ({{ aigov_rb.status }}) but the result was not recorded: {{ aigov_record_error }}"
+      when: aigov_record_error is defined

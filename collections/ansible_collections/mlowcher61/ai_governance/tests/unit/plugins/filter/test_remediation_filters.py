@@ -203,3 +203,62 @@ def test_probe_check():
 def test_simulation_checks():
     assert remediation_simulation_checks(PROBES[:2]) == [{"action": "iam:CreateUser"}, {"action": "iam:AttachRolePolicy"}]
     assert remediation_simulation_checks(None) == []
+
+
+from ansible_collections.mlowcher61.ai_governance.plugins.filter.remediation import remediation_rollback_plan  # noqa: E402
+
+BOUNDARY = "arn:aws:iam::111122223333:policy/aigov/aigov-agentcore-runtime-boundary"
+
+
+def _remediated(pre, attach=(), detach=()):
+    cur = copy.deepcopy(pre)
+    cur["policies"] = [p for p in cur["policies"] if p.get("ref") not in detach] + [{"type": "customer_managed", "ref": a} for a in attach]
+    return cur
+
+
+def test_rollback_of_admin_replacement_is_manual():
+    pre = _identity("quick_helper_bot")
+    plan = remediation_rollback_plan("iam_replace_managed_policy", {"identity": pre}, _remediated(pre, [APPROVED], ADMIN_ARNS),
+                                     {}, APPROVED, BOUNDARY)
+    assert plan["mode"] == "manual" and "AdministratorAccess" in plan["manual_steps"][0]
+    assert plan["managed_policies"] == sorted(p["ref"] for p in pre["policies"] if p["type"] != "inline")
+
+
+def test_rollback_after_partial_failure_is_automated():
+    pre = _identity("quick_helper_bot")   # step 1 attached the approved policy, step 2 (detach admin) failed
+    plan = remediation_rollback_plan("iam_replace_managed_policy", {"identity": pre}, _remediated(pre, [APPROVED]), {}, APPROVED, BOUNDARY)
+    assert plan["mode"] == "automated" and APPROVED not in plan["managed_policies"] and plan["manual_steps"] == []
+
+
+def test_rollback_at_pre_state_does_nothing():
+    pre = _identity("quick_helper_bot")
+    assert remediation_rollback_plan("iam_replace_managed_policy", {"identity": pre}, copy.deepcopy(pre), {}, APPROVED, BOUNDARY)["mode"] == "nothing"
+
+
+def test_boundary_rollback():
+    pre = _identity("quick_helper_bot")
+    cur = dict(copy.deepcopy(pre), permissions_boundary_ref=BOUNDARY)
+    plan = remediation_rollback_plan("iam_apply_permissions_boundary", {"identity": pre}, cur, {}, APPROVED, BOUNDARY)
+    assert plan["mode"] == "automated" and plan["boundary"] == ""
+    pre_other = dict(copy.deepcopy(pre), permissions_boundary_ref="arn:other")
+    assert remediation_rollback_plan("iam_apply_permissions_boundary", {"identity": pre_other}, cur, {}, APPROVED, BOUNDARY)["mode"] == "manual"
+
+
+def test_inline_rollback_is_manual():
+    pre = {"policies": [{"type": "inline", "name": "admin", "statements": []}]}
+    plan = remediation_rollback_plan("iam_remove_inline_policy", {"identity": pre}, {"policies": []}, {}, APPROVED, BOUNDARY)
+    assert plan["mode"] == "manual" and "admin" in plan["manual_steps"][0]
+
+
+def test_tag_rollback_restores_only_the_remediation_keys():
+    pre = {"runtime_tags": {"team": "x", "aigov:status": "old"}}
+    cur = {"team": "x", "later": "kept", "aigov:status": "noncompliant", "aigov:finding": "f1"}
+    plan = remediation_rollback_plan("agentcore_apply_governance_tags", pre, {}, cur, APPROVED, BOUNDARY,
+                                     tags_added={"aigov:status": "noncompliant", "aigov:finding": "f1"})
+    assert plan["mode"] == "automated" and plan["tags"] == {"team": "x", "later": "kept", "aigov:status": "old"}
+    assert remediation_rollback_plan("agentcore_apply_governance_tags", pre, {}, {"team": "x", "aigov:status": "old"}, APPROVED, BOUNDARY,
+                                     tags_added={"aigov:status": "noncompliant"})["mode"] == "nothing"
+
+
+def test_unknown_action_rollback_is_manual():
+    assert remediation_rollback_plan("bedrock_pause_agent_alias", {}, {}, {}, APPROVED, BOUNDARY)["mode"] == "manual"

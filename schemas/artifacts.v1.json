@@ -455,6 +455,12 @@
         },
         "error_summary": {
           "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "remediation",
+            "rollback"
+          ]
         }
       }
     },
@@ -553,6 +559,103 @@
           }
         }
       }
+    },
+    "rollback": {
+      "title": "AI Governance - Rollback Remediation",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "status",
+        "mode",
+        "changed",
+        "summary",
+        "manual_steps",
+        "error_summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "rolled_back",
+            "rollback_failed",
+            "manual_required",
+            "refused"
+          ],
+          "description": "manual_required: a step is denied to the remediation role by design (Q-11); nothing was changed and manual_steps lists what a person must do. refused: a precondition failed; nothing was changed."
+        },
+        "mode": {
+          "enum": [
+            "nothing",
+            "automated",
+            "manual",
+            "none"
+          ]
+        },
+        "changed": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "manual_steps": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "manual_required"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mode": {
+                "const": "manual"
+              },
+              "changed": {
+                "const": "no"
+              },
+              "manual_steps": {
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "rolled_back"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "automated",
+                  "nothing"
+                ]
+              },
+              "error_summary": {
+                "const": ""
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

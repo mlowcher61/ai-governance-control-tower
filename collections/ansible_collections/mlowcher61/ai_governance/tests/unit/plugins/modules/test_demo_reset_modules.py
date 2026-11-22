@@ -65,6 +65,8 @@ def test_runtime_tags_plan():
     assert to_remove == ["Owner"]
     assert tags_mod.plan(current, wanted, False)[1] == []
     assert tags_mod.plan({"aigov:demo": "true"}, {"aigov:demo": "true"}, True) == ({}, [])
+    # empty tags without purge only reads (Rollback and Execute use this to read the tags)
+    assert tags_mod.plan(current, {}, False) == ({}, [])
 
 
 def test_aws_system_tags_are_never_removed():

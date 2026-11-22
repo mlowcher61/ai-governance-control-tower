@@ -54,6 +54,11 @@ removed:
   returned: always
   type: list
   elements: str
+tags_before:
+  description: The tags of the resource before the call. With empty O(tags) and O(purge_tags=false) in check mode, the
+    module only reads the tags (used by Rollback, whose role may not list runtimes).
+  returned: always
+  type: dict
 """
 
 try:
@@ -109,7 +114,7 @@ def main():
                 client.tag_resource(resourceArn=arn, tags=to_add)
     except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
         module.fail_json_aws(e, msg="Failed to set the tags of {0}".format(arn))
-    module.exit_json(changed=bool(to_add or to_remove), added=to_add, removed=to_remove)
+    module.exit_json(changed=bool(to_add or to_remove), added=to_add, removed=to_remove, tags_before=current)
 
 
 if __name__ == "__main__":

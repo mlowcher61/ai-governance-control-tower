@@ -1,0 +1,1 @@
+{"remediation_id": "320f53ea-43db-4feb-9ede-155870a7fa14", "status": "manual_required", "mode": "manual", "changed": "no", "summary": "restore managed policies", "manual_steps": "attach managed policy arn:aws:iam::aws:policy/AdministratorAccess (the remediation role may attach only the approved policy)", "error_summary": ""}

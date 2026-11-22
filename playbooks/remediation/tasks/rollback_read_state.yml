@@ -1,0 +1,36 @@
+---
+# Read the execution role and the runtime tags with the remediation role session (aigov_aws); sets aigov_state.
+- name: Read the execution role
+  mlowcher61.ai_governance.iam_role_permissions_info:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_ctx.region }}"
+    role_arn: "{{ aigov_ctx.execution_role }}"
+  register: aigov_state_role
+
+- name: Read the runtime tags (check mode, no change; the remediation role may not list runtimes)
+  mlowcher61.ai_governance.agentcore_runtime_tags:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_ctx.region }}"
+    resource_arn: "{{ aigov_ctx.resource_ref }}"
+    tags: {}
+    purge_tags: false
+  check_mode: true
+  register: aigov_state_runtime
+  when: aigov_ctx.platform == 'aws.bedrock_agentcore_runtime'
+
+- name: Check the state was read completely
+  ansible.builtin.assert:
+    that:
+      - aigov_state_role.evidence_status == 'collected'
+    fail_msg: The current state could not be read completely, so a rollback cannot be planned or confirmed safely.
+    quiet: true
+
+- name: Keep the state
+  ansible.builtin.set_fact:
+    aigov_state:
+      identity: "{{ aigov_state_role.identity }}"
+      runtime_tags: "{{ aigov_state_runtime.tags_before | default({}) }}"

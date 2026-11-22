@@ -235,6 +235,61 @@ def remediation_simulation_checks(probe_actions):
     return [dict(action=a) for a in probe_actions or []]
 
 
+def _inline_names(identity):
+    return sorted(p.get("name") or p.get("ref") for p in (identity or {}).get("policies") or [] if p.get("type") == "inline")
+
+
+def remediation_rollback_plan(action_type, pre_state, current_identity, current_tags, approved_policy_arn,
+                              boundary_policy_arn, tags_added=None):
+    """How to restore the pre-state (docs/plan/04 section 9.2, open question Q-11 decision a).
+
+    mode: nothing (already at the pre-state), automated (AIGovRemediationRole may do every step), or manual (a step would
+    re-attach a non-approved policy, restore a different boundary or recreate an inline policy, which the remediation
+    role is denied by design: a person does it, with the steps listed). Reports the operations to run."""
+    pre_state = pre_state or {}
+    pre = pre_state.get("identity") or {}
+    cur = current_identity or {}
+    out = dict(mode="nothing", managed_policies=None, boundary=None, tags=None, manual_steps=[], summary=[])
+    if action_type in ("iam_replace_managed_policy", "iam_apply_permissions_boundary", "iam_remove_inline_policy"):
+        attach = sorted(set(_managed_refs(pre)) - set(_managed_refs(cur)))
+        detach = sorted(set(_managed_refs(cur)) - set(_managed_refs(pre)))
+        if attach or detach:
+            out["managed_policies"] = _managed_refs(pre)
+            out["summary"].append("restore managed policies (attach %s, detach %s)" % (attach or "none", detach or "none"))
+            out["manual_steps"] += ["attach managed policy %s (the remediation role may attach only the approved policy)" % a
+                                    for a in attach if a != approved_policy_arn]
+        pre_b, cur_b = pre.get("permissions_boundary_ref") or None, cur.get("permissions_boundary_ref") or None
+        if pre_b != cur_b:
+            out["boundary"] = pre_b or ""
+            out["summary"].append("restore the permissions boundary (%s -> %s)" % (cur_b, pre_b))
+            if pre_b and pre_b != boundary_policy_arn:
+                out["manual_steps"].append("set permissions boundary %s (the remediation role may set only the approved boundary)" % pre_b)
+        missing = sorted(set(_inline_names(pre)) - set(_inline_names(cur)))
+        if missing:
+            out["summary"].append("recreate inline policies %s from the pre-state documents" % missing)
+            out["manual_steps"] += ["recreate inline policy %s from the document saved in the pre-state "
+                                    "(the remediation role cannot create policies)" % n for n in missing]
+    elif action_type == "agentcore_apply_governance_tags":
+        pre_tags, cur_tags = pre_state.get("runtime_tags") or {}, dict(current_tags or {})
+        keys = sorted(tags_added or {}) or sorted(set(cur_tags) - set(pre_tags))
+        wanted = dict(cur_tags)
+        for k in keys:
+            if k in pre_tags:
+                wanted[k] = pre_tags[k]
+            else:
+                wanted.pop(k, None)
+        if wanted != cur_tags:
+            out["tags"] = wanted
+            out["summary"].append("restore the runtime tags %s" % keys)
+    else:
+        out["manual_steps"].append("no automated rollback is implemented for %s" % action_type)
+    if out["manual_steps"]:
+        out["mode"] = "manual"
+    elif out["summary"]:
+        out["mode"] = "automated"
+    return out
+
+
 class FilterModule:
     def filters(self):
         return {"policy_input_refresh": policy_input_refresh, "reassessment_outcome": reassessment_outcome,
@@ -244,4 +299,5 @@ class FilterModule:
                 "remediation_admin_inline_policies": remediation_admin_inline_policies,
                 "remediation_policy_sets": remediation_policy_sets, "remediation_state_drift": remediation_state_drift,
                 "remediation_probe_check": remediation_probe_check,
-                "remediation_simulation_checks": remediation_simulation_checks}
+                "remediation_simulation_checks": remediation_simulation_checks,
+                "remediation_rollback_plan": remediation_rollback_plan}
