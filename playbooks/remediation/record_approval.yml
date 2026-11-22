@@ -51,6 +51,18 @@
       ansible.builtin.include_role:
         name: mlowcher61.ai_governance.inventory_api
 
+    # The decision is kept in aigov_rec, never in the aigov_decision* variables: those are job template extra vars, and
+    # extra vars override set_fact, so a decision read from AO would be silently replaced by the empty launch default.
+    - name: Take the decision from the launch variables (manual source)
+      when: aigov_approval_source == 'manual'
+      ansible.builtin.set_fact:
+        aigov_rec:
+          decision: "{{ aigov_decision }}"
+          decided_by: "{{ aigov_decided_by | trim }}"
+          notes: "{{ aigov_decision_notes | trim }}"
+          ao_approval_id: "{{ aigov_ao_approval_id }}"
+          decided_at: ""
+
     - name: Read the decision from automation orchestrator
       when: aigov_approval_source == 'ao'
       block:
@@ -85,11 +97,12 @@
 
         - name: Take the decision from automation orchestrator
           ansible.builtin.set_fact:
-            aigov_decision: "{{ aigov_ao_approval.status }}"
-            aigov_decided_by: "{{ (aigov_ao_approval.decided_by | default({}, true)).name | default('', true) }}"
-            aigov_decision_notes: "{{ aigov_ao_approval.decision_notes | default('', true) }}"
-            aigov_ao_approval_id: "{{ aigov_ao_approval.id }}"
-            aigov_decided_at: "{{ aigov_ao_approval.decided_at | default('', true) }}"
+            aigov_rec:
+              decision: "{{ aigov_ao_approval.status }}"
+              decided_by: "{{ (aigov_ao_approval.decided_by | default({}, true)).name | default('', true) }}"
+              notes: "{{ aigov_ao_approval.decision_notes | default('', true) }}"
+              ao_approval_id: "{{ aigov_ao_approval.id }}"
+              decided_at: "{{ aigov_ao_approval.decided_at | default('', true) }}"
 
     - name: Record the decision
       ansible.builtin.include_role:
@@ -98,22 +111,22 @@
       vars:
         aigov_api_rpc: record_approval
         aigov_api_body: >-
-          {{ {'remediation_id': aigov_remediation_id, 'decision': aigov_decision, 'kind': aigov_approval_kind,
+          {{ {'remediation_id': aigov_remediation_id, 'decision': aigov_rec.decision, 'kind': aigov_approval_kind,
               'prompt': ('automation orchestrator approval ' ~ aigov_ao_approval_node ~ ' of ' ~ aigov_ao_workflow_name)
                         if aigov_approval_source == 'ao'
                         else 'recorded by AAP job ' ~ (tower_job_id | default(awx_job_id) | default('local')) ~ ' (manual)'}
-             | combine({'decided_by': aigov_decided_by | trim} if aigov_decided_by | trim | length > 0 else {})
-             | combine({'decision_notes': aigov_decision_notes | trim} if aigov_decision_notes | trim | length > 0 else {})
-             | combine({'ao_approval_id': aigov_ao_approval_id} if aigov_ao_approval_id | length > 0 else {})
-             | combine({'decided_at': aigov_decided_at} if aigov_decided_at | default('') | length > 0 else {}) }}
+             | combine({'decided_by': aigov_rec.decided_by | trim} if aigov_rec.decided_by | trim | length > 0 else {})
+             | combine({'decision_notes': aigov_rec.notes | trim} if aigov_rec.notes | trim | length > 0 else {})
+             | combine({'ao_approval_id': aigov_rec.ao_approval_id} if aigov_rec.ao_approval_id | length > 0 else {})
+             | combine({'decided_at': aigov_rec.decided_at} if aigov_rec.decided_at | length > 0 else {}) }}
 
     - name: Build the artifacts
       ansible.builtin.set_fact:
         aigov_decision_out:
           remediation_id: "{{ aigov_remediation_id }}"
-          decision: "{{ aigov_decision }}"
+          decision: "{{ aigov_rec.decision }}"
           kind: "{{ aigov_approval_kind }}"
-          decided_by: "{{ aigov_decided_by | trim }}"
+          decided_by: "{{ aigov_rec.decided_by | trim }}"
           source: "{{ aigov_approval_source }}"
           remediation_status: "{{ aigov_api_response.remediation_status }}"
 
