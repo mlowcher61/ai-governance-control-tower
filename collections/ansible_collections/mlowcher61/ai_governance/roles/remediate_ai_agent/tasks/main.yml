@@ -1,0 +1,5 @@
+---
+# Run one catalog action: include with tasks_from: actions/<action_type>.yml (see defaults/main.yml for the inputs).
+- name: Refuse a direct include
+  ansible.builtin.fail:
+    msg: Include an action with tasks_from=actions/<action_type>.yml.

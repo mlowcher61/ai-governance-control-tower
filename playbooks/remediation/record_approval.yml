@@ -1,0 +1,75 @@
+---
+# AI Governance - Record Approval Decision (task T2.05, interim; hardened in T2.10)
+#
+# Records a human decision on a remediation that awaits approval (api.record_approval): approved moves it to
+# approved (Execute may then run), rejected moves it to rejected (the finding re-opens).
+# The database refuses an approval by the agent's registered owner (separation of duties, docs/plan/04 section 8),
+# and refuses any remediation that is not awaiting approval.
+#
+# INTERIM: the decision and approver are launch variables, so only administrators may launch this template.
+# T2.10 replaces them with the decision read from the automation orchestrator approvals API
+# (GET /api/v1/approvals?execution_id=...), so the approver identity cannot be typed in.
+#
+# Credentials: "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/approval_decision.
+- name: AI Governance - record an approval decision
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_remediation_id: ""
+    aigov_decision: ""
+    aigov_decided_by: ""
+    aigov_decision_notes: ""
+    aigov_ao_approval_id: ""
+  tasks:
+    - name: Check the inputs
+      ansible.builtin.assert:
+        that:
+          - aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+          - aigov_decision in ['approved', 'rejected']
+          - aigov_decided_by | trim | length > 0
+          - aigov_decision_notes | trim | length > 0
+        fail_msg: Pass aigov_remediation_id, aigov_decision (approved or rejected), aigov_decided_by and aigov_decision_notes.
+        quiet: true
+
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Record the decision
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_approval
+        aigov_api_body: >-
+          {{ {'remediation_id': aigov_remediation_id, 'decision': aigov_decision, 'decided_by': aigov_decided_by | trim,
+              'decision_notes': aigov_decision_notes | trim, 'kind': 'remediation',
+              'prompt': 'recorded by AAP job ' ~ (tower_job_id | default(awx_job_id) | default('local')) ~ ' (interim, T2.05)'}
+             | combine({'ao_approval_id': aigov_ao_approval_id} if aigov_ao_approval_id | length > 0 else {}) }}
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_decision_out:
+          remediation_id: "{{ aigov_remediation_id }}"
+          decision: "{{ aigov_decision }}"
+          remediation_status: "{{ aigov_api_response.remediation_status }}"
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_decision_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/approval_decision'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/approval_decision: {{ aigov_decision_out }}"
+        quiet: true
+
+    - name: Show the decision
+      ansible.builtin.debug:
+        var: aigov_decision_out
+
+    - name: Publish the decision for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_decision_out }}"
+        per_host: false

@@ -375,6 +375,88 @@
           "remediation_id"
         ]
       }
+    },
+    "execute": {
+      "title": "AI Governance - Execute Remediation",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "status",
+        "changed",
+        "action_type",
+        "error_summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "type": "string",
+          "description": "Empty only when the inputs were invalid."
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "refused"
+          ],
+          "description": "refused: a precondition failed and nothing was changed (the remediation is marked skipped). failed: the action failed while executing."
+        },
+        "changed": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "action_type": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "remediation_id": {
+            "$ref": "common.v1.json#/$defs/uuid"
+          },
+          "error_summary": {
+            "const": ""
+          }
+        }
+      }
+    },
+    "approval_decision": {
+      "title": "AI Governance - Record Approval Decision",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "decision",
+        "remediation_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "$ref": "common.v1.json#/$defs/uuid"
+        },
+        "decision": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "remediation_status": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      }
     }
   }
 }

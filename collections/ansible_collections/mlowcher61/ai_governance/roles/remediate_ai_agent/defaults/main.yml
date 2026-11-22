@@ -1,0 +1,9 @@
+---
+# Set by playbooks/remediation/execute.yml before an action file is included:
+#   aigov_aws              temporary credentials of AIGovRemediationRole (access_key, secret_key, session_token)
+#   aigov_action_region    region of the agent
+#   aigov_action_identity  the execution role as read just now (iam_role_permissions_info identity)
+#   aigov_action_context   the finding context (api.get_finding_context)
+#   aigov_admin_policy_arns, aigov_approved_policy_arn, aigov_boundary_policy_arn
+# Each action file sets aigov_action_result: {changed: bool, detail: {...}}.
+aigov_action_result: {}

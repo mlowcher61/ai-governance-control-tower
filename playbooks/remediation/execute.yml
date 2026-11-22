@@ -1,0 +1,293 @@
+---
+# AI Governance - Execute Remediation (task T2.05, WF-02 node activity_execute; docs/plan/04 sections 5, 6)
+#
+# Acts ONLY on a recorded, approved remediation (api.get_remediation): the action, target and pre-state come from the
+# database, never from launch variables. Three phases:
+#   1. Preconditions - any failure gives status=refused and the remediation is marked skipped (nothing changed):
+#      the remediation is approved and in enforce mode, the action is implemented, the execution role did not change
+#      since the pre-state was captured (drift), and OPA authorizes the same action again NOW (approval is not
+#      authorization by itself).
+#   2. Execute the action with AIGovRemediationRole (role mlowcher61.ai_governance.remediate_ai_agent).
+#   3. Record: re-read the role (post-state) and store succeeded or failed with the post-state.
+# The AWS session name contains the governance run ID, so CloudTrail entries can be tied to the run.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Remediation Role",
+# "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/execute.
+- name: AI Governance - execute an approved remediation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_opa_url: http://opa.ai-governance.svc:8181
+    aigov_aws_region: us-west-1
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_governance_run_id: ""
+    aigov_remediation_id: ""
+    # Actions this job implements (T2.05). Bedrock Agents Classic actions follow in T2.06.
+    aigov_implemented_actions:
+      - iam_replace_managed_policy
+      - iam_apply_permissions_boundary
+      - iam_remove_inline_policy
+      - agentcore_apply_governance_tags
+    aigov_phase: precheck
+    aigov_exec: {remediation_id: "", status: refused, changed: "no", action_type: none, error_summary: ""}
+  tasks:
+    - name: Check, execute, and report every problem
+      block:
+        # ---- 1. Preconditions ----------------------------------------------------------------------------------
+        - name: Check the inputs and credentials
+          ansible.builtin.assert:
+            that:
+              - aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_remediation_role_arn | default('') | length > 0
+            fail_msg: Pass aigov_remediation_id and aigov_governance_run_id, and attach the AWS remediation role credential.
+            quiet: true
+
+        - name: Check the Inventory API credential (remediator)
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+
+        - name: Read the remediation record
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_remediation
+            aigov_api_body: {remediation_id: "{{ aigov_remediation_id }}"}
+
+        - name: Keep the record
+          ansible.builtin.set_fact:
+            aigov_rem: "{{ aigov_api_response }}"
+            aigov_exec: "{{ aigov_exec | combine({'remediation_id': aigov_remediation_id, 'action_type': aigov_api_response.action_type}) }}"
+
+        - name: Check the remediation may be executed
+          ansible.builtin.assert:
+            that:
+              - aigov_rem.governance_run_id == aigov_governance_run_id
+              - aigov_rem.status == 'approved'
+              - aigov_rem.mode == 'enforce'
+              - aigov_rem.action_type in aigov_implemented_actions
+              - aigov_rem.pre_state.identity is defined
+            fail_msg: >-
+              Remediation is {{ aigov_rem.status }} ({{ aigov_rem.mode }}, action {{ aigov_rem.action_type }}, run
+              {{ aigov_rem.governance_run_id }}); only an approved enforce remediation of this run with an implemented
+              action and a recorded pre-state is executed.
+            quiet: true
+
+        - name: Read the finding context
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_finding_context
+            aigov_api_body: {finding_id: "{{ aigov_rem.finding_id }}"}
+
+        - name: Keep the context
+          ansible.builtin.set_fact:
+            aigov_ctx: "{{ aigov_api_response }}"
+
+        - name: Read the approved policy and boundary from the governance stack
+          amazon.aws.cloudformation_info:
+            stack_name: "{{ aigov_governance_stack_name }}"
+            region: "{{ aigov_aws_region }}"
+          register: aigov_gov_stack
+
+        - name: Read the administrator policy list from OPA
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/config/admin_policy_arns"
+          register: aigov_opa_admin
+
+        - name: Keep the reference data
+          ansible.builtin.set_fact:
+            aigov_gov: "{{ aigov_gov_stack.cloudformation[aigov_governance_stack_name].stack_outputs }}"
+            aigov_admin_arns: "{{ aigov_opa_admin.json.result }}"
+
+        - name: Assume the remediation role
+          amazon.aws.sts_assume_role:
+            role_arn: "{{ aigov_remediation_role_arn }}"
+            external_id: "{{ aigov_remediation_external_id }}"
+            role_session_name: "aigov-{{ aigov_governance_run_id }}-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+            duration_seconds: 900
+            region: "{{ aigov_ctx.region }}"
+          register: aigov_assumed
+          no_log: true
+
+        - name: Keep the session
+          ansible.builtin.set_fact:
+            aigov_aws:
+              access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+              secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+              session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+          no_log: true
+
+        - name: Read the execution role now
+          mlowcher61.ai_governance.iam_role_permissions_info:
+            access_key: "{{ aigov_aws.access_key }}"
+            secret_key: "{{ aigov_aws.secret_key }}"
+            session_token: "{{ aigov_aws.session_token }}"
+            region: "{{ aigov_ctx.region }}"
+            role_arn: "{{ aigov_ctx.execution_role }}"
+          register: aigov_now
+
+        - name: Check the role did not change since the plan was approved
+          vars:
+            aigov_drift: "{{ aigov_rem.pre_state.identity | mlowcher61.ai_governance.remediation_state_drift(aigov_now.identity) }}"
+          ansible.builtin.assert:
+            that:
+              - aigov_now.evidence_status == 'collected'
+              - aigov_drift | length == 0
+            fail_msg: >-
+              {{ 'The execution role could not be read completely.' if aigov_now.evidence_status != 'collected' else
+                 'The execution role changed since the plan was approved: ' ~ (aigov_drift | join('; ')) ~ '. Plan again.' }}
+            quiet: true
+
+        - name: Ask OPA again whether the action is authorized
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/remediation/authz/decision"
+            method: POST
+            body_format: json
+            body:
+              input:
+                request: >-
+                  {{ {'governance_run_id': aigov_governance_run_id, 'finding_id': aigov_ctx.finding_id, 'policy_id': aigov_ctx.policy_id,
+                      'severity': aigov_ctx.severity, 'finding_type': aigov_ctx.finding_type, 'environment': aigov_ctx.environment,
+                      'account_ref': aigov_ctx.account_ref, 'platform': aigov_ctx.platform,
+                      'remediation_attempts': aigov_ctx.remediation_attempts, 'cooldown_active': aigov_ctx.cooldown_active,
+                      'exempt': aigov_ctx.exempt,
+                      'applicable_actions': aigov_now.identity | mlowcher61.ai_governance.remediation_applicable_actions(
+                                              aigov_admin_arns, aigov_ctx.platform)} }}
+          register: aigov_authz_now
+
+        - name: Check OPA still authorizes the same action
+          ansible.builtin.assert:
+            that:
+              - aigov_authz_now.json.result.route_precheck == 'eligible'
+              - aigov_authz_now.json.result.selected_action == aigov_rem.action_type
+            fail_msg: >-
+              OPA no longer authorizes {{ aigov_rem.action_type }}: {{ aigov_authz_now.json.result.route_precheck }},
+              selected {{ aigov_authz_now.json.result.selected_action }}
+              ({{ aigov_authz_now.json.result.reasons | default([]) | join('; ') }}).
+            quiet: true
+
+        # ---- 2. Execute -----------------------------------------------------------------------------------------
+        - name: Enter the execution phase
+          ansible.builtin.set_fact:
+            aigov_phase: executing
+
+        - name: Mark the remediation executing
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: update_remediation
+            aigov_api_body:
+              remediation_id: "{{ aigov_remediation_id }}"
+              status: executing
+              aap_job_id: "{{ (tower_job_id | default(awx_job_id) | default(0)) | int }}"
+
+        - name: "Run the action"
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.remediate_ai_agent
+            tasks_from: "actions/{{ aigov_rem.action_type }}.yml"
+          vars:
+            aigov_action_region: "{{ aigov_ctx.region }}"
+            aigov_action_identity: "{{ aigov_now.identity }}"
+            aigov_action_context: "{{ aigov_ctx }}"
+            aigov_admin_policy_arns: "{{ aigov_admin_arns }}"
+            aigov_approved_policy_arn: "{{ aigov_gov.ApprovedAgentRuntimePolicyArn }}"
+            aigov_boundary_policy_arn: "{{ aigov_gov.AgentRuntimeBoundaryPolicyArn }}"
+
+        - name: Report success
+          ansible.builtin.set_fact:
+            aigov_exec: >-
+              {{ aigov_exec | combine({'status': 'succeeded', 'changed': 'yes' if aigov_action_result.changed | bool else 'no'}) }}
+
+      rescue:
+        - name: Report the problem (refused before any change, failed during execution)
+          ansible.builtin.set_fact:
+            aigov_exec: >-
+              {{ aigov_exec | combine({'status': 'refused' if aigov_phase == 'precheck' else 'failed',
+                                       'error_summary': ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
+
+        - name: Mark a refused remediation skipped (nothing was changed)
+          when: aigov_phase == 'precheck' and (aigov_rem.status | default('')) == 'approved'
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: update_remediation
+            aigov_api_body:
+              remediation_id: "{{ aigov_remediation_id }}"
+              status: skipped
+              error: {phase: precheck, message: "{{ aigov_exec.error_summary }}"}
+              aap_job_id: "{{ (tower_job_id | default(awx_job_id) | default(0)) | int }}"
+
+    # ---- 3. Record the result ---------------------------------------------------------------------------------------
+    - name: Record the post-state and the result
+      when: aigov_phase == 'executing'
+      block:
+        - name: Re-read the execution role (post-state)
+          mlowcher61.ai_governance.iam_role_permissions_info:
+            access_key: "{{ aigov_aws.access_key }}"
+            secret_key: "{{ aigov_aws.secret_key }}"
+            session_token: "{{ aigov_aws.session_token }}"
+            region: "{{ aigov_ctx.region }}"
+            role_arn: "{{ aigov_ctx.execution_role }}"
+          register: aigov_post_role
+          ignore_errors: true  # noqa: ignore-errors - the result is recorded either way
+
+        - name: Re-read the runtime tags (post-state)
+          mlowcher61.ai_governance.agentcore_runtime_info:
+            access_key: "{{ aigov_aws.access_key }}"
+            secret_key: "{{ aigov_aws.secret_key }}"
+            session_token: "{{ aigov_aws.session_token }}"
+            region: "{{ aigov_ctx.region }}"
+            agent_runtime_ids: ["{{ aigov_ctx.external_id }}"]
+          register: aigov_post_runtime
+          ignore_errors: true  # noqa: ignore-errors - the result is recorded either way
+          when: aigov_ctx.platform == 'aws.bedrock_agentcore_runtime'
+
+        - name: Store the result
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: update_remediation
+            aigov_api_body: >-
+              {{ {'remediation_id': aigov_remediation_id, 'status': aigov_exec.status,
+                  'aap_job_id': (tower_job_id | default(awx_job_id) | default(0)) | int,
+                  'post_state': {'identity': aigov_post_role.identity | default(none),
+                                 'identity_evidence': aigov_post_role.evidence_status | default('error'),
+                                 'runtime_tags': ((aigov_post_runtime.runtimes | default([{}]))[0] | default({})).tags | default({}),
+                                 'action_result': aigov_action_result | default({}),
+                                 'captured_at': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ')}}
+                 | combine({'error': {'phase': 'execute', 'message': aigov_exec.error_summary}} if aigov_exec.status == 'failed' else {}) }}
+      rescue:
+        - name: Report that the result could not be recorded
+          ansible.builtin.set_fact:
+            aigov_record_error: "{{ ((ansible_failed_result.msg | default('unknown error')) | string)[:400] }}"
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_exec | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/execute'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/execute: {{ aigov_exec }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: "{{ aigov_exec | combine({'detail': aigov_action_result | default({})}) }}"
+
+    - name: Publish the result for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_exec }}"
+        per_host: false
+
+    - name: Fail when the result could not be recorded in the inventory
+      ansible.builtin.fail:
+        msg: "The remediation ran ({{ aigov_exec.status }}) but the result was not recorded: {{ aigov_record_error }}"
+      when: aigov_record_error is defined

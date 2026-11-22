@@ -187,6 +187,43 @@ aigov_remediation_templates:
       aigov_ai_recommendation: {}
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Execute Remediation
+    description: "T2.05 - execute an approved remediation (re-checks drift and OPA first); records the post-state"
+    playbook: playbooks/remediation/execute.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Remediation Role
+      - AI Governance - Inventory API (remediator)
+    # Only the two IDs can be passed at launch (survey, no free extra variables); one execution at a time.
+    ask_variables_on_launch: false
+    allow_simultaneous: false
+    timeout: 600
+    extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    survey_enabled: true
+    survey_spec:
+      name: Execute Remediation
+      description: The remediation to execute; everything else comes from its record.
+      spec:
+        - {question_name: Governance run ID, variable: aigov_governance_run_id, type: text, required: true, min: 36, max: 36, default: ""}
+        - {question_name: Remediation ID, variable: aigov_remediation_id, type: text, required: true, min: 36, max: 36, default: ""}
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Record Approval Decision
+    description: "T2.05 (interim, hardened in T2.10) - record a human approval or rejection; the agent owner cannot approve"
+    playbook: playbooks/remediation/record_approval.yml
+    credentials:
+      - AI Governance - Inventory API (remediator)
+    ask_variables_on_launch: true
+    timeout: 120
+    extra_vars:
+      aigov_remediation_id: ""
+      aigov_decision: ""
+      aigov_decided_by: ""
+      aigov_decision_notes: ""
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:

@@ -1,0 +1,37 @@
+---
+# iam_replace_managed_policy (docs/plan/04 section 6.1): attach the approved policy, THEN detach administrator policies.
+# A failure between the two calls leaves the role with both, never with no permissions.
+# The project module is used instead of amazon.aws.iam_role: iam_role requires the trust policy on every call and would
+# rewrite it if it differed, which AIGovRemediationRole is deliberately not allowed to do.
+- name: Work out the policy sets
+  ansible.builtin.set_fact:
+    aigov_policy_sets: >-
+      {{ aigov_action_identity | mlowcher61.ai_governance.remediation_policy_sets(aigov_admin_policy_arns, aigov_approved_policy_arn) }}
+
+- name: Step 1 - attach the approved policy (nothing is detached)
+  mlowcher61.ai_governance.iam_role_managed_policies:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_action_region }}"
+    role_name: "{{ aigov_action_identity.principal_ref | regex_replace('^.*/', '') }}"
+    managed_policies: "{{ aigov_policy_sets.step1 }}"
+    purge_policies: false
+  register: aigov_step1
+
+- name: Step 2 - detach the administrator policies
+  mlowcher61.ai_governance.iam_role_managed_policies:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_action_region }}"
+    role_name: "{{ aigov_action_identity.principal_ref | regex_replace('^.*/', '') }}"
+    managed_policies: "{{ aigov_policy_sets.step2 }}"
+    purge_policies: true
+  register: aigov_step2
+
+- name: Report the change
+  ansible.builtin.set_fact:
+    aigov_action_result:
+      changed: "{{ aigov_step1.changed or aigov_step2.changed }}"
+      detail: {attached: "{{ aigov_step1.attached }}", detached: "{{ aigov_step2.detached }}"}

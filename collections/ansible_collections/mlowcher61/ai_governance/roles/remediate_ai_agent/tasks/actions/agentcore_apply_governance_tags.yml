@@ -1,0 +1,19 @@
+---
+# agentcore_apply_governance_tags: registry values when the agent is registered, quarantine tags otherwise.
+# Owner values are never invented (filter remediation_governance_tags). Existing tags are kept (purge_tags: false).
+- name: Apply the governance tags to the runtime
+  mlowcher61.ai_governance.agentcore_runtime_tags:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_action_region }}"
+    resource_arn: "{{ aigov_action_context.resource_ref }}"
+    tags: "{{ aigov_action_context | mlowcher61.ai_governance.remediation_governance_tags }}"
+    purge_tags: false
+  register: aigov_tags
+
+- name: Report the change
+  ansible.builtin.set_fact:
+    aigov_action_result:
+      changed: "{{ aigov_tags.changed }}"
+      detail: {tags_added: "{{ aigov_tags.added }}"}

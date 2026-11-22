@@ -1,0 +1,19 @@
+---
+# iam_apply_permissions_boundary: set the approved permissions boundary. Managed policies are not touched.
+- name: Set the approved permissions boundary
+  mlowcher61.ai_governance.iam_role_managed_policies:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_action_region }}"
+    role_name: "{{ aigov_action_identity.principal_ref | regex_replace('^.*/', '') }}"
+    managed_policies: []
+    purge_policies: false
+    permissions_boundary: "{{ aigov_boundary_policy_arn }}"
+  register: aigov_boundary
+
+- name: Report the change
+  ansible.builtin.set_fact:
+    aigov_action_result:
+      changed: "{{ aigov_boundary.changed }}"
+      detail: {boundary_before: "{{ aigov_boundary.boundary_before }}", boundary_after: "{{ aigov_boundary.boundary_after }}"}

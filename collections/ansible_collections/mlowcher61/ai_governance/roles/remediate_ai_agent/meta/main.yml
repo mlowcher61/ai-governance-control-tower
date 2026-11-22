@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: AI Governance Control Tower contributors
+  description: Approved remediation actions for AI agents (one task file per catalog action)
+  license: GPL-3.0-or-later
+  min_ansible_version: "2.16"
+  platforms: []
+dependencies: []

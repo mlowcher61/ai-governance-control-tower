@@ -4,6 +4,33 @@
   "title": "AAP job artifacts used by automation orchestrator, version 1",
   "description": "What each governance job template publishes with ansible.builtin.set_stats. automation orchestrator reads these as ${<node_id>.artifacts.<name>} (docs/plan/03 section 9.2). Pick the definition for a job with $defs/<job>. AO passes values between nodes as text, so numbers may arrive as strings; jobs must accept both.",
   "$defs": {
+    "approval_decision": {
+      "title": "AI Governance - Record Approval Decision",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "decision",
+        "remediation_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "decision": {
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        },
+        "remediation_status": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      }
+    },
     "common_data_source": {
       "type": "object",
       "required": [
@@ -414,6 +441,61 @@
         },
         "bundle_revision": {
           "type": "string"
+        }
+      }
+    },
+    "execute": {
+      "title": "AI Governance - Execute Remediation",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "status",
+        "changed",
+        "action_type",
+        "error_summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "type": "string",
+          "description": "Empty only when the inputs were invalid."
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "refused"
+          ],
+          "description": "refused: a precondition failed and nothing was changed (the remediation is marked skipped). failed: the action failed while executing."
+        },
+        "changed": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "action_type": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "remediation_id": {
+            "$ref": "#/$defs/common_uuid"
+          },
+          "error_summary": {
+            "const": ""
+          }
         }
       }
     },

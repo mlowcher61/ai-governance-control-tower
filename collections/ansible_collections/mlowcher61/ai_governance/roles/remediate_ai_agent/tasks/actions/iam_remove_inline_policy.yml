@@ -1,0 +1,25 @@
+---
+# iam_remove_inline_policy: delete the inline policies that grant administrator access (certified amazon.aws.iam_policy).
+# Their documents are in the pre-state, so Rollback can recreate them.
+- name: Find the administrator inline policies
+  ansible.builtin.set_fact:
+    aigov_inline_admin: "{{ aigov_action_identity | mlowcher61.ai_governance.remediation_admin_inline_policies }}"
+
+- name: Delete each administrator inline policy
+  amazon.aws.iam_policy:
+    access_key: "{{ aigov_aws.access_key }}"
+    secret_key: "{{ aigov_aws.secret_key }}"
+    session_token: "{{ aigov_aws.session_token }}"
+    region: "{{ aigov_action_region }}"
+    iam_type: role
+    iam_name: "{{ aigov_action_identity.principal_ref | regex_replace('^.*/', '') }}"
+    policy_name: "{{ item }}"
+    state: absent
+  loop: "{{ aigov_inline_admin }}"
+  register: aigov_inline
+
+- name: Report the change
+  ansible.builtin.set_fact:
+    aigov_action_result:
+      changed: "{{ aigov_inline.results | default([]) | selectattr('changed') | list | length > 0 }}"
+      detail: {deleted_inline_policies: "{{ aigov_inline_admin }}"}

@@ -177,9 +177,51 @@ def remediation_governance_tags(context):
     return {"aigov:status": "noncompliant", "aigov:finding": str(context.get("finding_id")), "aigov:policy": str(context.get("policy_id"))}
 
 
+MANAGED_TYPES = ("aws_managed", "customer_managed")
+
+
+def _managed_refs(identity):
+    return sorted(p.get("ref") for p in (identity or {}).get("policies") or [] if p.get("type") in MANAGED_TYPES)
+
+
+def remediation_admin_inline_policies(identity):
+    """Names of the inline policies that grant administrator access (what iam_remove_inline_policy deletes)."""
+    return sorted(p.get("name") or p.get("ref") for p in (identity or {}).get("policies") or []
+                  if p.get("type") == "inline" and any(_statement_is_admin(s) for s in p.get("statements") or []))
+
+
+def remediation_policy_sets(identity, admin_policy_arns, approved_policy_arn):
+    """The two managed-policy sets of iam_replace_managed_policy (docs/plan/04 section 6.1), attach before detach:
+    step 1 = current + approved (nothing detached), step 2 = current - administrator policies + approved."""
+    current = _managed_refs(identity)
+    step1 = sorted(set(current) | {approved_policy_arn})
+    step2 = sorted((set(current) - set(admin_policy_arns or [])) | {approved_policy_arn})
+    return dict(step1=step1, step2=step2, detach=sorted(set(current) & set(admin_policy_arns or [])),
+                attach=[] if approved_policy_arn in current else [approved_policy_arn])
+
+
+def remediation_state_drift(pre_identity, current_identity):
+    """What changed on the execution role since the pre-state was captured: managed policies, permissions boundary,
+    inline policy names. Execute refuses to act on a role that drifted, because the approval was for the old state."""
+    pre, cur = pre_identity or {}, current_identity or {}
+    out = []
+    if _managed_refs(pre) != _managed_refs(cur):
+        added = sorted(set(_managed_refs(cur)) - set(_managed_refs(pre)))
+        removed = sorted(set(_managed_refs(pre)) - set(_managed_refs(cur)))
+        out.append("managed policies changed (added %s, removed %s)" % (added or "none", removed or "none"))
+    if (pre.get("permissions_boundary_ref") or None) != (cur.get("permissions_boundary_ref") or None):
+        out.append("permissions boundary changed (%s -> %s)" % (pre.get("permissions_boundary_ref"), cur.get("permissions_boundary_ref")))
+    inline = [sorted(p.get("name") or p.get("ref") for p in i.get("policies") or [] if p.get("type") == "inline") for i in (pre, cur)]
+    if inline[0] != inline[1]:
+        out.append("inline policies changed (%s -> %s)" % (inline[0], inline[1]))
+    return out
+
+
 class FilterModule:
     def filters(self):
         return {"policy_input_refresh": policy_input_refresh, "reassessment_outcome": reassessment_outcome,
                 "remediation_applicable_actions": remediation_applicable_actions,
                 "remediation_blast_radius": remediation_blast_radius, "remediation_ai_check": remediation_ai_check,
-                "remediation_governance_tags": remediation_governance_tags}
+                "remediation_governance_tags": remediation_governance_tags,
+                "remediation_admin_inline_policies": remediation_admin_inline_policies,
+                "remediation_policy_sets": remediation_policy_sets, "remediation_state_drift": remediation_state_drift}

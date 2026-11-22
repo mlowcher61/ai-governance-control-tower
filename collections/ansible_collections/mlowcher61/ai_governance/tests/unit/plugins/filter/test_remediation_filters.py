@@ -133,3 +133,49 @@ def test_governance_tags_never_invent_owners():
                     "data_classification": None}
     registered = remediation_governance_tags({"finding_id": "f", "registration": registration})
     assert registered == {"Owner": "hr@example.com", "Environment": "production", "aigov:registration": "REG-0002"}
+
+
+from ansible_collections.mlowcher61.ai_governance.plugins.filter.remediation import (  # noqa: E402
+    remediation_admin_inline_policies,
+    remediation_policy_sets,
+    remediation_state_drift,
+)
+
+APPROVED = "arn:aws:iam::111122223333:policy/aigov/aigov-approved-agentcore-runtime-basic"
+
+
+def test_policy_sets_attach_before_detach():
+    sets = remediation_policy_sets(_identity("quick_helper_bot"), ADMIN_ARNS, APPROVED)
+    assert APPROVED in sets["step1"] and ADMIN_ARNS[0] in sets["step1"]      # step 1 never removes anything
+    assert APPROVED in sets["step2"] and ADMIN_ARNS[0] not in sets["step2"]  # step 2 removes only admin policies
+    assert sets["detach"] == ADMIN_ARNS and sets["attach"] == [APPROVED]
+
+
+def test_policy_sets_keep_other_policies_and_are_idempotent():
+    ident = {"policies": [{"type": "customer_managed", "ref": "arn:keep"}, {"type": "aws_managed", "ref": APPROVED}]}
+    sets = remediation_policy_sets(ident, ADMIN_ARNS, APPROVED)
+    assert sets["step1"] == sets["step2"] == sorted(["arn:keep", APPROVED]) and sets["attach"] == [] and sets["detach"] == []
+
+
+def test_admin_inline_policies_only():
+    ident = {"policies": [
+        {"type": "inline", "name": "admin", "statements": [{"effect": "Allow", "actions": ["*"], "resources": ["*"]}]},
+        {"type": "inline", "name": "s3read", "statements": [{"effect": "Allow", "actions": ["s3:GetObject"], "resources": ["*"]}]},
+        {"type": "aws_managed", "ref": ADMIN_ARNS[0], "statements": [{"effect": "Allow", "actions": ["*"], "resources": ["*"]}]}]}
+    assert remediation_admin_inline_policies(ident) == ["admin"]
+    assert remediation_admin_inline_policies(_identity("payments_dispute_assistant")) == []
+
+
+def test_state_drift():
+    pre = _identity("quick_helper_bot")
+    assert remediation_state_drift(pre, copy.deepcopy(pre)) == []
+    cur = copy.deepcopy(pre)
+    cur["policies"] = [p for p in cur["policies"] if p.get("ref") not in ADMIN_ARNS]
+    cur["permissions_boundary_ref"] = "arn:b"
+    cur["policies"].append({"type": "inline", "name": "new", "statements": []})
+    drift = remediation_state_drift(pre, cur)
+    assert len(drift) == 3 and "removed ['arn:aws:iam::aws:policy/AdministratorAccess']" in drift[0]
+    # Tags and trust policy changes are not drift for these actions
+    cur = copy.deepcopy(pre)
+    cur["tags"] = {"x": "y"}
+    assert remediation_state_drift(pre, cur) == []
