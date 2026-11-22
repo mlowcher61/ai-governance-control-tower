@@ -457,6 +457,102 @@
           "type": "string"
         }
       }
+    },
+    "verify": {
+      "title": "AI Governance - Verify Remediation",
+      "type": "object",
+      "required": [
+        "remediation_id",
+        "status",
+        "evaluation_id",
+        "target_policy_decision",
+        "regressions",
+        "simulation_admin_probes",
+        "agent_status",
+        "functional_check",
+        "finding_status",
+        "error_summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "remediation_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "verified",
+            "verification_failed",
+            "error"
+          ],
+          "description": "error: no decision was made (the remediation is unchanged and Verify can run again)."
+        },
+        "evaluation_id": {
+          "type": "string",
+          "description": "The verification evaluation; empty on error."
+        },
+        "target_policy_decision": {
+          "type": "string"
+        },
+        "regressions": {
+          "$ref": "#/$defs/count"
+        },
+        "simulation_admin_probes": {
+          "enum": [
+            "all_denied",
+            "some_allowed",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "agent_status": {
+          "type": "string"
+        },
+        "functional_check": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "finding_status": {
+          "type": "string"
+        },
+        "error_summary": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "verified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_id": {
+            "$ref": "common.v1.json#/$defs/uuid"
+          },
+          "target_policy_decision": {
+            "const": "pass"
+          },
+          "regressions": {
+            "enum": [
+              0,
+              "0"
+            ]
+          },
+          "finding_status": {
+            "const": "resolved"
+          },
+          "simulation_admin_probes": {
+            "enum": [
+              "all_denied",
+              "not_applicable"
+            ]
+          }
+        }
+      }
     }
   }
 }

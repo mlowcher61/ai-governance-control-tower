@@ -1,0 +1,1 @@
+{"remediation_id": "320f53ea-43db-4feb-9ede-155870a7fa14", "status": "verified", "evaluation_id": "5b0c1f8e-2a8d-4a43-9d55-0b6f3c2b9e11", "target_policy_decision": "pass", "regressions": "0", "simulation_admin_probes": "all_denied", "agent_status": "READY", "functional_check": "skipped", "finding_status": "resolved", "error_summary": ""}

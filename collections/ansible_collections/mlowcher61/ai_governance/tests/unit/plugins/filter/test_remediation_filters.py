@@ -179,3 +179,27 @@ def test_state_drift():
     cur = copy.deepcopy(pre)
     cur["tags"] = {"x": "y"}
     assert remediation_state_drift(pre, cur) == []
+
+
+from ansible_collections.mlowcher61.ai_governance.plugins.filter.remediation import (  # noqa: E402
+    remediation_probe_check,
+    remediation_simulation_checks,
+)
+
+PROBES = ["iam:CreateUser", "iam:AttachRolePolicy", "iam:PutRolePolicy"]
+
+
+def test_probe_check():
+    denied = dict((a, "denied") for a in PROBES)
+    assert remediation_probe_check(denied, PROBES, "iam_replace_managed_policy") == "all_denied"
+    assert remediation_probe_check(dict(denied, **{"iam:CreateUser": "allowed"}), PROBES, "iam_remove_inline_policy") == "some_allowed"
+    assert remediation_probe_check({"iam:CreateUser": "denied"}, PROBES, "iam_apply_permissions_boundary") == "unknown"
+    assert remediation_probe_check({}, [], "iam_replace_managed_policy") == "unknown"
+    assert remediation_probe_check({}, PROBES, "agentcore_apply_governance_tags") == "not_applicable"
+    # the demo admin agent before remediation
+    assert remediation_probe_check(_identity("quick_helper_bot")["simulation"], PROBES, "iam_replace_managed_policy") == "some_allowed"
+
+
+def test_simulation_checks():
+    assert remediation_simulation_checks(PROBES[:2]) == [{"action": "iam:CreateUser"}, {"action": "iam:AttachRolePolicy"}]
+    assert remediation_simulation_checks(None) == []

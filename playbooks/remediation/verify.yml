@@ -1,0 +1,250 @@
+---
+# AI Governance - Verify Remediation (task T2.07, WF-02 node activity_verify; docs/plan/04 section 9.1)
+#
+# Proves an executed remediation worked, independently of the job that made the change:
+#   1. Effective permissions: for IAM actions, IAM policy simulation of the administrator probes, retried 6 x 10 s
+#      until they are denied (IAM changes are eventually consistent).
+#   2. Independent re-collection of the agent with the read-only DISCOVERY role (not the remediation role), using the
+#      discovery adapter, and an OPA evaluation with purpose "verification".
+#   3. api.record_verification decides in the database: the finding's policy passes, no other policy moved from pass
+#      to fail (regression), the probes are denied, and the agent is READY. Verified -> the finding is resolved
+#      (remediated); otherwise verification_failed, with a check-by-check report, for rollback or a human.
+# A problem before the decision gives status=error and leaves the remediation as it was, so Verify can run again.
+# The optional functional smoke test (P1) is not implemented: functional_check=skipped.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role",
+# "AI Governance - Inventory API (remediator)". Artifacts: schemas/artifacts.v1.json#/$defs/verify.
+- name: AI Governance - verify a remediation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_opa_url: http://opa.ai-governance.svc:8181
+    aigov_governance_run_id: ""
+    aigov_remediation_id: ""
+    aigov_verify_retries: 6
+    aigov_verify_delay: 10
+    aigov_verify:
+      remediation_id: ""
+      status: error
+      evaluation_id: ""
+      target_policy_decision: ""
+      regressions: "0"
+      simulation_admin_probes: unknown
+      agent_status: ""
+      functional_check: skipped
+      finding_status: ""
+      error_summary: ""
+  tasks:
+    - name: Verify, and report a problem as status=error
+      block:
+        - name: Check the inputs and credentials
+          ansible.builtin.assert:
+            that:
+              - aigov_remediation_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_governance_run_id is match('^[0-9a-fA-F-]{36}$')
+              - aigov_discovery_role_arn | default('') | length > 0
+            fail_msg: Pass aigov_remediation_id and aigov_governance_run_id, and attach the AWS discovery role credential.
+            quiet: true
+
+        - name: Check the Inventory API credential (remediator)
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+
+        - name: Read the remediation record
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_remediation
+            aigov_api_body: {remediation_id: "{{ aigov_remediation_id }}"}
+
+        - name: Keep the record
+          ansible.builtin.set_fact:
+            aigov_rem: "{{ aigov_api_response }}"
+            aigov_verify: "{{ aigov_verify | combine({'remediation_id': aigov_remediation_id}) }}"
+
+        - name: Check the remediation was executed
+          ansible.builtin.assert:
+            that:
+              - aigov_rem.governance_run_id == aigov_governance_run_id
+              - aigov_rem.status == 'succeeded'
+            fail_msg: >-
+              Remediation is {{ aigov_rem.status }} (run {{ aigov_rem.governance_run_id }}); only an executed (succeeded)
+              remediation of this run is verified.
+            quiet: true
+
+        - name: Read the finding context
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: get_finding_context
+            aigov_api_body: {finding_id: "{{ aigov_rem.finding_id }}"}
+
+        - name: Keep the context
+          ansible.builtin.set_fact:
+            aigov_ctx: "{{ aigov_api_response }}"
+
+        - name: Read the agent's stored policy input
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: view
+          vars:
+            aigov_api_view: evaluation_inputs
+            aigov_api_query: "agent_id=eq.{{ aigov_ctx.agent_id }}"
+
+        - name: Keep the stored input
+          ansible.builtin.set_fact:
+            aigov_stored: "{{ aigov_api_response[0].input }}"
+
+        - name: Check the platform is supported for re-collection
+          ansible.builtin.assert:
+            that: aigov_stored.agent.platform == 'aws.bedrock_agentcore_runtime'
+            fail_msg: Re-collection is implemented for AgentCore runtimes (platform {{ aigov_stored.agent.platform }}).
+            quiet: true
+
+        - name: Read the administrator probe actions from OPA
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/config/admin_probe_actions"
+          register: aigov_opa_probes
+
+        - name: Assume the read-only discovery role
+          amazon.aws.sts_assume_role:
+            role_arn: "{{ aigov_discovery_role_arn }}"
+            external_id: "{{ aigov_discovery_external_id }}"
+            role_session_name: "aigov-verify-{{ aigov_governance_run_id }}"
+            duration_seconds: 900
+            region: "{{ aigov_stored.agent.region }}"
+          register: aigov_assumed
+          no_log: true
+
+        - name: Keep the session
+          ansible.builtin.set_fact:
+            aigov_session:
+              access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+              secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+              session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+            aigov_scope_records: []
+            aigov_scope_errors: []
+            aigov_collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          no_log: true
+
+        # ---- 1. Effective permissions (IAM actions): wait until the administrator probes are denied ------------
+        - name: Wait until the administrator probes are denied (IAM is eventually consistent)
+          when: aigov_rem.action_type is match('^iam_')
+          mlowcher61.ai_governance.iam_policy_simulation_info:
+            region: "{{ aigov_stored.agent.region }}"
+            access_key: "{{ aigov_session.access_key }}"
+            secret_key: "{{ aigov_session.secret_key }}"
+            session_token: "{{ aigov_session.session_token }}"
+            policy_source_arn: "{{ aigov_ctx.execution_role }}"
+            on_error: report
+            checks: "{{ aigov_opa_probes.json.result | mlowcher61.ai_governance.remediation_simulation_checks }}"
+          register: aigov_probe_wait
+          until: >-
+            (aigov_probe_wait.simulation | default({}) | mlowcher61.ai_governance.remediation_probe_check(
+               aigov_opa_probes.json.result, aigov_rem.action_type)) == 'all_denied'
+          retries: "{{ aigov_verify_retries }}"
+          delay: "{{ aigov_verify_delay }}"
+          failed_when: false  # the decision is made below from the re-collected evidence
+
+        # ---- 2. Independent re-collection and OPA evaluation (purpose verification) -----------------------------
+        - name: Re-collect the agent from AWS
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.discover_aws_agentcore
+          vars:
+            aigov_region: "{{ aigov_stored.agent.region }}"
+            aigov_account_ref: "{{ aigov_stored.agent.account_ref }}"
+            aigov_agentcore_runtime_ids: ["{{ aigov_stored.agent.external_id }}"]
+
+        - name: Check the agent was found
+          ansible.builtin.assert:
+            that: aigov_scope_records | length == 1
+            fail_msg: "Runtime {{ aigov_stored.agent.external_id }} was not found in AWS: {{ aigov_scope_errors }}"
+            quiet: true
+
+        - name: Rebuild the policy input with the live state
+          ansible.builtin.set_fact:
+            aigov_input: >-
+              {{ aigov_stored | mlowcher61.ai_governance.policy_input_refresh(record=aigov_scope_records[0])
+                 | combine({'evaluation': {'governance_run_id': aigov_governance_run_id, 'purpose': 'verification',
+                                           'evaluated_at': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ')}}) }}
+
+        - name: Ask OPA
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/governance/evaluate/result"
+            method: POST
+            body_format: json
+            body:
+              input: "{{ aigov_input }}"
+          register: aigov_opa
+
+        - name: Check the decision against the evaluation result contract
+          ansible.builtin.assert:
+            that: >-
+              aigov_opa.json.result | ansible.utils.validate(
+                lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/evaluation-result.v1.json') | from_json,
+                engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+            fail_msg: OPA returned no valid decision (is the policy bundle published?).
+            quiet: true
+
+        # ---- 3. The database decides verified / verification_failed ---------------------------------------------
+        - name: Record the verification
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: record_verification
+            aigov_api_body:
+              remediation_id: "{{ aigov_remediation_id }}"
+              result: "{{ aigov_opa.json.result }}"
+              input_hash: "{{ aigov_input | dict2items | rejectattr('key', 'equalto', 'evaluation') | items2dict | to_json(sort_keys=true) | hash('sha256') }}"
+              checks:
+                simulation_admin_probes: >-
+                  {{ aigov_input.identity.simulation | default({}) | mlowcher61.ai_governance.remediation_probe_check(
+                       aigov_opa_probes.json.result, aigov_rem.action_type) }}
+                agent_status: "{{ aigov_input.agent.status | default('unknown', true) }}"
+                functional_check: skipped
+              aap_job_id: "{{ (tower_job_id | default(awx_job_id) | default(0)) | int }}"
+
+        - name: Keep the verification
+          ansible.builtin.set_fact:
+            aigov_verify: >-
+              {{ aigov_verify | combine({'status': aigov_api_response.status, 'evaluation_id': aigov_api_response.evaluation_id,
+                                         'target_policy_decision': aigov_api_response.target_policy_decision,
+                                         'regressions': aigov_api_response.regressions | string,
+                                         'simulation_admin_probes': aigov_api_response.simulation_admin_probes,
+                                         'agent_status': aigov_api_response.agent_status,
+                                         'finding_status': aigov_api_response.finding_status,
+                                         'error_summary': '' if aigov_api_response.status == 'verified' else
+                                           'checks failed: ' ~ ({'target policy': aigov_api_response.target_policy_decision,
+                                                                 'regressed': aigov_api_response.regressed_policies | join(', '),
+                                                                 'probes': aigov_api_response.simulation_admin_probes,
+                                                                 'agent': aigov_api_response.agent_status} | to_json)}) }}
+
+      rescue:
+        - name: Report the problem as status=error (the remediation is unchanged)
+          ansible.builtin.set_fact:
+            aigov_verify: >-
+              {{ aigov_verify | combine({'status': 'error',
+                                         'error_summary': ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_verify | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/verify'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/verify: {{ aigov_verify }}"
+        quiet: true
+
+    - name: Show the verification
+      ansible.builtin.debug:
+        var: aigov_verify
+
+    - name: Publish the verification for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_verify }}"
+        per_host: false

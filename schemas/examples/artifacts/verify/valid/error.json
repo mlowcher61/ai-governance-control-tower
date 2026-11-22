@@ -1,0 +1,1 @@
+{"remediation_id": "320f53ea-43db-4feb-9ede-155870a7fa14", "status": "error", "evaluation_id": "", "target_policy_decision": "", "regressions": "0", "simulation_admin_probes": "unknown", "agent_status": "", "functional_check": "skipped", "finding_status": "", "error_summary": "Remediation is approved; only an executed remediation is verified."}

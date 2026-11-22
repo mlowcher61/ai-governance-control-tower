@@ -75,7 +75,7 @@ BEGIN
   END LOOP;
 
   FOR fn IN SELECT * FROM (VALUES
-      ('api.evaluation_inputs', ARRAY['aigov_evaluator']),
+      ('api.evaluation_inputs', ARRAY['aigov_evaluator', 'aigov_remediator']),   -- remediator since V010 (Verify)
       ('api.agent_overview', ARRAY['aigov_reader', 'aigov_evaluator']),
       ('api.findings_open', ARRAY['aigov_reader', 'aigov_evaluator'])
     ) AS t (rel, allowed)
@@ -104,6 +104,8 @@ BEGIN
             WHERE n.nspname = 'aigov' AND p.proname NOT IN ('verify_audit_chain', 'audit_canonical') LOOP
     FOREACH r IN ARRAY roles LOOP
       CONTINUE WHEN r = 'aigov_evaluator' AND fn.sig IN ('aigov.rfc3339(text)', 'aigov.rfc3339_members(jsonb)', 'aigov.safe_text(text,integer)');
+      -- V010: the remediator reads api.evaluation_inputs (Verify Remediation), which calls the two date helpers
+      CONTINUE WHEN r = 'aigov_remediator' AND fn.sig IN ('aigov.rfc3339(text)', 'aigov.rfc3339_members(jsonb)');
       IF has_function_privilege(r, fn.sig, 'EXECUTE') THEN bad := bad || format('%s can execute %s', r, fn.sig); END IF;
     END LOOP;
   END LOOP;

@@ -217,6 +217,24 @@ def remediation_state_drift(pre_identity, current_identity):
     return out
 
 
+def remediation_probe_check(simulation, probe_actions, action_type):
+    """Effective-permission proof for verification (docs/plan/04 section 9.1): all_denied when every administrator probe
+    is denied, some_allowed when one is still allowed, unknown when a probe is missing. Non-IAM actions do not change
+    permissions: not_applicable."""
+    if not str(action_type or "").startswith("iam_"):
+        return "not_applicable"
+    simulation = simulation or {}
+    decisions = [simulation.get(a) for a in probe_actions or []]
+    if not decisions or any(d is None for d in decisions):
+        return "unknown"
+    return "some_allowed" if "allowed" in decisions else "all_denied"
+
+
+def remediation_simulation_checks(probe_actions):
+    """The checks argument of iam_policy_simulation_info for the administrator probes."""
+    return [dict(action=a) for a in probe_actions or []]
+
+
 class FilterModule:
     def filters(self):
         return {"policy_input_refresh": policy_input_refresh, "reassessment_outcome": reassessment_outcome,
@@ -224,4 +242,6 @@ class FilterModule:
                 "remediation_blast_radius": remediation_blast_radius, "remediation_ai_check": remediation_ai_check,
                 "remediation_governance_tags": remediation_governance_tags,
                 "remediation_admin_inline_policies": remediation_admin_inline_policies,
-                "remediation_policy_sets": remediation_policy_sets, "remediation_state_drift": remediation_state_drift}
+                "remediation_policy_sets": remediation_policy_sets, "remediation_state_drift": remediation_state_drift,
+                "remediation_probe_check": remediation_probe_check,
+                "remediation_simulation_checks": remediation_simulation_checks}
