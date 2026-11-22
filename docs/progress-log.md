@@ -370,7 +370,69 @@ Republish with the default profile to turn remediation off.
 
 ---
 
-## Open items (2026-11-20)
+## 2026-11-22 - T2.05 Execute Remediation (IAM actions)
+
+**Built.**
+- **AI Governance - Execute Remediation** (`playbooks/remediation/execute.yml`; AWS bootstrap + **remediation role** +
+  Inventory API remediator). It acts only on the recorded remediation (`api.get_remediation`); the action, target and
+  pre-state come from the database. The job template takes only the two IDs (survey) and runs one at a time.
+  1. Preconditions. Any failure gives `status: refused`, changes nothing, and marks an approved remediation `skipped`:
+     - the remediation is `approved`, in `enforce` mode, and belongs to the run;
+     - the action is implemented;
+     - the execution role did not change since the pre-state (filter `remediation_state_drift`: managed policies, boundary,
+       inline policies);
+     - OPA authorizes the same action again now (approval is not authorization by itself).
+  2. Executes with `AIGovRemediationRole`. The session name contains the governance run ID (CloudTrail correlation).
+  3. Re-reads the role and stores `succeeded` or `failed` with the post-state.
+- Role `remediate_ai_agent`, one task file per action:
+  - `iam_replace_managed_policy`: attach the approved policy, then detach admin policies (`remediation_policy_sets`);
+  - `iam_apply_permissions_boundary`;
+  - `iam_remove_inline_policy`: certified `amazon.aws.iam_policy`;
+  - `agentcore_apply_governance_tags`.
+- **V009**: `api.get_remediation`. `record_approval` refuses an approval by the agent's registered owner (by owner ID,
+  e-mail or name), which is separation of duties enforced in the database.
+- **AI Governance - Record Approval Decision** (interim): records a named approver's decision. Only AAP administrators can
+  launch it. T2.10 replaces the typed approver with the decision read from the AO approvals API.
+- Contracts: `artifacts.v1.json#/$defs/execute` and `approval_decision`.
+
+**Decisions.**
+- Managed policies and boundary use the project module `iam_role_managed_policies`, not certified `amazon.aws.iam_role`.
+  `iam_role` requires the trust policy on every call and would rewrite it if it differed, and the remediation role is
+  deliberately not allowed to change trust policies.
+- `iam_tag_role` is in the catalog but no policy maps to it, so OPA never selects it; it is not implemented (refused if
+  ever selected).
+- Bedrock Agents Classic actions follow in T2.06.
+
+**Problems found and fixed.**
+- New API functions were not callable after a migration (PostgREST schema cache, job 309). `migrate.sh` now sends
+  `NOTIFY pgrst, 'reload schema'` on every run (job 313).
+- The local tool environments in `/tmp` were lost in a restart. They were rebuilt in `~/.cache/aigov`.
+
+**Tests.** Unit tests for the three new filters (80 in total), V009 SQL tests (grants, record, owner refused by ID,
+e-mail and name, another approver accepted), schema examples (140), and the Execute Jinja on ansible-core 2.16
+(succeeded and refused paths).
+
+**Results on mk6hb** (remediation `320f53ea-43db-4feb-9ede-155870a7fa14`, `quick_helper_bot` IAM-001):
+
+| Step | Job | Result |
+|---|---|---|
+| V009 applied; schema cache reload | 307, 313 | done |
+| Execute before approval | 315 | `refused`; nothing changed; still awaiting approval |
+| Approval recorded by the user (human) | 316 | `approved` |
+| Execute | 318 | `succeeded`: attached `aigov-approved-agentcore-runtime-basic`, detached `AdministratorAccess` |
+| Execute again | 320 | `refused` (remediation is `succeeded`) |
+| Reassess | 321 | IAM-001 `pass` (the stale-finding case from T2.03, now shown live) |
+| Get Finding Context | 322 | finding `verifying` |
+
+**Not shown live.** Drift refusal, failed execution, the boundary, inline-removal and tag actions (unit tests and
+simulation). There is no AO approval yet, because WF-02 is T2.09. The approval was recorded with the interim AAP job.
+
+**Left in place for T2.07.** The `quick_helper_bot` role is remediated and the finding awaits verification. Reset Demo
+Agents restores the original policies.
+
+---
+
+## Open items (2026-11-22)
 
 | Item | Notes |
 |---|---|
@@ -379,6 +441,7 @@ Republish with the default profile to turn remediation off.
 | Live demonstration of finding auto-close | Covered by SQL tests; not shown live yet (the reset resolves findings as `demo_reset`). A good Stage 2 demo moment: renew HR's risk assessment and re-run WF-01 |
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
 | `claude-work-access` has an extra `project-user` assignment | `project-admin` covers it; can be removed |
-| Demo profile published on mk6hb | Left on for T2.05 (remediation `320f53ea…` awaits approval); republish with `aigov_policy_profile: default` to turn remediation off |
+| Demo profile published on mk6hb | Still on; remediation `320f53ea…` executed and awaits verification (T2.07). Republish with `aigov_policy_profile: default` to turn remediation off |
+| Interim approval recording | Record Approval Decision takes the approver as a launch variable (admins only) until T2.10 reads decisions from the AO approvals API |
 | OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |
