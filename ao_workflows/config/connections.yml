@@ -20,7 +20,10 @@ aigov_ao_project: default
 # AAP integration and the AO credential (type "Ansible Automation Platform") used by
 # aap_job_template nodes. Both must already exist in AO.
 aigov_ao_aap_integration: Ansible Automation Platform
-aigov_ao_aap_credential: AAP Admin
+# T2.11: the governance workflows launch as the AAP user svc-aigov-ao (not an administrator), so the AAP launch guard
+# can tell automation orchestrator launches from direct ones. The job "AI Governance - Issue AO Service Account"
+# creates this credential.
+aigov_ao_aap_credential: AI Governance - AAP Service Account
 
 # LLM integration, AO credential (type "LLM Provider") and model used by agentic nodes
 aigov_ao_llm_integration: LiteMaaS

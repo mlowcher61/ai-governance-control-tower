@@ -35,3 +35,38 @@
     - name: Apply the configuration with infra.aap_configuration
       ansible.builtin.include_role:
         name: infra.aap_configuration.dispatch
+
+  post_tasks:
+    # The certified modules do not manage a job template's policy path (opa_query_path); set it through the API.
+    # Template updates by infra.aap_configuration leave the field unchanged.
+    - name: Attach the AAP launch guard to the remediation templates (T2.11)
+      when:
+        - aigov_pac_manage | bool
+        - (aigov_aws_account_id | string | length) == 12
+        - (aigov_openshift_credential | default('') | string | length) > 0
+      block:
+        - name: Find the guarded job templates
+          ansible.builtin.uri:
+            url: "https://{{ aigov_aap_hostname }}/api/controller/v2/job_templates/?name={{ item | urlencode }}"
+            headers:
+              Authorization: "Bearer {{ lookup('ansible.builtin.env', 'AAP_API_TOKEN') }}"
+            validate_certs: "{{ aap_validate_certs | default(false) }}"
+          loop: "{{ aigov_pac_guarded_templates }}"
+          register: aigov_guarded
+          no_log: true
+
+        - name: Set the policy path on each guarded template
+          ansible.builtin.uri:
+            url: "https://{{ aigov_aap_hostname }}/api/controller/v2/job_templates/{{ item.json.results[0].id }}/"
+            method: PATCH
+            body_format: json
+            body: {opa_query_path: "{{ aigov_pac_query_path }}"}
+            headers:
+              Authorization: "Bearer {{ lookup('ansible.builtin.env', 'AAP_API_TOKEN') }}"
+            validate_certs: "{{ aap_validate_certs | default(false) }}"
+          loop: "{{ aigov_guarded.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          when: item.json.results[0].opa_query_path | default('') != aigov_pac_query_path
+          changed_when: true
+          no_log: true

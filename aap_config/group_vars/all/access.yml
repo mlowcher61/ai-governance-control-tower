@@ -1,0 +1,71 @@
+---
+# Access control for the governance automation (task T2.11; docs/plan/04 sections 5 and 7.3, docs/plan/08).
+#
+# * svc-aigov-ao: the AAP user automation orchestrator launches the governance job templates as (AO credential
+#   "AI Governance - AAP Service Account", issued by the job "AI Governance - Issue AO Service Account"; its password is
+#   generated there and never stored in git). It may run exactly the templates the governance workflows use.
+# * AI Governance - Break Glass: people who may launch Execute and Rollback Remediation directly in an emergency.
+# * The AAP launch guard (policy aap.remediation_guard in the governance OPA) is attached to Execute and Rollback:
+#   any other launcher is refused with a violation message, also an AAP administrator (failure case F-18).
+
+aigov_ao_service_user: svc-aigov-ao
+aigov_break_glass_team: AI Governance - Break Glass
+
+aap_user_accounts:
+  - username: "{{ aigov_ao_service_user }}"
+    email: "{{ aigov_ao_service_user }}@aigov.invalid"
+    first_name: AI Governance
+    last_name: automation orchestrator service account
+    is_superuser: false
+    # Only used when the user is created; the Issue AO Service Account job sets (and rotates) the real password.
+    password: "{{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
+    update_secrets: false
+
+aap_teams:
+  - name: "{{ aigov_break_glass_team }}"
+    organization: "{{ aigov_organization }}"
+    description: May launch Execute and Rollback Remediation directly (emergency only; every launch is audited)
+
+# Job templates the governance workflows launch (ao_workflows/definitions, including the test workflows)
+aigov_ao_launch_templates:
+  - AI Governance - Check Environment
+  - AI Governance - Discover AI Agents
+  - AI Governance - Evaluate Governance Policies
+  - AI Governance - Record AI Explanations
+  - AI Governance - Publish Assessment Summary
+  - AI Governance - Get Finding Context
+  - AI Governance - Reassess Agent
+  - AI Governance - Plan Remediation
+  - AI Governance - Record Approval Decision
+  - AI Governance - Execute Remediation
+  - AI Governance - Verify Remediation
+  - AI Governance - Rollback Remediation
+  - AI Governance - Record Remediation Outcome
+
+# Templates the AAP launch guard protects, and the OPA rule AAP asks
+aigov_pac_guarded_templates:
+  - AI Governance - Execute Remediation
+  - AI Governance - Rollback Remediation
+aigov_pac_query_path: aap/remediation_guard/decision
+
+aigov_access_roles:
+  - user: "{{ aigov_ao_service_user }}"
+    role: execute
+    job_templates: "{{ aigov_ao_launch_templates }}"
+    lookup_organization: "{{ aigov_organization }}"
+  - team: "{{ aigov_break_glass_team }}"
+    role: execute
+    job_templates: "{{ aigov_pac_guarded_templates }}"
+    lookup_organization: "{{ aigov_organization }}"
+
+# The remediation templates exist only when the AWS account and the OpenShift credential are configured
+controller_roles: >-
+  {{ aigov_access_roles if (aigov_aws_account_id | string | length) == 12
+                          and (aigov_openshift_credential | default('') | string | length) > 0 else [] }}
+
+# AAP policy-as-code asks the governance OPA (set aigov_pac_manage: false if another team owns AAP's OPA setting)
+aigov_pac_manage: true
+aigov_pac_opa_host: "opa.{{ aigov_platform_namespace }}.svc"
+controller_settings: >-
+  {{ [{'name': 'OPA_HOST', 'value': aigov_pac_opa_host}, {'name': 'OPA_PORT', 'value': 8181},
+      {'name': 'OPA_SSL', 'value': false}] if aigov_pac_manage | bool else [] }}
