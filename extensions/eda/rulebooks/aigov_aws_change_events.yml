@@ -10,13 +10,15 @@
 #   3. IAM role permission changes, at most one job per role every 2 minutes.
 # Throttling keeps the first event of a burst; Process Change Event re-reads the current state, so nothing is lost.
 # Variables (activation extra vars and the EDA credential "AI Governance - EDA Queue Reader"):
-#   aigov_sqs_queue_url, aigov_sqs_region, aigov_sqs_access_key, aigov_sqs_secret_key
+#   aigov_sqs_queue_name, aigov_sqs_region, aigov_sqs_access_key, aigov_sqs_secret_key
 - name: AI governance - AWS change events
   hosts: all
   sources:
     - name: aigov_change_events
-      ansible.eda.aws_sqs_queue:
-        queue_url: "{{ aigov_sqs_queue_url }}"
+      # Certified source (ansible.eda.aws_sqs_queue is deprecated); it takes the queue NAME and delivers
+      # {"body": <the message body parsed as JSON>, "meta": {...}}
+      amazon.aws.aws_sqs_queue:
+        name: "{{ aigov_sqs_queue_name }}"
         region: "{{ aigov_sqs_region }}"
         access_key: "{{ aigov_sqs_access_key }}"
         secret_key: "{{ aigov_sqs_secret_key }}"

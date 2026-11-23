@@ -9,7 +9,7 @@ aigov_eda_enabled: false
 aigov_eda_project_name: AI Governance Control Tower
 aigov_eda_activation_name: AI Governance - AWS Change Events
 aigov_eda_decision_environment: Default Decision Environment
-aigov_eda_queue_url: "https://sqs.{{ aigov_aws_region }}.amazonaws.com/{{ aigov_aws_account_id }}/aigov-change-events"
+aigov_eda_queue_name: aigov-change-events
 
 eda_credential_types:
   - name: AI Governance - AWS SQS Reader
@@ -52,7 +52,7 @@ aigov_eda_activation:
     - AI Governance - EDA Queue Reader
     - AI Governance - EDA AAP Service Account
   extra_vars:
-    aigov_sqs_queue_url: "{{ aigov_eda_queue_url }}"
+    aigov_sqs_queue_name: "{{ aigov_eda_queue_name }}"
     aigov_sqs_region: "{{ aigov_aws_region }}"
   restart_policy: always
   enabled: true
