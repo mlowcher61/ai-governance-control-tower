@@ -281,6 +281,32 @@
           loop_control:
             label: "{{ item.item | basename }}"
 
+        # The AAP launch guard (T2.11) answers what AAP will ask at launch: an administrator launching Execute
+        # directly is refused; svc-aigov-ao is allowed exactly when remediation is enabled.
+        - name: Ask the live server the AAP launch guard question
+          ansible.builtin.uri:
+            url: "{{ aigov_opa_url }}/v1/data/aap/remediation_guard/decision"
+            method: POST
+            body_format: json
+            body:
+              input:
+                created_by: {id: 0, username: "{{ item }}", is_superuser: "{{ item == 'admin' }}", teams: []}
+                extra_vars: {aigov_governance_run_id: g, aigov_remediation_id: r}
+                job_template: {id: 0, name: AI Governance - Execute Remediation}
+                launch_type: manual
+          loop: [admin, svc-aigov-ao]
+          register: aigov_guard_live
+
+        - name: Check the AAP launch guard decisions
+          ansible.builtin.assert:
+            that:
+              - not (aigov_guard_live.results[0].json.result.allowed | bool)
+              - (aigov_guard_live.results[1].json.result.allowed | bool) == (aigov_expected_remediation.enabled | bool)
+            fail_msg: "The AAP launch guard answered wrongly: {{ aigov_guard_live.results | map(attribute='json.result') | list }}"
+            success_msg: >-
+              AAP launch guard: admin refused ({{ aigov_guard_live.results[0].json.result.violations | first }});
+              svc-aigov-ao {{ 'allowed' if aigov_guard_live.results[1].json.result.allowed else 'refused (remediation disabled)' }}
+
       rescue:
         - name: Roll back to the previous policies
           ansible.builtin.include_tasks: tasks/serve_bundle.yml
