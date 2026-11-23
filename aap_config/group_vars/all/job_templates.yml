@@ -43,6 +43,28 @@ aigov_aws_templates:
       aigov_aws_region: "{{ aigov_aws_region }}"
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Process Change Event
+    description: "T3.02 - record and map an AWS change event (EDA), ignore or suppress it, or start the targeted re-assessment"
+    playbook: playbooks/events/process_change_event.yml
+    credentials:
+      - AI Governance - Inventory API (discovery)
+      - AI Governance - Automation Orchestrator
+    ask_variables_on_launch: true
+    timeout: 300
+    extra_vars:
+      aigov_change_event: {}
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Issue EDA Credentials
+    description: "T3.02 - new access key for aigov-eda-reader and password for svc-aigov-eda, written into the EDA credentials"
+    playbook: playbooks/events/issue_eda_credentials.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - "{{ aigov_aap_credential }}"
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Capture Change Events
     description: "T3.01 - read the change-event queue and summarize each event (source, name, caller, target); optionally delete them"
     playbook: playbooks/aws/capture_change_events.yml

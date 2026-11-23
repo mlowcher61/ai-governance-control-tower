@@ -1,0 +1,121 @@
+---
+# AI Governance - Process Change Event (task T3.02; docs/plan/05 section 2.3)
+#
+# Launched by the EDA rulebook "AI governance - AWS change events" with the event (aigov_change_event, the SQS message
+# body: an EventBridge event carrying a CloudTrail management event). Deterministic:
+#   1. records the event once (api.record_change_event; an SQS redelivery is recognized) and maps it to inventory
+#      agents: a runtime or agent ID to that agent, an IAM role to the agents running as it;
+#   2. events with no agent are ignored (not_agent_related) and changes by the governance roles are suppressed (loop
+#      prevention, in addition to the rulebook) - both audited;
+#   3. for mapped events, starts "AI Governance - WF-03 Targeted Re-assessment" (task T3.03) for the affected agents and
+#      records the execution; until WF-03 is loaded the event is recorded with reassessment "pending".
+#
+# Credentials: "AI Governance - Inventory API (discovery)", "AI Governance - Automation Orchestrator".
+# Artifacts: schemas/artifacts.v1.json#/$defs/change_event.
+- name: AI Governance - process a change event
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_ao_validate_certs: false
+    aigov_change_event: {}
+    aigov_reassess_workflow: AI Governance - WF-03 Targeted Re-assessment
+    # Callers whose changes never trigger governance work (loop prevention)
+    aigov_suppress_callers:
+      - assumed-role/AIGovRemediationRole/
+      - assumed-role/AIGovDemoResetRole/
+  tasks:
+    - name: Read the event (an object, or JSON text)
+      ansible.builtin.set_fact:
+        aigov_event: >-
+          {{ aigov_change_event if aigov_change_event is mapping
+             else (aigov_change_event | from_json if aigov_change_event is string and aigov_change_event | trim is match('^[{]') else {}) }}
+
+    - name: Check it is a CloudTrail change event
+      ansible.builtin.assert:
+        that:
+          - aigov_event.detail.eventID is defined
+          - aigov_event.detail.eventName is defined
+        fail_msg: aigov_change_event must be an EventBridge "AWS API Call via CloudTrail" event (the SQS message body).
+        quiet: true
+
+    - name: Check the Inventory API credential (discovery)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Record and map the event
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_change_event
+        aigov_api_body: {event: "{{ aigov_event }}", suppress_callers: "{{ aigov_suppress_callers }}"}
+
+    - name: Keep the result
+      ansible.builtin.set_fact:
+        aigov_ce: "{{ aigov_api_response }}"
+        aigov_reassess_execution: ""
+        aigov_reassess_state: "{{ 'not_needed' if aigov_api_response.status != 'mapped' or aigov_api_response.duplicate | bool else 'pending' }}"
+
+    - name: Start the targeted re-assessment
+      when: aigov_reassess_state == 'pending'
+      block:
+        - name: Log in to automation orchestrator
+          ansible.builtin.include_tasks: "{{ aigov_repo_root }}/ao_workflows/tasks/ao_login.yml"
+
+        - name: Find the re-assessment workflow
+          ansible.builtin.uri:
+            url: "{{ aigov_ao_api }}/workflows?limit=100"
+            headers: "{{ aigov_ao_headers }}"
+            validate_certs: "{{ aigov_ao_validate_certs }}"
+          register: aigov_ao_wfs
+
+        - name: Start it for the affected agents
+          when: aigov_ao_wfs.json.resources | selectattr('name', 'equalto', aigov_reassess_workflow) | list | length > 0
+          ansible.builtin.include_tasks: "{{ aigov_repo_root }}/ao_workflows/tasks/run_one.yml"
+          vars:
+            aigov_ao_workflow_name: "{{ aigov_reassess_workflow }}"
+            aigov_ao_input: {agent_ids: "{{ aigov_ce.agent_ids | join(',') }}", change_event_id: "{{ aigov_ce.change_event_id }}"}
+            aigov_ao_use_published: true
+            aigov_ao_wait: false
+
+        - name: Record the execution
+          when: aigov_ao_execution.json.id is defined
+          ansible.builtin.include_role:
+            name: mlowcher61.ai_governance.inventory_api
+            tasks_from: rpc
+          vars:
+            aigov_api_rpc: update_change_event
+            aigov_api_body: {change_event_id: "{{ aigov_ce.change_event_id }}", ao_execution_id: "{{ aigov_ao_execution.json.id }}"}
+
+        - name: Keep the execution
+          ansible.builtin.set_fact:
+            aigov_reassess_execution: "{{ aigov_ao_execution.json.id | default('') }}"
+            aigov_reassess_state: "{{ 'started' if aigov_ao_execution.json.id is defined else 'pending' }}"
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out: >-
+          {{ {'change_event_id': aigov_ce.change_event_id, 'status': aigov_ce.status, 'reason': aigov_ce.reason | default('', true),
+              'event_name': aigov_event.detail.eventName, 'target': aigov_ce.target | default('', true),
+              'agent_ids': aigov_ce.agent_ids | join(','), 'duplicate': 'yes' if aigov_ce.duplicate | bool else 'no',
+              'reassessment': aigov_reassess_state, 'execution_id': aigov_reassess_execution} }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/change_event'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/change_event: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        var: aigov_out
+
+    - name: Publish the result
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

@@ -1,0 +1,61 @@
+---
+# Event-Driven Ansible for AWS change events (task T3.02; docs/plan/05 section 3).
+#
+# Order on a new installation: Deploy AWS Event Plumbing -> configure_aap.yml (this file: credential type, GitHub
+# credential, project) -> Issue EDA Credentials (queue reader key + svc-aigov-eda password into EDA credentials) ->
+# set aigov_eda_enabled: true in customer.yml -> configure_aap.yml again (creates the rulebook activation).
+
+aigov_eda_enabled: false
+aigov_eda_project_name: AI Governance Control Tower
+aigov_eda_activation_name: AI Governance - AWS Change Events
+aigov_eda_decision_environment: Default Decision Environment
+aigov_eda_queue_url: "https://sqs.{{ aigov_aws_region }}.amazonaws.com/{{ aigov_aws_account_id }}/aigov-change-events"
+
+eda_credential_types:
+  - name: AI Governance - AWS SQS Reader
+    description: Access key of an IAM user that may only read the AI governance change-event queue
+    inputs:
+      fields:
+        - {id: access_key, type: string, label: Access key ID}
+        - {id: secret_key, type: string, label: Secret access key, secret: true}
+      required: [access_key, secret_key]
+    injectors:
+      extra_vars:
+        aigov_sqs_access_key: !unsafe "{{ access_key }}"
+        aigov_sqs_secret_key: !unsafe "{{ secret_key }}"
+
+# Private repository: EDA syncs the rulebook with the same GitHub token as the AAP project (not stored in git)
+eda_credentials: >-
+  {{ [{'name': 'AI Governance - EDA GitHub', 'description': 'Source Control access to the private project repository',
+       'organization': aigov_organization, 'credential_type': 'Source Control',
+       'inputs': {'username': aigov_project_scm_username, 'password': aigov_scm_token}}]
+     if (aigov_scm_token | length) > 0 else [] }}
+
+aigov_eda_project:
+  name: "{{ aigov_eda_project_name }}"
+  description: AI governance rulebooks (extensions/eda/rulebooks)
+  organization: "{{ aigov_organization }}"
+  url: "{{ aigov_project_scm_url }}"
+  scm_branch: "{{ aigov_project_scm_branch }}"
+  sync: true
+eda_projects: >-
+  {{ [aigov_eda_project | combine({'credential': 'AI Governance - EDA GitHub'} if (aigov_scm_token | length) > 0 else {})] }}
+
+aigov_eda_activation:
+  name: "{{ aigov_eda_activation_name }}"
+  description: Queue aigov-change-events -> Process Change Event (governance-role changes dropped, bursts throttled)
+  organization: "{{ aigov_organization }}"
+  project: "{{ aigov_eda_project_name }}"
+  rulebook: aigov_aws_change_events.yml
+  decision_environment: "{{ aigov_eda_decision_environment }}"
+  eda_credentials:
+    - AI Governance - EDA Queue Reader
+    - AI Governance - EDA AAP Service Account
+  extra_vars:
+    aigov_sqs_queue_url: "{{ aigov_eda_queue_url }}"
+    aigov_sqs_region: "{{ aigov_aws_region }}"
+  restart_policy: always
+  enabled: true
+
+eda_rulebook_activations: >-
+  {{ [aigov_eda_activation] if aigov_eda_enabled | bool and (aigov_aws_account_id | string | length) == 12 else [] }}

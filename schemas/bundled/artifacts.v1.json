@@ -47,6 +47,63 @@
         }
       }
     },
+    "change_event": {
+      "title": "AI Governance - Process Change Event",
+      "type": "object",
+      "required": [
+        "change_event_id",
+        "status",
+        "reason",
+        "event_name",
+        "target",
+        "agent_ids",
+        "duplicate",
+        "reassessment",
+        "execution_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "change_event_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "status": {
+          "enum": [
+            "mapped",
+            "ignored",
+            "suppressed"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "event_name": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "agent_ids": {
+          "type": "string",
+          "description": "Comma-separated inventory agent IDs (empty when no agent is affected)."
+        },
+        "duplicate": {
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "reassessment": {
+          "enum": [
+            "started",
+            "pending",
+            "not_needed"
+          ]
+        },
+        "execution_id": {
+          "type": "string"
+        }
+      }
+    },
     "common_data_source": {
       "type": "object",
       "required": [

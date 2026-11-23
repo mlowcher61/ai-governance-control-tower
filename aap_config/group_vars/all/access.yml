@@ -9,6 +9,7 @@
 #   any other launcher is refused with a violation message, also an AAP administrator (failure case F-18).
 
 aigov_ao_service_user: svc-aigov-ao
+aigov_eda_service_user: svc-aigov-eda
 aigov_break_glass_team: AI Governance - Break Glass
 
 aap_user_accounts:
@@ -18,6 +19,14 @@ aap_user_accounts:
     last_name: automation orchestrator service account
     is_superuser: false
     # Only used when the user is created; the Issue AO Service Account job sets (and rotates) the real password.
+    password: "{{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
+    update_secrets: false
+  # Event-Driven Ansible launches Process Change Event as this user (EDA credential issued by Issue EDA Credentials)
+  - username: "{{ aigov_eda_service_user }}"
+    email: "{{ aigov_eda_service_user }}@aigov.invalid"
+    first_name: AI Governance
+    last_name: Event-Driven Ansible service account
+    is_superuser: false
     password: "{{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
     update_secrets: false
 
@@ -52,6 +61,10 @@ aigov_access_roles:
   - user: "{{ aigov_ao_service_user }}"
     role: execute
     job_templates: "{{ aigov_ao_launch_templates }}"
+    lookup_organization: "{{ aigov_organization }}"
+  - user: "{{ aigov_eda_service_user }}"
+    role: execute
+    job_templates: [AI Governance - Process Change Event]
     lookup_organization: "{{ aigov_organization }}"
   - team: "{{ aigov_break_glass_team }}"
     role: execute

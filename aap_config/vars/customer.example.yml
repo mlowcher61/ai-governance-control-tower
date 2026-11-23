@@ -73,3 +73,7 @@ aigov_ao_namespace: automation-orchestrator
 aigov_ao_llm_model: llama-scout-17b
 # Grafana URL shown in the assessment summary (printed by Deploy Platform Services). Optional.
 aigov_grafana_url: ""
+
+# Event-Driven Ansible (T3.02). Set to true after "AI Governance - Issue EDA Credentials" has created the EDA
+# credentials; configure_aap.yml then creates the rulebook activation "AI Governance - AWS Change Events".
+aigov_eda_enabled: false

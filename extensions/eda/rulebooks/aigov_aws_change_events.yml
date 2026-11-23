@@ -1,0 +1,111 @@
+---
+# AI Governance - AWS change events (task T3.02; docs/plan/05 section 3)
+#
+# Reads the SQS queue aigov-change-events (EventBridge events carrying CloudTrail management events; formats confirmed
+# from real events in eda/fixtures/events/) and launches "AI Governance - Process Change Event" for each relevant change.
+# Rules are evaluated in order and the first match wins:
+#   1. changes made by the governance roles themselves are dropped (loop prevention, failure case F-13);
+#   2. agent (Bedrock Agents / AgentCore) changes, at most one job per resource every 2 minutes (one rule per event shape,
+#      so each throttle groups by an attribute its events always carry);
+#   3. IAM role permission changes, at most one job per role every 2 minutes.
+# Throttling keeps the first event of a burst; Process Change Event re-reads the current state, so nothing is lost.
+# Variables (activation extra vars and the EDA credential "AI Governance - EDA Queue Reader"):
+#   aigov_sqs_queue_url, aigov_sqs_region, aigov_sqs_access_key, aigov_sqs_secret_key
+- name: AI governance - AWS change events
+  hosts: all
+  sources:
+    - name: aigov_change_events
+      ansible.eda.aws_sqs_queue:
+        queue_url: "{{ aigov_sqs_queue_url }}"
+        region: "{{ aigov_sqs_region }}"
+        access_key: "{{ aigov_sqs_access_key }}"
+        secret_key: "{{ aigov_sqs_secret_key }}"
+        delay_seconds: 2
+  rules:
+    - name: Drop changes made by the governance roles (loop prevention)
+      condition: >-
+        event.body.detail.userIdentity.arn is search("assumed-role/AIGovRemediationRole/", ignorecase=true)
+        or event.body.detail.userIdentity.arn is search("assumed-role/AIGovDemoResetRole/", ignorecase=true)
+      action:
+        debug:
+          msg: "Dropped a change made by a governance role: {{ event.body.detail.eventName }} {{ event.body.detail.eventID }}"
+
+    - name: Agent tagged or untagged (per resource ARN)
+      condition: >-
+        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        and event.body.detail.errorCode is not defined
+        and event.body.detail.requestParameters.resourceArn is defined
+      throttle:
+        once_within: 2 minutes
+        group_by_attributes:
+          - event.body.detail.requestParameters.resourceArn
+      action:
+        run_job_template:
+          name: AI Governance - Process Change Event
+          organization: AI Governance
+          job_args:
+            extra_vars:
+              aigov_change_event: "{{ event.body }}"
+
+    - name: Agent runtime changed (per runtime)
+      condition: >-
+        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        and event.body.detail.errorCode is not defined
+        and event.body.detail.requestParameters.agentRuntimeId is defined
+      throttle:
+        once_within: 2 minutes
+        group_by_attributes:
+          - event.body.detail.requestParameters.agentRuntimeId
+      action:
+        run_job_template:
+          name: AI Governance - Process Change Event
+          organization: AI Governance
+          job_args:
+            extra_vars:
+              aigov_change_event: "{{ event.body }}"
+
+    - name: Classic agent changed (per agent)
+      condition: >-
+        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        and event.body.detail.errorCode is not defined
+        and event.body.detail.requestParameters.agentId is defined
+      throttle:
+        once_within: 2 minutes
+        group_by_attributes:
+          - event.body.detail.requestParameters.agentId
+      action:
+        run_job_template:
+          name: AI Governance - Process Change Event
+          organization: AI Governance
+          job_args:
+            extra_vars:
+              aigov_change_event: "{{ event.body }}"
+
+    - name: Other agent change (not throttled)
+      condition: >-
+        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        and event.body.detail.errorCode is not defined
+      action:
+        run_job_template:
+          name: AI Governance - Process Change Event
+          organization: AI Governance
+          job_args:
+            extra_vars:
+              aigov_change_event: "{{ event.body }}"
+
+    - name: IAM role permissions changed
+      condition: >-
+        event.body.detail.eventSource == "iam.amazonaws.com"
+        and event.body.detail.errorCode is not defined
+        and event.body.detail.requestParameters.roleName is defined
+      throttle:
+        once_within: 2 minutes
+        group_by_attributes:
+          - event.body.detail.requestParameters.roleName
+      action:
+        run_job_template:
+          name: AI Governance - Process Change Event
+          organization: AI Governance
+          job_args:
+            extra_vars:
+              aigov_change_event: "{{ event.body }}"

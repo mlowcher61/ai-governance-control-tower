@@ -1,3 +1,4 @@
+---
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AI Governance Control Tower - forwards IAM role permission changes from the us-east-1 default event bus (the only bus

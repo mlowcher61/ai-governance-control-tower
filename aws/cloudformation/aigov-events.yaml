@@ -1,3 +1,4 @@
+---
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   AI Governance Control Tower - change-event plumbing in the agent Region (task T3.01, docs/plan/05 section 2).
