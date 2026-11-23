@@ -790,6 +790,40 @@ flag is enabled; Execute's own prechecks still refuse anything not approved thro
 
 ---
 
+## 2026-11-23 - STAGE 3 - T3.01 AWS event plumbing
+
+**Built.**
+- `aws/cloudformation/aigov-events.yaml` (agent Region, stack `aigov-events`):
+  - queue `aigov-change-events`, with SSE, 4-day retention, and a DLQ after 5 receives;
+  - EventBridge rules `aigov-agent-changes` (Bedrock Agents and AgentCore configuration calls) and `aigov-iam-changes`
+    (role permission changes), with a queue policy limited to those two rules;
+  - IAM user `aigov-eda-reader`, allowed only to receive and delete messages on the queue. Its key will be issued
+    straight into the EDA credential in T3.02.
+- `aws/cloudformation/aigov-events-iam-forwarder.yaml` (us-east-1): IAM's CloudTrail events reach only the us-east-1
+  bus, so they are forwarded to the agent Region's default bus. An EventBridge rule can target SQS only in its own
+  Region.
+- **Deploy AWS Event Plumbing**: checks a trail is logging (EventBridge needs one), then deploys both stacks.
+- **Capture Change Events**: reads the queue and summarizes each event. Options: `aigov_capture_bodies` publishes the
+  bodies with the account ID masked; `aigov_capture_delete` drains the queue.
+- Module `sqs_messages_info` (certified amazon.aws has no SQS module) and filter `change_event_summary` (source, name,
+  caller, target), with unit tests (96 in total).
+
+**Results on mk6hb.**
+- Event plumbing deployed (job 863). CloudTrail: the organization trail `RHOrganization` is multi-Region and logging.
+- **Set Demo Scenario** and **Reset Demo Agents** generated changes. Within a minute the queue held four real events
+  (job 868), and the DLQ was empty:
+  - AgentCore `TagResource` and `UntagResource` (`source: aws.bedrock-agentcore`,
+    `eventSource: bedrock-agentcore.amazonaws.com`);
+  - IAM `AttachRolePolicy` and `DetachRolePolicy` (`aws.iam`, forwarded from us-east-1).
+
+  The values the plan had marked unconfirmed are now confirmed for AgentCore and IAM. Bedrock Agents Classic values
+  cannot be captured (no Classic agents).
+- The bodies were saved as fixtures with the account ID, IP and key IDs masked (`eda/fixtures/events/`), and the queue
+  was drained (job 872).
+- The reset also returned the demo to its baseline (findings reset); run WF-01 to detect again.
+
+---
+
 ## Open items (2026-11-23)
 
 | Item | Notes |
