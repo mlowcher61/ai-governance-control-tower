@@ -737,7 +737,7 @@ so the incident is resolved). This also proves the rejected branch, so it belong
 | F-15 not allowlisted | Pass (`75324c1a`) |
 | F-16 detect-only default | Pass (`77d0f704`) |
 | F-17 stale finding | Pass (`80b39abb`) |
-| F-18 direct launch bypass | Deferred to T2.11 (AAP RBAC and the policy-as-code guard), per the user's choice |
+| F-18 enforcement against administrators | Enable `FEATURE_POLICY_AS_CODE_ENABLED` in the AAP installation (AAP administrator); then rerun the direct-launch test: an admin launch of Execute must be refused with the guard's violation message. Until then superusers can launch Execute/Rollback directly (Execute's prechecks still refuse anything not approved) |
 
 **Left behind by the tests.**
 - ServiceNow test incidents in `ven07621` (INC0011665 is resolved). Close the others.
@@ -745,6 +745,48 @@ so the incident is resolved). This also proves the rejected branch, so it belong
 - The test credential "AI Governance - Invalid LLM Key (test)" and the two test workflows in AO.
 - The demo profile is published with a 1-minute cooldown. Republish with `aigov_policy_profile: demo` (60 minutes) or
   `default` (remediation off).
+
+---
+
+## 2026-11-23 - T2.11 AAP launch guard and RBAC (enforcement pending)
+
+**Built.**
+- **Policy `aap.remediation_guard`** (`policies/governance/aap/remediation_guard.rego`, settings `config.aap_guard`,
+  7 tests, 91 OPA tests in total). AAP policy-as-code asks it before launching Execute or Rollback Remediation. It
+  refuses unless:
+  - the launcher is `svc-aigov-ao` or in the **AI Governance - Break Glass** team;
+  - the extra variables are the expected ones;
+  - remediation is enabled.
+
+  Refusals carry a violation message.
+- **Config as code** (`aap_config/group_vars/all/access.yml`):
+  - the AAP user `svc-aigov-ao` and the break-glass team;
+  - RBAC: `svc-aigov-ao` may run exactly the templates the AO workflows use; the team may run Execute and Rollback;
+  - AAP's policy-as-code connection pointed at the governance OPA;
+  - the guard path on Execute and Rollback, set through the API because the certified modules do not manage
+    `opa_query_path`.
+- **Issue AO Service Account** job: sets a random password for `svc-aigov-ao` in AAP and writes it into the AO credential
+  **AI Governance - AAP Service Account**. All governance workflows now launch with it instead of an administrator.
+- **Publish Governance Policies** checks the guard on the live server on every publish.
+
+**Findings and decisions.**
+- AAP's policy-as-code setting pointed at `opa.policy-as-code.svc.cluster.local`, but that namespace does not exist.
+  The governance OPA is the only OPA in the cluster, and no job template, organization or inventory used a policy path.
+  User decision: point AAP at the governance OPA (configurable with `aigov_pac_manage` and `aigov_pac_opa_host`).
+- **`FEATURE_POLICY_AS_CODE_ENABLED` is not enabled in this AAP 2.7.** It is not among the platform's feature flags, so
+  AAP never asks OPA: an administrator launched Execute directly (job 851; it refused harmlessly in its own precheck).
+  User decision: document it, and enforce later. Enabling the flag is an AAP installation change.
+
+**Results on mk6hb.**
+- Config as code applied (user, team, RBAC, OPA connection, guard path on Execute 117 and Rollback 119).
+- Policies published with the guard (job 845). AO credential issued (job 848). Workflows reloaded (job 850).
+- **WF-01 ran entirely as `svc-aigov-ao`** (execution `3bf07059`, jobs 853, 855, 856).
+- Live guard check (job 859): admin **refused** ("admin may not launch AI Governance - Execute Remediation: only
+  svc-aigov-ao or a member of AI Governance - Break Glass may"); `svc-aigov-ao` **allowed**.
+- Execute and Rollback access lists: `svc-aigov-ao` (Execute) and AAP superusers only.
+
+**F-18 status.** Non-administrators cannot launch Execute or Rollback (RBAC). AAP superusers still can until the feature
+flag is enabled; Execute's own prechecks still refuse anything not approved through the recorded lifecycle (job 851).
 
 ---
 

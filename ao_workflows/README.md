@@ -130,3 +130,13 @@ advisory text recorded on the findings; it cannot change a decision, severity or
   - credential use
 
 Run `configure_ao.yml -e aigov_ao_strict=true` to fail while any item is still open.
+
+## AAP identity of the workflows (T2.11)
+
+The workflows launch AAP job templates with the AO credential **AI Governance - AAP Service Account**
+(`aigov_ao_aap_credential` in `config/connections.yml`), which holds the AAP user `svc-aigov-ao`. That user may run only
+the templates the workflows use, and the AAP launch guard admits only it (or the break-glass team) to Execute and
+Rollback Remediation. Create or rotate the credential with the job template **AI Governance - Issue AO Service Account**
+(it sets a new random password in AAP and in AO; the password is never printed or stored in git), then run
+**AI Governance - Apply AO Workflows**.
+

@@ -484,6 +484,13 @@ Policy `aap.remediation_guard` is attached to the **Execute Remediation** and **
 
 This blocks someone who launches the template directly in AAP and bypasses AO.
 
+**As built (T2.11, AAP 2.7 controller 4.8.13):** the policy is `policies/governance/aap/remediation_guard.rego` in the governance OPA
+(query path `aap/remediation_guard/decision`, settings `config.aap_guard`). Config as code points AAP's policy-as-code connection at
+that OPA and sets the path on Execute and Rollback; AO launches as `svc-aigov-ao`. On this AAP the feature flag
+`FEATURE_POLICY_AS_CODE_ENABLED` is not enabled (it is not listed among the platform's feature flags), so AAP does not ask OPA
+yet: the guard is verified live by the publish job, and enforcement starts once an AAP administrator enables the flag in the
+installation.
+
 ## 8. Human approval design
 
 | Aspect | Design |
