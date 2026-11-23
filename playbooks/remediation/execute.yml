@@ -143,6 +143,8 @@
                  'The execution role changed since the plan was approved: ' ~ (aigov_drift | join('; ')) ~ '. Plan again.' }}
             quiet: true
 
+        # remediation_attempts counts the attempts BEFORE this remediation: begin_remediation already counted this one,
+        # and counting it again would deny a remediation planned on its last allowed attempt (found in T2.12).
         - name: Ask OPA again whether the action is authorized
           ansible.builtin.uri:
             url: "{{ aigov_opa_url }}/v1/data/governance/remediation/authz/decision"
@@ -154,7 +156,8 @@
                   {{ {'governance_run_id': aigov_governance_run_id, 'finding_id': aigov_ctx.finding_id, 'policy_id': aigov_ctx.policy_id,
                       'severity': aigov_ctx.severity, 'finding_type': aigov_ctx.finding_type, 'environment': aigov_ctx.environment,
                       'account_ref': aigov_ctx.account_ref, 'platform': aigov_ctx.platform,
-                      'remediation_attempts': aigov_ctx.remediation_attempts, 'cooldown_active': aigov_ctx.cooldown_active,
+                      'remediation_attempts': [(aigov_rem.attempt_number | int) - 1, 0] | max,
+                      'cooldown_active': aigov_ctx.cooldown_active,
                       'exempt': aigov_ctx.exempt,
                       'applicable_actions': aigov_now.identity | mlowcher61.ai_governance.remediation_applicable_actions(
                                               aigov_admin_arns, aigov_ctx.platform)} }}
