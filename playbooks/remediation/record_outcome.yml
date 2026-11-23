@@ -42,6 +42,7 @@
                                      denied, assessment_error, halted]
     aigov_servicenow_resolve_outcomes: [remediated, no_longer_detected]
     aigov_servicenow_assignment_group: ""
+    aigov_opa_url: http://opa.ai-governance.svc:8181
   tasks:
     - name: Check the inputs
       ansible.builtin.assert:
@@ -84,6 +85,15 @@
           {{ aigov_rem is defined and aigov_rem.status in ['failed', 'verification_failed']
              and (aigov_rem.pre_state | default({}, true)).identity is defined }}
 
+    # The cooldown length is a governance setting (data.governance.config.remediation.cooldown_minutes, published to OPA);
+    # without it the database default (60 minutes) applies.
+    - name: Read the cooldown length from the published policy settings
+      ansible.builtin.uri:
+        url: "{{ aigov_opa_url }}/v1/data/governance/config/remediation/cooldown_minutes"
+        status_code: [200, 404]
+      register: aigov_cooldown_cfg
+      failed_when: false
+
     - name: Record the outcome
       ansible.builtin.include_role:
         name: mlowcher61.ai_governance.inventory_api
@@ -95,7 +105,9 @@
           {{ {'governance_run_id': aigov_governance_run_id, 'finding_id': aigov_finding, 'outcome': aigov_final,
               'reasons': ([aigov_reason] if aigov_reason | length > 0 else [])
                          + ([('remediation ' ~ aigov_rem.status)] if aigov_rem is defined else [])}
-             | combine({'remediation_id': aigov_remediation_id} if aigov_rem is defined else {}) }}
+             | combine({'remediation_id': aigov_remediation_id} if aigov_rem is defined else {})
+             | combine({'cooldown_minutes': aigov_cooldown_cfg.json.result | int}
+                       if (aigov_cooldown_cfg.json | default({}, true)).result is defined else {}) }}
 
     - name: Keep the outcome response
       ansible.builtin.set_fact:

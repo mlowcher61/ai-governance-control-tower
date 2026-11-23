@@ -300,6 +300,7 @@ aigov_remediation_templates:
     ask_variables_on_launch: true
     timeout: 300
     extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
       aigov_governance_run_id: ""
       aigov_finding_id: ""
       aigov_remediation_id: ""
