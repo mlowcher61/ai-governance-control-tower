@@ -22,6 +22,27 @@
         fail_msg: Attach the AAP credential of type "OpenShift or Kubernetes API Bearer Token" to this job template.
         quiet: true
 
+    - name: Check whether the policy-as-code namespace exists
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: "{{ aigov_pac_namespace }}"
+      register: aigov_pac_ns
+
+    - name: Find services named opa in any namespace
+      kubernetes.core.k8s_info:
+        kind: Service
+        field_selectors: [metadata.name=opa]
+      register: aigov_opa_services
+      failed_when: false
+
+    - name: Show the namespace and the opa services (read-only)
+      ansible.builtin.debug:
+        msg:
+          namespace_exists: "{{ aigov_pac_ns.resources | length > 0 }}"
+          opa_services: >-
+            {{ aigov_opa_services.resources | default([]) | map(attribute='metadata.namespace') | list }}
+          cluster_wide_read_error: "{{ aigov_opa_services.msg | default('') }}"
+
     - name: Read the policy-as-code OPA deployments, services and ConfigMaps
       kubernetes.core.k8s_info:
         kind: "{{ item }}"
