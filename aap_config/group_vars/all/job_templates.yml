@@ -34,6 +34,27 @@ aigov_aws_templates:
       aigov_test_fault_deny_detach: false
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Deploy AWS Event Plumbing
+    description: "T3.01 - CloudTrail check, EventBridge rules (agent Region + us-east-1 IAM forwarder), SQS queue and DLQ, EDA reader user"
+    playbook: playbooks/aws/deploy_event_plumbing.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Capture Change Events
+    description: "T3.01 - read the change-event queue and summarize each event (source, name, caller, target); optionally delete them"
+    playbook: playbooks/aws/capture_change_events.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_capture_max: 50
+      aigov_capture_delete: false
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Deploy Demo Agents
     description: "T0.07 - deploy the four demo Amazon Bedrock AgentCore runtimes (CloudFormation, direct code deployment)"
     playbook: playbooks/demo/deploy_demo_agents.yml

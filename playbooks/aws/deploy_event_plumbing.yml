@@ -1,0 +1,86 @@
+---
+# AI Governance - Deploy AWS Event Plumbing (task T3.01; docs/plan/05 section 2)
+#
+# Change events for AI agents reach Event-Driven Ansible through AWS:
+#   CloudTrail (management events) -> EventBridge default bus -> rules -> SQS queue aigov-change-events (+ DLQ)
+# IAM is a global service whose CloudTrail events reach only the us-east-1 bus, so a forwarder stack there sends IAM
+# role permission changes to the agent Region's bus. Stacks: aigov-events (agent Region) and aigov-events-iam-forwarder
+# (us-east-1). EventBridge only receives these events when a CloudTrail trail is logging: checked first.
+#
+# Credentials: the AWS bootstrap credential.
+- name: AI Governance - deploy the AWS event plumbing
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_iam_events_region: us-east-1
+    aigov_events_stack_name: aigov-events
+    aigov_forwarder_stack_name: aigov-events-iam-forwarder
+    aigov_cfn_dir: "{{ playbook_dir }}/../../aws/cloudformation"
+  tasks:
+    - name: Read the CloudTrail trails
+      amazon.aws.cloudtrail_info:
+        region: "{{ aigov_aws_region }}"
+      register: aigov_trails
+
+    - name: Check a trail records management events in both Regions
+      vars:
+        aigov_logging: >-
+          {{ aigov_trails.trail_list | selectattr('is_logging', 'defined') | selectattr('is_logging') | list }}
+      ansible.builtin.assert:
+        that:
+          - aigov_logging | length > 0
+          - >-
+            aigov_logging | selectattr('is_multi_region_trail') | list | length > 0
+            or (aigov_logging | selectattr('home_region', 'equalto', aigov_aws_region) | list | length > 0
+                and aigov_logging | selectattr('include_global_service_events') | list | length > 0)
+        fail_msg: >-
+          No CloudTrail trail is logging management events for {{ aigov_aws_region }} and IAM (global) events. EventBridge
+          only receives "AWS API Call via CloudTrail" events while a trail is logging. Create a multi-Region trail (or ask
+          your AWS administrator), then run this job again. Trails found:
+          {{ aigov_trails.trail_list | map(attribute='name') | list }}.
+        success_msg: >-
+          CloudTrail logging: {{ aigov_logging | map(attribute='name') | list }}
+          (multi-Region: {{ aigov_logging | map(attribute='is_multi_region_trail') | list }})
+
+    - name: Deploy the queue, the dead-letter queue, the rules and the EDA reader user (agent Region)
+      amazon.aws.cloudformation:
+        stack_name: "{{ aigov_events_stack_name }}"
+        state: present
+        region: "{{ aigov_aws_region }}"
+        template_body: "{{ lookup('ansible.builtin.file', aigov_cfn_dir ~ '/aigov-events.yaml') }}"
+        capabilities: [CAPABILITY_NAMED_IAM]
+        tags:
+          aigov:component: events
+          aigov:managed-by: ai-governance-control-tower
+      register: aigov_events_stack
+
+    - name: Deploy the IAM event forwarder (us-east-1)
+      amazon.aws.cloudformation:
+        stack_name: "{{ aigov_forwarder_stack_name }}"
+        state: present
+        region: "{{ aigov_iam_events_region }}"
+        template_body: "{{ lookup('ansible.builtin.file', aigov_cfn_dir ~ '/aigov-events-iam-forwarder.yaml') }}"
+        template_parameters:
+          TargetRegion: "{{ aigov_aws_region }}"
+        capabilities: [CAPABILITY_NAMED_IAM]
+        tags:
+          aigov:component: events
+          aigov:managed-by: ai-governance-control-tower
+      register: aigov_forwarder_stack
+
+    - name: Show the event plumbing
+      ansible.builtin.debug:
+        msg:
+          queue_url: "{{ aigov_events_stack.stack_outputs.QueueUrl }}"
+          dead_letter_queue_url: "{{ aigov_events_stack.stack_outputs.DeadLetterQueueUrl }}"
+          eda_reader_user: "{{ aigov_events_stack.stack_outputs.EdaReaderUserName }}"
+          iam_forward_rule: "{{ aigov_forwarder_stack.stack_outputs.ForwardRuleArn }}"
+
+    - name: Publish the queue URL
+      ansible.builtin.set_stats:
+        data:
+          queue_url: "{{ aigov_events_stack.stack_outputs.QueueUrl }}"
+          dead_letter_queue_url: "{{ aigov_events_stack.stack_outputs.DeadLetterQueueUrl }}"
+        per_host: false

@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AI Governance Control Tower - change-event plumbing in the agent Region (task T3.01, docs/plan/05 section 2).
+  CloudTrail management events for Amazon Bedrock Agents, AgentCore and IAM reach the default event bus (IAM events are
+  forwarded here from us-east-1 by the aigov-events-iam-forwarder stack) and are queued for Event-Driven Ansible.
+
+Parameters:
+  QueueName:
+    Type: String
+    Default: aigov-change-events
+  MessageRetentionSeconds:
+    Type: Number
+    Default: 345600
+    Description: How long events wait in the queue when EDA is down (default 4 days).
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${QueueName}-dlq"
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  ChangeEventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref QueueName
+      MessageRetentionPeriod: !Ref MessageRetentionSeconds
+      VisibilityTimeout: 60
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  AgentChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aigov-agent-changes
+      Description: Amazon Bedrock Agents and AgentCore configuration changes (CloudTrail management events)
+      State: ENABLED
+      EventPattern:
+        detail-type: ["AWS API Call via CloudTrail"]
+        detail:
+          eventSource: ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+          eventName:
+            - CreateAgent
+            - UpdateAgent
+            - DeleteAgent
+            - PrepareAgent
+            - CreateAgentActionGroup
+            - UpdateAgentActionGroup
+            - DeleteAgentActionGroup
+            - AssociateAgentKnowledgeBase
+            - UpdateAgentKnowledgeBase
+            - DisassociateAgentKnowledgeBase
+            - CreateAgentAlias
+            - UpdateAgentAlias
+            - DeleteAgentAlias
+            - AssociateAgentCollaborator
+            - DisassociateAgentCollaborator
+            - TagResource
+            - UntagResource
+            - CreateAgentRuntime
+            - UpdateAgentRuntime
+            - DeleteAgentRuntime
+      Targets:
+        - Id: change-event-queue
+          Arn: !GetAtt ChangeEventQueue.Arn
+
+  IamChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aigov-iam-changes
+      Description: IAM role permission changes (forwarded from the us-east-1 default bus)
+      State: ENABLED
+      EventPattern:
+        detail-type: ["AWS API Call via CloudTrail"]
+        detail:
+          eventSource: ["iam.amazonaws.com"]
+          eventName:
+            - AttachRolePolicy
+            - DetachRolePolicy
+            - PutRolePolicy
+            - DeleteRolePolicy
+            - PutRolePermissionsBoundary
+            - DeleteRolePermissionsBoundary
+            - UpdateAssumeRolePolicy
+            - CreatePolicyVersion
+            - SetDefaultPolicyVersion
+      Targets:
+        - Id: change-event-queue
+          Arn: !GetAtt ChangeEventQueue.Arn
+
+  ChangeEventQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref ChangeEventQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowGovernanceRules
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sqs:SendMessage
+            Resource: !GetAtt ChangeEventQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: [!GetAtt AgentChangeRule.Arn, !GetAtt IamChangeRule.Arn]
+
+  # Event-Driven Ansible reads the queue with this user's access key (issued by the job
+  # "AI Governance - Issue EDA Queue Credential" straight into the EDA credential; never stored in Git).
+  EdaReaderUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: aigov-eda-reader
+      Path: /aigov/
+      Policies:
+        - PolicyName: aigov-eda-read-change-events
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:GetQueueUrl]
+                Resource: !GetAtt ChangeEventQueue.Arn
+      Tags:
+        - Key: aigov:component
+          Value: events
+
+Outputs:
+  QueueUrl:
+    Value: !Ref ChangeEventQueue
+  QueueArn:
+    Value: !GetAtt ChangeEventQueue.Arn
+  DeadLetterQueueUrl:
+    Value: !Ref DeadLetterQueue
+  EdaReaderUserName:
+    Value: !Ref EdaReaderUser

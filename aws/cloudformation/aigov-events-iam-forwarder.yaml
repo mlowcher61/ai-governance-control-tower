@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  AI Governance Control Tower - forwards IAM role permission changes from the us-east-1 default event bus (the only bus
+  that receives IAM's CloudTrail events) to the default bus of the agent Region (task T3.01, docs/plan/05 section 2.3).
+
+Parameters:
+  TargetRegion:
+    Type: String
+    Default: us-west-1
+    Description: Agent Region whose default event bus receives the IAM events (stack aigov-events).
+
+Resources:
+  ForwardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "aigov-events-forward-${TargetRegion}"
+      Path: /aigov/
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: put-events-to-agent-region
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Sub "arn:${AWS::Partition}:events:${TargetRegion}:${AWS::AccountId}:event-bus/default"
+
+  IamForwardRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: aigov-iam-changes-forward
+      Description: Forward IAM role permission changes to the agent Region
+      State: ENABLED
+      EventPattern:
+        source: ["aws.iam"]
+        detail-type: ["AWS API Call via CloudTrail"]
+        detail:
+          eventSource: ["iam.amazonaws.com"]
+          eventName:
+            - AttachRolePolicy
+            - DetachRolePolicy
+            - PutRolePolicy
+            - DeleteRolePolicy
+            - PutRolePermissionsBoundary
+            - DeleteRolePermissionsBoundary
+            - UpdateAssumeRolePolicy
+            - CreatePolicyVersion
+            - SetDefaultPolicyVersion
+      Targets:
+        - Id: agent-region-bus
+          Arn: !Sub "arn:${AWS::Partition}:events:${TargetRegion}:${AWS::AccountId}:event-bus/default"
+          RoleArn: !GetAtt ForwardRole.Arn
+
+Outputs:
+  ForwardRuleArn:
+    Value: !GetAtt IamForwardRule.Arn

@@ -1,0 +1,60 @@
+---
+# AI Governance - Capture Change Events (task T3.01; docs/plan/05 section 2.5)
+#
+# Reads the change-event queue and reports, for each event, where it came from (source, eventSource, eventName, the
+# calling principal and the target), so the EventBridge patterns can be checked against REAL events. With
+# aigov_capture_delete=true the read events are removed (otherwise they become visible again for EDA).
+#
+# Credentials: the AWS bootstrap credential.
+- name: AI Governance - capture change events
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_events_stack_name: aigov-events
+    aigov_capture_max: 50
+    aigov_capture_delete: false
+  tasks:
+    - name: Read the event plumbing stack
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ aigov_events_stack_name }}"
+        region: "{{ aigov_aws_region }}"
+      register: aigov_events_stack
+
+    - name: Read the queue
+      mlowcher61.ai_governance.sqs_messages_info:
+        region: "{{ aigov_aws_region }}"
+        queue_url: "{{ aigov_events_stack.cloudformation[aigov_events_stack_name].stack_outputs.QueueUrl }}"
+        max_messages: "{{ aigov_capture_max | int }}"
+        visibility_timeout: 5
+        delete: "{{ aigov_capture_delete | bool }}"
+      register: aigov_captured
+
+    - name: Read the dead-letter queue (count only)
+      mlowcher61.ai_governance.sqs_messages_info:
+        region: "{{ aigov_aws_region }}"
+        queue_url: "{{ aigov_events_stack.cloudformation[aigov_events_stack_name].stack_outputs.DeadLetterQueueUrl }}"
+        max_messages: 1
+        wait_seconds: 0
+        visibility_timeout: 1
+      register: aigov_dlq
+
+    - name: Summarize the events
+      ansible.builtin.set_fact:
+        aigov_event_summary: >-
+          {{ aigov_captured.messages | map(attribute='body') | map('mlowcher61.ai_governance.change_event_summary') | list }}
+
+    - name: Show the events
+      ansible.builtin.debug:
+        msg:
+          in_queue_before: "{{ aigov_captured.approximate_messages }}"
+          read: "{{ aigov_captured.messages | length }}"
+          deleted: "{{ aigov_captured.deleted }}"
+          dead_letter_queue: "{{ aigov_dlq.approximate_messages }}"
+          events: "{{ aigov_event_summary }}"
+
+    - name: Publish the summary
+      ansible.builtin.set_stats:
+        data: {events: "{{ aigov_event_summary }}", dead_letter_queue: "{{ aigov_dlq.approximate_messages }}"}
+        per_host: false
