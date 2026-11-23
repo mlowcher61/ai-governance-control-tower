@@ -308,6 +308,17 @@ aigov_remediation_templates:
       aigov_reason: ""
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Publish AAP Launch Guard
+    description: "T2.11 - add the launch guard policy (aap.remediation_guard) to AAP's policy-as-code OPA and attach it to Execute and Rollback"
+    playbook: playbooks/policies/publish_aap_guard.yml
+    credentials:
+      - "{{ aigov_openshift_credential }}"
+      - "{{ aigov_aap_credential }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_guard_inspect_only: true
+    <<: *aigov_jt_defaults
+
 # T0.06: governance platform services on OpenShift. Needs an existing AAP credential of type
 # "OpenShift or Kubernetes API Bearer Token" (aigov_openshift_credential).
 aigov_platform_templates:

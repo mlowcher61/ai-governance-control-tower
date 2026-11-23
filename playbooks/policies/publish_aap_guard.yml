@@ -1,0 +1,47 @@
+---
+# AI Governance - Publish AAP Launch Guard (task T2.11; docs/plan/04 section 7.3, failure case F-18)
+#
+# AAP policy-as-code asks ONE OPA (Settings > Policy as code, OPA_HOST) before a job launches. In this environment
+# that OPA already exists (namespace policy-as-code), so the guard policy is ADDED to it; AAP's global setting and the
+# other policies in that OPA are not touched.
+#
+# Step 1 (this version): inspect - read how that OPA loads policies (read-only).
+#
+# Credentials: the OpenShift credential (aigov_openshift_credential), the AAP credential (aigov_aap_credential).
+- name: AI Governance - publish the AAP launch guard
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_pac_namespace: policy-as-code
+    aigov_guard_inspect_only: true
+  tasks:
+    - name: Check the OpenShift credential is attached
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.env', 'K8S_AUTH_HOST') | length > 0
+        fail_msg: Attach the AAP credential of type "OpenShift or Kubernetes API Bearer Token" to this job template.
+        quiet: true
+
+    - name: Read the policy-as-code OPA deployments, services and ConfigMaps
+      kubernetes.core.k8s_info:
+        kind: "{{ item }}"
+        namespace: "{{ aigov_pac_namespace }}"
+      loop: [Deployment, Service, ConfigMap]
+      register: aigov_pac
+
+    - name: Show how the policy-as-code OPA loads policies (read-only)
+      ansible.builtin.debug:
+        msg:
+          deployments: >-
+            {{ aigov_pac.results[0].resources | map(attribute='metadata.name') | zip(
+                 aigov_pac.results[0].resources | map(attribute='spec.template.spec.containers')
+                 | map('map', 'combine', {}) | map('map', attribute='args', default=[]) | list,
+                 aigov_pac.results[0].resources | map(attribute='spec.template.spec.containers')
+                 | map('map', attribute='image') | list,
+                 aigov_pac.results[0].resources | map(attribute='spec.template.spec.volumes', default=[])
+                 | map('map', 'dict2items') | list) | list }}
+          services: "{{ aigov_pac.results[1].resources | map(attribute='metadata.name') | list }}"
+          configmaps: >-
+            {{ aigov_pac.results[2].resources | map(attribute='metadata.name') | zip(
+                 aigov_pac.results[2].resources | map(attribute='metadata.labels', default={}),
+                 aigov_pac.results[2].resources | map(attribute='data', default={}) | map('list')) | list }}
