@@ -667,7 +667,88 @@ so the incident is resolved). This also proves the rejected branch, so it belong
 
 ---
 
-## Open items (2026-11-22)
+## 2026-11-23 - T2.12 Failure suite, Stage 2 end-to-end test and rehearsal - STAGE 2 COMPLETE
+
+**Built.**
+- **AI Governance - Stage 2 Automated Test** (`playbooks/e2e/stage2_automated.yml`). It covers every WF-02 branch and
+  failure case that needs no human, run through automation orchestrator and checked against expected step results:
+  - F-16 detect-only;
+  - missing evidence, assessment error, no automated fix;
+  - F-15 not allowlisted, simulate, F-17 stale finding;
+  - F-05 invalid AI, F-04 AI step failure;
+  - the automatic route with F-12 concurrency and F-06 prompt injection.
+
+  It resets the demo before and after, and never decides an approval: runs paused at one are cancelled.
+- **Set Demo Scenario** (demo reset role): `development_environment`, `required_tags`.
+- Publish options `aigov_demo_mode`, `aigov_demo_allowed_accounts` and `aigov_demo_cooldown_minutes`.
+- **Plan preview mode** (`aigov_plan_preview`).
+- CloudFormation **TEST switch** `TestFaultDenyDetach` (default off) for F-09.
+- Test workflows: the AI failure probe, and a generated 120-second WF-02 copy (CI checks it is current; not needed in
+  the end, see F-08).
+- Decisions (user): the CFN test switch for F-09, a separate AO test credential for F-04, and F-18 left to T2.11
+  (13-open-questions section 1.2).
+
+**Defects found and fixed by the tests.**
+1. **An AI outage failed WF-02** (F-04, job 468): AO continues past a failed AI step, but
+   `${activity_recommend.result.content}` then fails to resolve. WF-02 passes the whole step output, and Plan extracts
+   the content.
+2. **The successful AI output was judged invalid** (job 565): its wrapper has no `invocation_id`. Plan now recognizes the
+   AO output by its shape. The automatic route had been forced to approval; this failed safe.
+3. **The cooldown setting was ignored**: Record Remediation Outcome never passed `cooldown_minutes`, so the database
+   default of 60 minutes always applied. It now reads the published setting.
+4. **A remediation planned on its last allowed attempt could never execute** (job 781). Execute's OPA re-check counted
+   the current attempt. It now passes the attempts made before it. This failed safe (refused, escalated).
+5. Execute reported `changed: no` after a partial failure. It now reports what was changed.
+6. Test expectation: F-12's second plan can be refused by the finding status or by the database rule; both are correct.
+
+**Results.**
+- Automated test: **13 of 13 cases pass** (job 653; first runs 468 and 565 found defects 1 and 2).
+- Interactive session with the user's decisions in AO:
+  - F-08 (`6156f6bd`): expired on the real 1-hour window;
+  - F-07 (`32d3a298`): rejected;
+  - F-09/A2-6 (`837563b6`): failed halfway, then approved rollback, restored;
+  - A2-2 (`44f55f3e`): approved, executed, verified, resolved.
+
+  See `ao_workflows/reference/VERIFIED.md`.
+
+| Acceptance | Result | Evidence |
+|---|---|---|
+| A2-1 all 9 branches | **Pass** | compliant `80b39abb`, noncompliant/approval/success `44f55f3e`, missing evidence `f656f904`, auto `2e3ab0e1`, rejected `32d3a298`, remediation failed `837563b6`, verification failed `2e3ab0e1` (also `292eac34`) |
+| A2-2 demo scenario | **Pass** | `44f55f3e`: AdministratorAccess replaced, IAM-001 pass, finding resolved (jobs 831-836) |
+| A2-3 safety F-04 to F-18 | **Pass, with three exceptions** | see below: F-10 variant, F-13 (Stage 3), F-18 (T2.11) |
+| A2-4 audit completeness | **Pass** | `audit_complete: yes` and hash chain intact on every outcome, including the demo run (job 836) |
+| A2-5 timing ≤ 6 min | **Pass** | 4.8 minutes excluding the 84-second approval |
+| A2-6 rollback | **Pass** | `837563b6`: rollback restored the pre-state, confirmed by re-reading AWS (job 825) |
+| A2-7 WF-02 importability | **Pass** | `ao_workflows/reference/VERIFIED.md` |
+
+| Failure case | Result |
+|---|---|
+| F-04 AI step failure | Pass: AO continues, Plan requires approval (`efc4fc94`) |
+| F-05 invalid AI | Pass: valid AI gives `auto`, invalid gives `approval`, `ai_agrees: invalid` (jobs 711, 713) |
+| F-06 prompt injection | Pass: the agent's description never reaches the AI step input (`2e3ab0e1`) |
+| F-07 approval rejected | Pass: recorded from AO, cooldown, incident updated (`32d3a298`) |
+| F-08 approval expired | Pass: treated as rejection, recorded `expired` (`6156f6bd`, real 1-hour window) |
+| F-09 partial failure | Pass: attach succeeded, detach denied, `failed`, post-state recorded, rollback offered and done (`837563b6`) |
+| F-10 verification failure | Variant: verification failed naturally (quarantine tags do not register an agent: `2e3ab0e1`, `292eac34`). The second-inline-policy injection was not run, because no governance role may write inline policies |
+| F-11 IAM propagation | Pass: Verify's probe retries; A2-2 verified with all probes denied |
+| F-12 concurrent runs | Pass: the second plan is refused (`3710698a`) |
+| F-13 remediation loop | Not applicable yet: the EDA rulebook is Stage 3 (T3.02) |
+| F-14 max attempts | Pass: OPA denied `maximum attempts (3) reached` (job 781), plus the OPA unit tests |
+| F-15 not allowlisted | Pass (`75324c1a`) |
+| F-16 detect-only default | Pass (`77d0f704`) |
+| F-17 stale finding | Pass (`80b39abb`) |
+| F-18 direct launch bypass | Deferred to T2.11 (AAP RBAC and the policy-as-code guard), per the user's choice |
+
+**Left behind by the tests.**
+- ServiceNow test incidents in `ven07621` (INC0011665 is resolved). Close the others.
+- Stale remediation records on findings the resets resolved (for example `d5d1a062`), until the Stage 3 sweeper exists.
+- The test credential "AI Governance - Invalid LLM Key (test)" and the two test workflows in AO.
+- The demo profile is published with a 1-minute cooldown. Republish with `aigov_policy_profile: demo` (60 minutes) or
+  `default` (remediation off).
+
+---
+
+## Open items (2026-11-23)
 
 | Item | Notes |
 |---|---|
@@ -679,7 +760,9 @@ so the incident is resolved). This also proves the rejected branch, so it belong
 | Demo profile published on mk6hb | Still on. `quick_helper_bot` IAM-001 was remediated and verified, so the demo is off its baseline and Check Inventory fails (job 331) until Reset Demo Environment runs. Republish with `aigov_policy_profile: default` to turn remediation off |
 | Manual approval recording | WF-02 records decisions from the AO approvals API; the manual source of Record Approval Decision remains for tests outside WF-02 (administrators only) |
 | Quarantine tags on `quick_helper_bot` | Remediation `a308dde1` (TAG-001) was executed and failed verification; its tags stay until a rollback or the next Reset Demo Environment |
-| WF-02 branches not shown live | `rejected`, automatic, simulate, compliant, and ServiceNow incident resolve: T2.12 (reject an IAM-001 run, then approve one after the cooldown) |
+| Stage 2 leftovers | ServiceNow test incidents to close; stale remediation records on reset findings (Stage 3 sweeper); demo profile with a 1-minute cooldown (republish for 60) |
+| F-18 direct launch bypass | T2.11: AAP RBAC so only the AO service account can launch Execute and Rollback, plus the policy-as-code guard |
+| F-10 inline-policy injection | Not run: no governance role may write inline policies; verification failure shown naturally instead |
 | ServiceNow incident INC0011650 | Opened by the T2.10 test for finding `48d2d805` (MDL-001, missing evidence); close it in ServiceNow when no longer needed |
 | OPA decision IDs | Empty in plan records until OPA decision logging is enabled; the bundle revision identifies the policy version |
 | Workstation `~/.ansible/collections` mock modules | Reinstall the real collections there if other projects need them |

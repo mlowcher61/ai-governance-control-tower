@@ -66,8 +66,34 @@ Behavior confirmed on this AO build:
 - `${activity_recommend.result.content}` (an object) reaches the AAP job as a dict.
 - Not needed: an execution ID expression. Approvals are matched by workflow, approval node and remediation ID.
 
-Not yet shown live: the `rejected` approval branch, the automatic route, the simulate route, and the compliant (stale
-finding) branch. See docs/progress-log.md.
+### Stage 2 acceptance runs (T2.12, 2026-11-22/23)
+
+| Branch / case | Execution | Result |
+|---|---|---|
+| Compliant (stale finding, F-17) | `80b39abb-bbca-4025-8d7c-df50a3d9c507` | reassess `compliant` -> outcome `no_longer_detected` |
+| Missing evidence | `f656f904-cc42-4a90-b0e3-c52286bab159` | outcome `missing_evidence` |
+| Assessment error | `25b58e13-3960-48d3-b019-c825b765b6be` | outcome `assessment_error` |
+| Detect-only default (F-16) | `77d0f704-2ce4-45cc-8458-72b03d24618f` | Plan `halt` -> outcome `detect_only` |
+| No automated fix | `58cff6f2-900e-4024-ab80-fcb1bad279d9` | outcome `denied` |
+| Account not allowlisted (F-15) | `75324c1a-8ea4-46eb-ae70-8efdc38fcb61` | outcome `denied` (allowlist) |
+| Simulate | `6bbadaaf-1846-43dc-9b06-a267db68c027` | route `simulate` -> outcome `simulated` |
+| **Automatic** -> verification failed -> rollback offered | `2e3ab0e1-bccd-4e95-aaa2-2a7b759992a4` | route `auto`, executed, `verification_failed`, rollback approval waiting (cancelled by the test) |
+| Concurrent run (F-12) | `3710698a-9d89-4251-b189-ec4b9c49c061` | second plan refused, outcome `halted` |
+| AI step failure (F-04) | `efc4fc94-6f71-40ae-8d00-01947f322409` (probe) | AO continued; Plan: no recommendation -> approval |
+| Approval expired (F-08) | `6156f6bd-395e-453b-a5b8-89b23ed0b768` | 1-hour window passed -> recorded `expired` from AO, outcome `expired`, incident opened |
+| **Rejected** (F-07) | `32d3a298-141b-4f65-a3d0-cde21400e527` | user rejected in AO -> recorded `rejected`, cooldown, incident updated |
+| **Remediation failed -> approved rollback** (F-09, A2-6) | `837563b6-29d1-4157-bfe2-092ed2ff1909` | attach succeeded, detach denied (test fault) -> `failed` -> user approved rollback -> `rolled_back` (pre-state re-read) |
+| **Success** (A2-2) | `44f55f3e-e831-49f8-b767-9edeee6f5ccd` | user approved -> executed -> `verified` -> finding resolved, ServiceNow incident resolved; 4.8 minutes excluding the approval |
+
+More behavior confirmed on this AO build:
+
+- An agentic step with `continue_on_failure` lets the run continue, but a later reference to a property it did not
+  produce (`${activity_recommend.result.content}`) fails that step. WF-02 passes the whole step output
+  (`${activity_recommend}`), which resolves on success and failure.
+- The whole AI step output reaches AAP as `{agent_type, id, result, status, timestamp}` on success and
+  `{error, output, status, invocation_id, ...}` on failure.
+- An expired approval is reported with the error "did not finish within 30 seconds (configured in the node Timeout
+  setting)", although the run waited the full `decision_window` (3600 s); the approval status is `expired`.
 
 ## Earlier proofs (T0.08)
 

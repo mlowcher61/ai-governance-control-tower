@@ -74,6 +74,7 @@ Details and evidence are in [../progress-log.md](../progress-log.md).
 | Approvals before WF-02 exists | **Record approvals with the interim AAP job Record Approval Decision** (admins only) rather than waiting for the AO approval step; the AO approval comes with WF-02 (T2.09) and T2.10 makes the job read decisions from the AO approvals API | Lets Execute Remediation be tested on its own now. User decision (2026-11-22); the user recorded the first approval (job 316) |
 | Remediations stranded by failed WF-02 runs | **Record the user's AO decision from AO, then execute, verify and record each with the AAP jobs; reset the demo and run WF-02 on fresh findings** | The approvals were real (given in AO), so finishing them keeps the record honest. User decisions (2026-11-22) |
 | WF-02 notification channel | **ServiceNow incidents** (one per finding, certified `servicenow.itsm`), credential AI Governance - ServiceNow | User decision (2026-11-22). Outcomes that need a person open or update the incident; a verified fix resolves it |
+| Stage 2 failure-suite approach (T2.12) | **F-09 through a CloudFormation test switch** (`TestFaultDenyDetach`, default off); **F-04 through a separate AO test credential and probe workflow**; **F-08 with a short-window test copy** (in the end shown on the real 1-hour window); **F-18 deferred to T2.11** | User decisions (2026-11-22) |
 
 ## 2. Assumptions
 

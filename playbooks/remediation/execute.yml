@@ -212,6 +212,10 @@
           ansible.builtin.set_fact:
             aigov_exec: >-
               {{ aigov_exec | combine({'status': 'refused' if aigov_phase == 'precheck' else 'failed',
+                                       'changed': 'yes' if (aigov_step1.changed | default(false)) or (aigov_step2.changed | default(false))
+                                                  or (aigov_boundary.changed | default(false)) or (aigov_tags.changed | default(false))
+                                                  or ((aigov_inline.results | default([])) | selectattr('changed') | list | length > 0)
+                                                  else 'no',
                                        'error_summary': ((ansible_failed_result.msg | default('unknown error')) | string)[:400]}) }}
 
         - name: Mark a refused remediation skipped (nothing was changed)
