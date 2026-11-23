@@ -53,6 +53,7 @@ aigov_aws_templates:
       aigov_aws_region: "{{ aigov_aws_region }}"
       aigov_capture_max: 50
       aigov_capture_delete: false
+      aigov_capture_bodies: false
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Deploy Demo Agents
