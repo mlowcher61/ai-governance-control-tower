@@ -1,0 +1,65 @@
+{
+  "account": "111122223333",
+  "detail": {
+    "awsRegion": "us-west-1",
+    "eventCategory": "Management",
+    "eventID": "1ef5a1ac-e986-4e30-8e21-4b6f15de6f68",
+    "eventName": "UntagResource",
+    "eventSource": "bedrock-agentcore.amazonaws.com",
+    "eventTime": "2026-11-23T16:17:31Z",
+    "eventType": "AwsApiCall",
+    "eventVersion": "1.11",
+    "managementEvent": true,
+    "readOnly": false,
+    "recipientAccountId": "111122223333",
+    "requestID": "8095af5c-9ccd-4390-909b-811fe464915d",
+    "requestParameters": {
+      "resourceArn": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/quick_helper_bot-nffoLj7JKN",
+      "tagKeys": "Environment"
+    },
+    "resources": [
+      {
+        "ARN": "arn:aws:bedrock-agentcore:us-west-1:111122223333:runtime/quick_helper_bot-nffoLj7JKN",
+        "accountId": "111122223333",
+        "type": "AWS::BedrockAgentCore::Runtime"
+      }
+    ],
+    "responseElements": {
+      "Access-Control-Expose-Headers": "x-amzn-ErrorType, x-amzn-RequestId, x-amzn-ErrorMessage, x-amzn-Trace-Id, x-amz-apigw-id, Date"
+    },
+    "sourceIPAddress": "198.51.100.10",
+    "tlsDetails": {
+      "cipherSuite": "TLS_AES_128_GCM_SHA256",
+      "keyExchange": "x25519",
+      "tlsVersion": "TLSv1.3"
+    },
+    "userAgent": "APN/1.0 Ansible/2.16.19 amazon.aws/11.5.0 Botocore/1.43.117",
+    "userIdentity": {
+      "accessKeyId": "ASIAEXAMPLEEXAMPLE00",
+      "accountId": "111122223333",
+      "arn": "arn:aws:sts::111122223333:assumed-role/AIGovDemoResetRole/aigov-demo-reset-867",
+      "principalId": "AROAEXAMPLEEXAMPLE00:aigov-demo-reset-867",
+      "sessionContext": {
+        "attributes": {
+          "creationDate": "2026-11-23T16:17:22Z",
+          "mfaAuthenticated": "false"
+        },
+        "sessionIssuer": {
+          "accountId": "111122223333",
+          "arn": "arn:aws:iam::111122223333:role/aigov/AIGovDemoResetRole",
+          "principalId": "AROAEXAMPLEEXAMPLE00",
+          "type": "Role",
+          "userName": "AIGovDemoResetRole"
+        }
+      },
+      "type": "AssumedRole"
+    }
+  },
+  "detail-type": "AWS API Call via CloudTrail",
+  "id": "099268cd-52d7-6627-9862-4255befb9e8d",
+  "region": "us-west-1",
+  "resources": [],
+  "source": "aws.bedrock-agentcore",
+  "time": "2026-11-23T16:17:31Z",
+  "version": "0"
+}

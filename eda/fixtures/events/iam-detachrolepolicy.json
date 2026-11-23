@@ -1,0 +1,55 @@
+{
+  "account": "111122223333",
+  "detail": {
+    "awsRegion": "us-east-1",
+    "eventCategory": "Management",
+    "eventID": "86a4bc66-ca2b-45f3-b882-9049a724d75a",
+    "eventName": "DetachRolePolicy",
+    "eventSource": "iam.amazonaws.com",
+    "eventTime": "2026-11-23T16:17:25Z",
+    "eventType": "AwsApiCall",
+    "eventVersion": "1.11",
+    "managementEvent": true,
+    "readOnly": false,
+    "recipientAccountId": "111122223333",
+    "requestID": "85eb2f9e-953c-4f5d-88d0-e7b0d4558031",
+    "requestParameters": {
+      "policyArn": "arn:aws:iam::111122223333:policy/aigov/aigov-approved-agentcore-runtime-basic",
+      "roleName": "aigov-demo-quick-helper-bot"
+    },
+    "responseElements": null,
+    "sourceIPAddress": "198.51.100.10",
+    "tlsDetails": {
+      "cipherSuite": "TLS_AES_128_GCM_SHA256",
+      "tlsVersion": "TLSv1.3"
+    },
+    "userAgent": "APN/1.0 Ansible/2.16.19 amazon.aws/11.5.0 Botocore/1.43.117",
+    "userIdentity": {
+      "accessKeyId": "ASIAEXAMPLEEXAMPLE00",
+      "accountId": "111122223333",
+      "arn": "arn:aws:sts::111122223333:assumed-role/AIGovDemoResetRole/aigov-demo-reset-867",
+      "principalId": "AROAEXAMPLEEXAMPLE00:aigov-demo-reset-867",
+      "sessionContext": {
+        "attributes": {
+          "creationDate": "2026-11-23T16:17:22Z",
+          "mfaAuthenticated": "false"
+        },
+        "sessionIssuer": {
+          "accountId": "111122223333",
+          "arn": "arn:aws:iam::111122223333:role/aigov/AIGovDemoResetRole",
+          "principalId": "AROAEXAMPLEEXAMPLE00",
+          "type": "Role",
+          "userName": "AIGovDemoResetRole"
+        }
+      },
+      "type": "AssumedRole"
+    }
+  },
+  "detail-type": "AWS API Call via CloudTrail",
+  "id": "e99a94b9-0b24-fa0e-862b-dda1324390a2",
+  "region": "us-east-1",
+  "resources": [],
+  "source": "aws.iam",
+  "time": "2026-11-23T16:17:28Z",
+  "version": "0"
+}
