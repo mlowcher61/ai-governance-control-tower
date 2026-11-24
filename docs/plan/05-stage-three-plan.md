@@ -189,6 +189,15 @@ Event delivery is not guaranteed to be complete: trails can be misconfigured, an
               aigov_change_event: "{{ event.body }}"
 ```
 
+**As built (T3.02, AAP 2.7):** `extensions/eda/rulebooks/aigov_aws_change_events.yml` differs from the sketch above in three ways,
+each found on the live decision environment:
+- the source is the certified `amazon.aws.aws_sqs_queue` (the `ansible.eda` one is deprecated) and takes the queue **name**, not its URL;
+  it delivers `{"body": <parsed message body>, "meta": ...}`, so `event.body` is right;
+- conditions use `==` joined with `or`: a list membership test (`in [...]`) never matched, so real AgentCore events were consumed
+  without any rule firing;
+- agent changes have one rule per event shape (`resourceArn`, `agentRuntimeId`, `agentId`, then an unthrottled fallback), so each
+  throttle groups by an attribute its events always carry. Both governance roles (remediation and demo reset) are dropped.
+
 **Design notes:**
 
 - **SQS rather than a webhook** (AD-09). EDA polls with credentials scoped to `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:GetQueueAttributes` on one queue, injected through an EDA credential.

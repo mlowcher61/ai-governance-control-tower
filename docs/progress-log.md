@@ -824,6 +824,56 @@ flag is enabled; Execute's own prechecks still refuse anything not approved thro
 
 ---
 
+## 2026-11-24 - T3.02 EDA rulebook, Process Change Event and EDA credentials
+
+**Built.**
+- **Rulebook** `extensions/eda/rulebooks/aigov_aws_change_events.yml`:
+  - the source is the certified `amazon.aws.aws_sqs_queue` on the queue `aigov-change-events`;
+  - changes made by `AIGovRemediationRole` or `AIGovDemoResetRole` are dropped (loop prevention, F-13);
+  - agent changes are throttled per resource (one rule per event shape) and IAM role changes per role, at most one job
+    per 2 minutes;
+  - surviving events launch **AI Governance - Process Change Event**.
+- **V013** `aigov.change_events` and `api.record_change_event`:
+  - each event is stored once, by its CloudTrail event ID (SQS may redeliver);
+  - it is mapped to agents: a runtime or agent ID to that agent, an IAM role to the agents running as it;
+  - its status is `mapped`, `ignored` (`not_agent_related`, `failed_call`) or `suppressed`, and it is audited;
+  - also `api.update_change_event` and a reader view.
+- **Process Change Event** (Inventory API discovery and AO credentials): records and maps the event. For mapped events
+  it starts WF-03 once that exists (T3.03); until then it reports `reassessment: pending`.
+- **Issue EDA Credentials**: a new access key for `aigov-eda-reader` (older keys deleted) and a new password for the new
+  AAP user `svc-aigov-eda` (execute on Process Change Event only). Both are written into EDA credentials, and the
+  activation is restarted.
+- **Config as code** (`aap_config/group_vars/all/eda.yml`, `access.yml`): the EDA credential type
+  "AI Governance - AWS SQS Reader", the GitHub EDA credential, the EDA project, and the activation (`aigov_eda_enabled`),
+  plus `svc-aigov-eda` and its role. EDA credentials have no `update_secrets`, so the secret-bearing ones are managed
+  by the Issue job.
+- **Set Demo Scenario**: `developer_tag` and `developer_attach` act as the bootstrap user, so EDA can be tested with
+  changes it must act on.
+
+**Problems found and fixed on the live decision environment.**
+1. "Missing queue name": the source takes the queue name. The `ansible.eda` source is also deprecated, so the rulebook
+   uses the certified `amazon.aws` one.
+2. **Real AgentCore events were consumed but no rule fired.** The list membership test (`in [...]`) never matched;
+   conditions now use `==` with `or`. Shown by capturing a waiting event with EDA stopped (job 894).
+3. EDA updates an activation only when it is stopped and disabled, and copies the rulebook when the activation is
+   created. A rulebook change therefore means recreating the activation (done twice). Noted for operators.
+
+**Results on mk6hb** (V013 job 876; credentials job 878; activation running as `svc-aigov-eda`):
+
+| Test | Result |
+|---|---|
+| F-13 loop prevention | Governance-role changes (scenario, reset) dropped by the first rule; no job (also after the final reset: 2 drops, 0 jobs) |
+| IAM change by a developer | `AttachRolePolicy`, forwarded from us-east-1, mapped to `quick_helper_bot` (job 890) |
+| Agent tag change by a developer | `TagResource` mapped to `quick_helper_bot` (job 897) after fix 2 |
+| Throttle | Two tag changes 45 s apart gave one job (902) |
+| Unrelated role | `ignored`, `not_agent_related` (job 903, direct launch with a modified fixture) |
+| F-20 EDA down | An event waited in SQS while the activation was stopped and was processed after restart (job 897) |
+
+**Not done yet.** The re-assessment for mapped events (WF-03, T3.03). Two mapped events are recorded with
+`reassessment: pending`.
+
+---
+
 ## Open items (2026-11-23)
 
 | Item | Notes |
