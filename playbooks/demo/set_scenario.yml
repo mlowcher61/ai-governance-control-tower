@@ -6,7 +6,11 @@
 #                             (only development and sandbox may skip approval);
 #   required_tags           - add the governance tags production agents need (Owner, Environment=production,
 #                             CostCenter; DataClassification is already set): TAG-001 passes, so an open TAG-001
-#                             finding is stale (failure case F-17, WF-02 branch "no longer detected").
+#                             finding is stale (failure case F-17, WF-02 branch "no longer detected");
+#   developer_tag           - AS THE BOOTSTRAP USER (not a governance role), add a timestamped test tag to the runtime:
+#                             a change Event-Driven Ansible must act on (T3.02);
+#   developer_attach        - AS THE BOOTSTRAP USER, attach the approved (least-privilege) policy to the agent's role:
+#                             an IAM change Event-Driven Ansible must act on (T3.02).
 # Existing tags are kept. Run AI Governance - Reset Demo Environment to return to the baseline (it restores the exact
 # baseline tags). Run discovery afterwards when the inventory must see the new state (WF-02 reassesses live anyway).
 #
@@ -24,6 +28,12 @@
         QuickHelperBotRuntimeArn: {Environment: development}
       required_tags:
         QuickHelperBotRuntimeArn: {Owner: platform-team@example.com, Environment: production, CostCenter: CC-4242}
+      developer_tag:
+        QuickHelperBotRuntimeArn: {"aigov:test-change": "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"}
+      developer_attach: {}
+    aigov_bootstrap_scenarios: [developer_tag, developer_attach]
+    aigov_governance_stack_name: aigov-governance-roles
+    aigov_developer_role: aigov-demo-quick-helper-bot
   tasks:
     - name: Check the scenario and the credential
       ansible.builtin.assert:
@@ -51,9 +61,10 @@
 
     - name: Apply the scenario tags
       mlowcher61.ai_governance.agentcore_runtime_tags:
-        access_key: "{{ aigov_session.sts_creds.access_key }}"
-        secret_key: "{{ aigov_session.sts_creds.secret_key }}"
-        session_token: "{{ aigov_session.sts_creds.session_token }}"
+        # developer scenarios act as the bootstrap user (credential from the environment), not as a governance role
+        access_key: "{{ omit if aigov_scenario in aigov_bootstrap_scenarios else aigov_session.sts_creds.access_key }}"
+        secret_key: "{{ omit if aigov_scenario in aigov_bootstrap_scenarios else aigov_session.sts_creds.secret_key }}"
+        session_token: "{{ omit if aigov_scenario in aigov_bootstrap_scenarios else aigov_session.sts_creds.session_token }}"
         region: "{{ aigov_aws_region }}"
         resource_arn: "{{ aigov_demo_stack.cloudformation[aigov_demo_stack_name].stack_outputs[item.key] }}"
         tags: "{{ item.value }}"
@@ -63,6 +74,24 @@
         label: "{{ item.key }}"
       register: aigov_scenario_tags
 
+    - name: Read the approved policy (developer_attach)
+      when: aigov_scenario == 'developer_attach'
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ aigov_governance_stack_name }}"
+        region: "{{ aigov_aws_region }}"
+      register: aigov_gov_stack
+
+    - name: Attach the approved policy as the bootstrap user (developer_attach)
+      when: aigov_scenario == 'developer_attach'
+      mlowcher61.ai_governance.iam_role_managed_policies:
+        region: "{{ aigov_aws_region }}"
+        role_name: "{{ aigov_developer_role }}"
+        managed_policies: ["{{ aigov_gov_stack.cloudformation[aigov_governance_stack_name].stack_outputs.ApprovedAgentRuntimePolicyArn }}"]
+        purge_policies: false
+      register: aigov_scenario_iam
+
     - name: Report the scenario
       ansible.builtin.debug:
-        msg: "Scenario {{ aigov_scenario }} applied: {{ aigov_scenario_tags.results | map(attribute='added') | list }}"
+        msg: >-
+          Scenario {{ aigov_scenario }} applied: tags {{ aigov_scenario_tags.results | default([]) | map(attribute='added') | list }}
+          {{ ('attached ' ~ aigov_scenario_iam.attached) if aigov_scenario_iam.attached is defined else '' }}
