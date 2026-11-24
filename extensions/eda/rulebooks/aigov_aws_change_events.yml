@@ -9,6 +9,8 @@
 #      so each throttle groups by an attribute its events always carry);
 #   3. IAM role permission changes, at most one job per role every 2 minutes.
 # Throttling keeps the first event of a burst; Process Change Event re-reads the current state, so nothing is lost.
+# Conditions use == with or: a list membership test ("in [...]") never matched on the AAP 2.7 decision environment
+# (T3.02: real AgentCore TagResource events were consumed without any rule firing).
 # Variables (activation extra vars and the EDA credential "AI Governance - EDA Queue Reader"):
 #   aigov_sqs_queue_name, aigov_sqs_region, aigov_sqs_access_key, aigov_sqs_secret_key
 - name: AI governance - AWS change events
@@ -34,7 +36,7 @@
 
     - name: Agent tagged or untagged (per resource ARN)
       condition: >-
-        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        (event.body.detail.eventSource == "bedrock-agentcore.amazonaws.com" or event.body.detail.eventSource == "bedrock.amazonaws.com")
         and event.body.detail.errorCode is not defined
         and event.body.detail.requestParameters.resourceArn is defined
       throttle:
@@ -51,7 +53,7 @@
 
     - name: Agent runtime changed (per runtime)
       condition: >-
-        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        (event.body.detail.eventSource == "bedrock-agentcore.amazonaws.com" or event.body.detail.eventSource == "bedrock.amazonaws.com")
         and event.body.detail.errorCode is not defined
         and event.body.detail.requestParameters.agentRuntimeId is defined
       throttle:
@@ -68,7 +70,7 @@
 
     - name: Classic agent changed (per agent)
       condition: >-
-        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        (event.body.detail.eventSource == "bedrock-agentcore.amazonaws.com" or event.body.detail.eventSource == "bedrock.amazonaws.com")
         and event.body.detail.errorCode is not defined
         and event.body.detail.requestParameters.agentId is defined
       throttle:
@@ -85,7 +87,7 @@
 
     - name: Other agent change (not throttled)
       condition: >-
-        event.body.detail.eventSource in ["bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"]
+        (event.body.detail.eventSource == "bedrock-agentcore.amazonaws.com" or event.body.detail.eventSource == "bedrock.amazonaws.com")
         and event.body.detail.errorCode is not defined
       action:
         run_job_template:
