@@ -2,7 +2,7 @@
 # Evaluate one agent with its re-collected state and record the evaluation (purpose assessment). Used by assess_agents.yml.
 - name: "Find the re-collected record - {{ aigov_one.input.agent.name }}"
   ansible.builtin.set_fact:
-    aigov_rec: "{{ aigov_scope_records | selectattr('agent.external_id', 'equalto', aigov_one.input.agent.external_id) | list }}"
+    aigov_rec: "{{ aigov_scope_records | selectattr('external_id', 'equalto', aigov_one.input.agent.external_id) | list }}"
 
 - name: "Skip an agent AWS no longer shows - {{ aigov_one.input.agent.name }}"
   when: aigov_rec | length == 0
