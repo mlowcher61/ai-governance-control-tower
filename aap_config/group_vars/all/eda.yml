@@ -57,5 +57,10 @@ aigov_eda_activation:
   restart_policy: always
   enabled: true
 
+# Created once (configure_aap.yml checks first): EDA refuses to update a running activation and copies the rulebook
+# when the activation is created. To change it (rulebook, variables, credentials): disable it in the EDA UI or API,
+# delete it, and run configure_aap.yml again.
+aigov_eda_activation_exists: false
 eda_rulebook_activations: >-
-  {{ [aigov_eda_activation] if aigov_eda_enabled | bool and (aigov_aws_account_id | string | length) == 12 else [] }}
+  {{ [aigov_eda_activation] if aigov_eda_enabled | bool and (aigov_aws_account_id | string | length) == 12
+                               and not (aigov_eda_activation_exists | bool) else [] }}

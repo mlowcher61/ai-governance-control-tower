@@ -31,6 +31,22 @@
           job template only. Launch it, set the account ID it reports, and re-run this playbook.
       when: (aigov_aws_account_id | string | length) == 0
 
+    # EDA changes an activation only while it is stopped and disabled (and copies the rulebook at creation), so the
+    # activation is created once and otherwise left alone; see aap_config/group_vars/all/eda.yml to change it.
+    - name: Check whether the EDA activation already exists
+      when: aigov_eda_enabled | default(false) | bool
+      ansible.builtin.uri:
+        url: "https://{{ aigov_aap_hostname }}/api/eda/v1/activations/?name={{ aigov_eda_activation_name | urlencode }}"
+        headers:
+          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'AAP_API_TOKEN') }}"
+        validate_certs: "{{ aap_validate_certs | default(false) }}"
+      register: aigov_eda_activation_lookup
+      no_log: true
+
+    - name: Remember whether it exists
+      ansible.builtin.set_fact:
+        aigov_eda_activation_exists: "{{ (aigov_eda_activation_lookup.json.count | default(0) | int) > 0 }}"
+
   tasks:
     - name: Apply the configuration with infra.aap_configuration
       ansible.builtin.include_role:
