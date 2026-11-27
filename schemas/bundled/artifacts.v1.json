@@ -47,6 +47,41 @@
         }
       }
     },
+    "assess_agents": {
+      "title": "AI Governance - Assess Agents",
+      "type": "object",
+      "required": [
+        "governance_run_id",
+        "agents_evaluated",
+        "agents_skipped",
+        "new_violation_count",
+        "new_violation_finding_ids",
+        "change_event_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "governance_run_id": {
+          "$ref": "#/$defs/common_uuid"
+        },
+        "agents_evaluated": {
+          "$ref": "#/$defs/count"
+        },
+        "agents_skipped": {
+          "type": "string",
+          "description": "Comma-separated agent IDs not evaluated (platform not re-collectable, or gone from AWS)."
+        },
+        "new_violation_count": {
+          "$ref": "#/$defs/count"
+        },
+        "new_violation_finding_ids": {
+          "type": "string",
+          "description": "Comma-separated IDs of new or worsened violation findings (the remediation candidates)."
+        },
+        "change_event_id": {
+          "type": "string"
+        }
+      }
+    },
     "change_event": {
       "title": "AI Governance - Process Change Event",
       "type": "object",
@@ -1063,6 +1098,27 @@
               "type": "string"
             }
           }
+        }
+      }
+    },
+    "trigger_remediation": {
+      "title": "AI Governance - Trigger Remediation Workflows",
+      "type": "object",
+      "required": [
+        "started_count",
+        "execution_ids",
+        "skipped"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "started_count": {
+          "$ref": "#/$defs/count"
+        },
+        "execution_ids": {
+          "type": "string"
+        },
+        "skipped": {
+          "type": "string"
         }
       }
     },

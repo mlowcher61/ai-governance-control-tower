@@ -1,0 +1,66 @@
+---
+# AI Governance - Trigger Remediation Workflows (task T3.03; WF-03 node activity_trigger_remediation)
+#
+# Starts one "AI Governance - WF-02 Closed-Loop Remediation" execution per finding (the new and worsened violations of a
+# targeted re-assessment). WF-02 itself decides, through OPA, whether a finding is detect-only, denied, needs approval
+# or is fixed automatically. Findings that are not open, already have an active remediation, or are in cooldown are
+# skipped here, so a burst of changes never starts parallel or repeated remediation for one finding.
+#
+# Credentials: "AI Governance - Inventory API (remediator)", "AI Governance - Automation Orchestrator".
+# Artifacts: schemas/artifacts.v1.json#/$defs/trigger_remediation.
+- name: AI Governance - trigger remediation workflows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_ao_validate_certs: false
+    aigov_finding_ids: ""
+    aigov_remediation_workflow: AI Governance - WF-02 Closed-Loop Remediation
+  tasks:
+    - name: Read the finding list (comma-separated text or a list)
+      ansible.builtin.set_fact:
+        aigov_ids: >-
+          {{ (aigov_finding_ids if aigov_finding_ids is not string else aigov_finding_ids.split(','))
+             | map('trim') | select('match', '^[0-9a-fA-F-]{36}$') | unique | list }}
+        aigov_started: []
+        aigov_skipped: []
+
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Log in to automation orchestrator
+      when: aigov_ids | length > 0
+      ansible.builtin.include_tasks: "{{ aigov_repo_root }}/ao_workflows/tasks/ao_login.yml"
+
+    - name: Start WF-02 for each finding that can be remediated now
+      ansible.builtin.include_tasks: tasks/trigger_one.yml
+      loop: "{{ aigov_ids }}"
+      loop_control:
+        loop_var: aigov_fid
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out:
+          started_count: "{{ aigov_started | length }}"
+          execution_ids: "{{ aigov_started | join(',') }}"
+          skipped: "{{ aigov_skipped | join('; ') }}"
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/trigger_remediation'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/trigger_remediation: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        var: aigov_out
+
+    - name: Publish the result for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

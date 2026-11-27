@@ -10,7 +10,10 @@
 #   developer_tag           - AS THE BOOTSTRAP USER (not a governance role), add a timestamped test tag to the runtime:
 #                             a change Event-Driven Ansible must act on (T3.02);
 #   developer_attach        - AS THE BOOTSTRAP USER, attach the approved (least-privilege) policy to the agent's role:
-#                             an IAM change Event-Driven Ansible must act on (T3.02).
+#                             an IAM change Event-Driven Ansible must act on (T3.02);
+#   developer_grant_admin   - AS THE BOOTSTRAP USER, attach AdministratorAccess to the COMPLIANT agent
+#                             payments_dispute_assistant's role: a privilege escalation that WF-03 must turn into a new
+#                             IAM-001 violation and a WF-02 run (T3.03).
 # Existing tags are kept. Run AI Governance - Reset Demo Environment to return to the baseline (it restores the exact
 # baseline tags). Run discovery afterwards when the inventory must see the new state (WF-02 reassesses live anyway).
 #
@@ -31,7 +34,9 @@
       developer_tag:
         QuickHelperBotRuntimeArn: {"aigov:test-change": "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"}
       developer_attach: {}
-    aigov_bootstrap_scenarios: [developer_tag, developer_attach]
+      developer_grant_admin: {}
+    aigov_bootstrap_scenarios: [developer_tag, developer_attach, developer_grant_admin]
+    aigov_escalation_role: aigov-demo-payments-dispute-assistant
     aigov_governance_stack_name: aigov-governance-roles
     aigov_developer_role: aigov-demo-quick-helper-bot
   tasks:
@@ -90,8 +95,18 @@
         purge_policies: false
       register: aigov_scenario_iam
 
+    - name: Attach AdministratorAccess as the bootstrap user (developer_grant_admin)
+      when: aigov_scenario == 'developer_grant_admin'
+      mlowcher61.ai_governance.iam_role_managed_policies:
+        region: "{{ aigov_aws_region }}"
+        role_name: "{{ aigov_escalation_role }}"
+        managed_policies: ["arn:aws:iam::aws:policy/AdministratorAccess"]
+        purge_policies: false
+      register: aigov_scenario_admin
+
     - name: Report the scenario
       ansible.builtin.debug:
         msg: >-
           Scenario {{ aigov_scenario }} applied: tags {{ aigov_scenario_tags.results | default([]) | map(attribute='added') | list }}
           {{ ('attached ' ~ aigov_scenario_iam.attached) if aigov_scenario_iam.attached is defined else '' }}
+          {{ ('attached to ' ~ aigov_escalation_role ~ ' ' ~ aigov_scenario_admin.attached) if aigov_scenario_admin.attached is defined else '' }}

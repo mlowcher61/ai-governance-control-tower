@@ -1,0 +1,129 @@
+---
+# AI Governance - Assess Agents (task T3.03; WF-03 node activity_assess; docs/plan/05 sections 2.3-2.4)
+#
+# A targeted assessment of the agents a change event affected: each agent is re-collected LIVE from AWS with the
+# read-only discovery role, its policy input rebuilt (filter policy_input_refresh), evaluated by OPA and recorded with
+# purpose "assessment" - so findings open, update and close exactly as in a full assessment. The inventory itself is
+# not rewritten (the nightly discovery does that), so agents that were not assessed are never marked missing.
+# api.complete_targeted_assessment then names the NEW and WORSENED violations (the findings WF-03 sends to WF-02) and
+# stamps new findings with the change's event time.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role",
+# "AI Governance - Inventory API (evaluator)". Artifacts: schemas/artifacts.v1.json#/$defs/assess_agents.
+- name: AI Governance - assess agents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_opa_url: http://opa.ai-governance.svc:8181
+    aigov_agent_ids: ""
+    aigov_change_event_id: ""
+  tasks:
+    - name: Read the agent list (comma-separated text or a list)
+      ansible.builtin.set_fact:
+        aigov_ids: >-
+          {{ (aigov_agent_ids if aigov_agent_ids is not string else aigov_agent_ids.split(','))
+             | map('trim') | select('match', '^[0-9a-fA-F-]{36}$') | unique | list }}
+
+    - name: Check the inputs and credentials
+      ansible.builtin.assert:
+        that:
+          - aigov_ids | length > 0
+          - aigov_change_event_id | length == 0 or aigov_change_event_id is match('^[0-9a-fA-F-]{36}$')
+          - aigov_discovery_role_arn | default('') | length > 0
+        fail_msg: Pass aigov_agent_ids (inventory agent IDs) and attach the AWS discovery role credential.
+        quiet: true
+
+    - name: Check the Inventory API credential (evaluator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Open the targeted re-assessment run
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: start_targeted_assessment
+        aigov_api_body: "{{ {'change_event_id': aigov_change_event_id} if aigov_change_event_id | length > 0 else {} }}"
+
+    - name: Keep the run
+      ansible.builtin.set_fact:
+        aigov_run: "{{ aigov_api_response.governance_run_id }}"
+
+    - name: Read the agents' stored policy inputs
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: view
+      vars:
+        aigov_api_view: evaluation_inputs
+        aigov_api_query: "agent_id=in.({{ aigov_ids | join(',') }})"
+
+    - name: Keep the AgentCore agents (re-collection is implemented for AgentCore runtimes)
+      ansible.builtin.set_fact:
+        aigov_inputs: >-
+          {{ aigov_api_response | selectattr('input.agent.platform', 'equalto', 'aws.bedrock_agentcore_runtime') | list }}
+        aigov_not_supported: >-
+          {{ aigov_api_response | rejectattr('input.agent.platform', 'equalto', 'aws.bedrock_agentcore_runtime')
+             | map(attribute='agent_id') | list }}
+
+    - name: Assume the read-only discovery role
+      ansible.builtin.include_tasks: tasks/assume_discovery.yml
+      vars:
+        aigov_assume_region: "{{ (aigov_inputs | first).input.agent.region if aigov_inputs else 'us-west-1' }}"
+        aigov_assume_session: "aigov-assess-{{ aigov_run }}"
+
+    - name: Re-collect the agents from AWS, one Region at a time
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.discover_aws_agentcore
+      vars:
+        aigov_region: "{{ aigov_assess_region }}"
+        aigov_account_ref: "{{ (aigov_inputs | selectattr('input.agent.region', 'equalto', aigov_assess_region) | first).input.agent.account_ref }}"
+        aigov_agentcore_runtime_ids: >-
+          {{ aigov_inputs | selectattr('input.agent.region', 'equalto', aigov_assess_region) | map(attribute='input.agent.external_id') | list }}
+      loop: "{{ aigov_inputs | map(attribute='input.agent.region') | unique | list }}"
+      loop_control:
+        loop_var: aigov_assess_region
+
+    - name: Evaluate and record each re-collected agent
+      ansible.builtin.include_tasks: tasks/assess_one.yml
+      loop: "{{ aigov_inputs }}"
+      loop_control:
+        loop_var: aigov_one
+        label: "{{ aigov_one.input.agent.name }}"
+
+    - name: Name the new and worsened violations, and close the run
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: complete_targeted_assessment
+        aigov_api_body: >-
+          {{ {'governance_run_id': aigov_run} | combine({'change_event_id': aigov_change_event_id} if aigov_change_event_id | length > 0 else {}) }}
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out: >-
+          {{ {'governance_run_id': aigov_run, 'agents_evaluated': aigov_api_response.agents_evaluated | int,
+              'agents_skipped': ((aigov_not_supported + (aigov_skipped | default([]))) | join(',')),
+              'new_violation_count': aigov_api_response.remediation_candidates | length,
+              'new_violation_finding_ids': aigov_api_response.remediation_candidates | join(','),
+              'change_event_id': aigov_change_event_id} }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/assess_agents'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/assess_agents: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        var: aigov_out
+
+    - name: Publish the result for automation orchestrator
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

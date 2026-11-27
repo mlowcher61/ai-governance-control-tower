@@ -50,6 +50,8 @@ aigov_ao_launch_templates:
   - AI Governance - Verify Remediation
   - AI Governance - Rollback Remediation
   - AI Governance - Record Remediation Outcome
+  - AI Governance - Assess Agents
+  - AI Governance - Trigger Remediation Workflows
 
 # Templates the AAP launch guard protects, and the OPA rule AAP asks
 aigov_pac_guarded_templates:

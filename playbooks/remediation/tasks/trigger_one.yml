@@ -1,0 +1,36 @@
+---
+# Start WF-02 for one finding unless it cannot be remediated now. Used by trigger_remediation.yml.
+- name: "Read the finding context - {{ aigov_fid }}"
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: get_finding_context
+    aigov_api_body: {finding_id: "{{ aigov_fid }}"}
+
+- name: "Decide - {{ aigov_fid }}"
+  ansible.builtin.set_fact:
+    aigov_skip_reason: >-
+      {{ 'not open (' ~ aigov_api_response.finding_status ~ ')' if aigov_api_response.finding_status != 'open'
+         else ('active remediation ' ~ aigov_api_response.active_remediation_id if aigov_api_response.active_remediation_id | default(none) is not none
+               else ('cooldown until ' ~ aigov_api_response.cooldown_until if aigov_api_response.cooldown_active == 'yes' else '')) }}
+
+- name: "Skip - {{ aigov_fid }}"
+  when: aigov_skip_reason | length > 0
+  ansible.builtin.set_fact:
+    aigov_skipped: "{{ aigov_skipped + [aigov_fid ~ ': ' ~ aigov_skip_reason] }}"
+
+- name: "Start WF-02 - {{ aigov_fid }}"
+  when: aigov_skip_reason | length == 0
+  block:
+    - name: "Start the execution - {{ aigov_fid }}"
+      ansible.builtin.include_tasks: "{{ aigov_repo_root }}/ao_workflows/tasks/run_one.yml"
+      vars:
+        aigov_ao_workflow_name: "{{ aigov_remediation_workflow }}"
+        aigov_ao_input: {finding_id: "{{ aigov_fid }}"}
+        aigov_ao_use_published: true
+        aigov_ao_wait: false
+
+    - name: "Keep the execution - {{ aigov_fid }}"
+      ansible.builtin.set_fact:
+        aigov_started: "{{ aigov_started + [aigov_ao_execution.json.id] }}"

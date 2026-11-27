@@ -1,0 +1,23 @@
+---
+# Assume the read-only discovery role and prepare the discovery adapter's inputs (aigov_session, aigov_scope_records,
+# aigov_scope_errors, aigov_collected_at). Inputs: aigov_assume_region, aigov_assume_session.
+- name: Assume the read-only discovery role
+  amazon.aws.sts_assume_role:
+    role_arn: "{{ aigov_discovery_role_arn }}"
+    external_id: "{{ aigov_discovery_external_id }}"
+    role_session_name: "{{ aigov_assume_session[:64] }}"
+    duration_seconds: 900
+    region: "{{ aigov_assume_region }}"
+  register: aigov_assumed
+  no_log: true
+
+- name: Keep the session
+  ansible.builtin.set_fact:
+    aigov_session:
+      access_key: "{{ aigov_assumed.sts_creds.access_key }}"
+      secret_key: "{{ aigov_assumed.sts_creds.secret_key }}"
+      session_token: "{{ aigov_assumed.sts_creds.session_token }}"
+    aigov_scope_records: []
+    aigov_scope_errors: []
+    aigov_collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+  no_log: true

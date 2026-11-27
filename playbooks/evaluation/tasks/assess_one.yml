@@ -1,0 +1,51 @@
+---
+# Evaluate one agent with its re-collected state and record the evaluation (purpose assessment). Used by assess_agents.yml.
+- name: "Find the re-collected record - {{ aigov_one.input.agent.name }}"
+  ansible.builtin.set_fact:
+    aigov_rec: "{{ aigov_scope_records | selectattr('agent.external_id', 'equalto', aigov_one.input.agent.external_id) | list }}"
+
+- name: "Skip an agent AWS no longer shows - {{ aigov_one.input.agent.name }}"
+  when: aigov_rec | length == 0
+  ansible.builtin.set_fact:
+    aigov_skipped: "{{ (aigov_skipped | default([])) + [aigov_one.agent_id] }}"
+
+- name: "Evaluate and record - {{ aigov_one.input.agent.name }}"
+  when: aigov_rec | length > 0
+  block:
+    - name: "Rebuild the policy input with the live state - {{ aigov_one.input.agent.name }}"
+      ansible.builtin.set_fact:
+        aigov_input: >-
+          {{ aigov_one.input | mlowcher61.ai_governance.policy_input_refresh(record=aigov_rec[0])
+             | combine({'evaluation': {'governance_run_id': aigov_run, 'purpose': 'assessment',
+                                       'evaluated_at': now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ')}}) }}
+
+    - name: "Ask OPA - {{ aigov_one.input.agent.name }}"
+      ansible.builtin.uri:
+        url: "{{ aigov_opa_url }}/v1/data/governance/evaluate/result"
+        method: POST
+        body_format: json
+        body:
+          input: "{{ aigov_input }}"
+      register: aigov_opa
+
+    - name: "Check the decision against the evaluation result contract - {{ aigov_one.input.agent.name }}"
+      ansible.builtin.assert:
+        that: >-
+          aigov_opa.json.result | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/evaluation-result.v1.json') | from_json,
+            engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: OPA returned no valid decision (is the policy bundle published?).
+        quiet: true
+
+    - name: "Record the evaluation (findings open, update and close) - {{ aigov_one.input.agent.name }}"
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_evaluation
+        aigov_api_body:
+          governance_run_id: "{{ aigov_run }}"
+          agent_id: "{{ aigov_one.agent_id }}"
+          purpose: assessment
+          result: "{{ aigov_opa.json.result }}"
+          input_hash: "{{ aigov_input | dict2items | rejectattr('key', 'equalto', 'evaluation') | items2dict | to_json(sort_keys=true) | hash('sha256') }}"

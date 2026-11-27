@@ -1,0 +1,64 @@
+---
+# WF-03 - AI Governance Targeted Re-assessment (task T3.03, docs/plan/05 section 2.4)
+#
+# Started by "AI Governance - Process Change Event" (Event-Driven Ansible) for the agents an AWS change affected, or by
+# hand. Re-assesses only those agents live (the inventory is not rewritten), then starts one WF-02 per NEW or WORSENED
+# violation; WF-02 decides through OPA whether each is detect-only, denied, needs approval or is fixed automatically.
+#
+# The condition reads a deterministic artifact (computed by api.complete_targeted_assessment), never AI output.
+# Names, not IDs: the loader resolves the job templates and the AO credential.
+name: AI Governance - WF-03 Targeted Re-assessment
+description: >-
+  Re-assess the AI agents an AWS change affected and start closed-loop remediation (WF-02) for each new or worsened
+  violation. Managed by ai-governance-control-tower; edit ao_workflows/definitions/wf03_targeted_reassessment.yml.
+publish: true
+triggers:
+  - id: trigger_manual
+    name: Re-assess agents
+    type: manual_trigger
+    position: {x: 0, y: 200}
+    parameters:
+      input_schema:
+        type: object
+        required: [agent_ids]
+        properties:
+          agent_ids:
+            type: string
+            description: Comma-separated inventory agent IDs
+          change_event_id:
+            type: string
+            default: ""
+            description: The change event that started this run (empty when started by hand)
+nodes:
+  - id: activity_assess
+    name: Assess the agents (live)
+    type: aap_job_template
+    position: {x: 260, y: 200}
+    job_template: AI Governance - Assess Agents
+    extra_vars:
+      aigov_agent_ids: "${trigger.agent_ids}"
+      aigov_change_event_id: "${trigger.change_event_id}"
+    settings:
+      timeout: 1200
+      retry_policy: {max_retries: 1, initial_interval: 30, max_interval: 60, backoff_coefficient: 2}
+
+  - id: logic_new_violations
+    name: New or worsened violations?
+    type: condition
+    position: {x: 520, y: 200}
+    parameters:
+      condition: "${activity_assess.artifacts.new_violation_count} > 0"
+
+  - id: activity_trigger_remediation
+    name: Start remediation (WF-02) per finding
+    type: aap_job_template
+    position: {x: 780, y: 120}
+    job_template: AI Governance - Trigger Remediation Workflows
+    extra_vars:
+      aigov_finding_ids: "${activity_assess.artifacts.new_violation_finding_ids}"
+    settings:
+      timeout: 600
+edges:
+  - {from: trigger_manual, to: activity_assess}
+  - {from: activity_assess, to: logic_new_violations}
+  - {from: logic_new_violations, from_port: "true", to: activity_trigger_remediation}

@@ -55,6 +55,33 @@ aigov_aws_templates:
       aigov_change_event: {}
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Assess Agents
+    description: "T3.03 - targeted assessment of the agents a change affected (live re-collection, OPA, findings); names new and worsened violations"
+    playbook: playbooks/evaluation/assess_agents.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - Inventory API (evaluator)
+    ask_variables_on_launch: true
+    timeout: 1200
+    extra_vars:
+      aigov_opa_url: "http://opa.{{ aigov_platform_namespace }}.svc:8181"
+      aigov_agent_ids: ""
+      aigov_change_event_id: ""
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Trigger Remediation Workflows
+    description: "T3.03 - start one WF-02 per new or worsened violation, skipping findings with an active remediation or in cooldown"
+    playbook: playbooks/remediation/trigger_remediation.yml
+    credentials:
+      - AI Governance - Inventory API (remediator)
+      - AI Governance - Automation Orchestrator
+    ask_variables_on_launch: true
+    timeout: 600
+    extra_vars:
+      aigov_finding_ids: ""
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Issue EDA Credentials
     description: "T3.02 - new access key for aigov-eda-reader and password for svc-aigov-eda, written into the EDA credentials"
     playbook: playbooks/events/issue_eda_credentials.yml
