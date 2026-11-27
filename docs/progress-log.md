@@ -874,6 +874,49 @@ flag is enabled; Execute's own prechecks still refuse anything not approved thro
 
 ---
 
+## 2026-11-27 - T3.03 WF-03 Targeted Re-assessment
+
+**Built.**
+- **WF-03** (`ao_workflows/definitions/wf03_targeted_reassessment.yml`, loaded by job 928): Assess Agents → new or worsened
+  violations? → Trigger Remediation Workflows. Process Change Event starts it with `{agent_ids, change_event_id}`.
+- **Assess Agents** (discovery role, evaluator): live re-collection of only the affected agents, OPA, then
+  `assessment` evaluations (findings open, update and close). The inventory is not rewritten, so agents that were not
+  assessed are never marked missing.
+- **V014**:
+  - `api.start_targeted_assessment` opens an event-triggered `targeted_reassessment` run;
+  - `api.complete_targeted_assessment` computes, in the database, the new violations (opened in the run) and the
+    worsened ones (severity raised in the run). It stamps new findings with the change's event time (`source_change_at`,
+    for time-to-detect) and closes the run with an audit entry.
+- **Trigger Remediation Workflows** (remediator, AO): one WF-02 per candidate finding. It skips findings that are not
+  open, have an active remediation or are in cooldown.
+- RBAC: `svc-aigov-ao` may run both new templates. Contracts `assess_agents` and `trigger_remediation`.
+- **Set Demo Scenario** `developer_grant_admin`: AdministratorAccess on the compliant payments agent's role, as the
+  bootstrap user (privilege escalation).
+
+**Problems found and fixed.**
+1. **Config as code failed on every run while the EDA activation was running** (job log `cac_t303`): the EDA role always
+   tried to update the activation. `configure_aap.yml` now checks first and only creates it. `eda.yml` documents how to
+   change it (disable, delete, re-run).
+2. Assess Agents looked for `agent.external_id` in the discovery records; they carry `external_id` at the top level
+   (job 941). Fixed, and WF-03 rerun for the same change event.
+
+**End-to-end result on mk6hb (privilege escalation on a compliant agent).**
+
+| Time (UTC) | Step | Evidence |
+|---|---|---|
+| 17:06:34 | A developer (bootstrap user) attaches AdministratorAccess to `payments_dispute_assistant`'s role | job 938 |
+| 17:06:35 | EDA launches **Process Change Event** (as `svc-aigov-eda`): mapped, WF-03 started | job 939 |
+| 17:09 | **Assess Agents** (rerun after fix 2): one new violation, IAM-001, critical, stamped with the change time | job 943 |
+| 17:10 | **Trigger Remediation Workflows** starts WF-02 | job 945, execution `58102f3a` |
+| | WF-02: reassessed noncompliant → plan `iam_replace_managed_policy`, route approval (production, critical) | jobs 946-949 |
+| | The user approved in AO → recorded from AO → executed → **verified** → finding **resolved** (`remediated`, audit complete) | jobs 950-954 |
+| 17:16:56 | The remediation role's own `DetachRolePolicy` was **dropped** by the loop prevention; no Process Change Event | EDA audit rule |
+
+So the platform turned a live AWS change into a verified fix, with a human approval in between. The fix left the
+payments role at its baseline, so no reset was needed.
+
+---
+
 ## Open items (2026-11-23)
 
 | Item | Notes |

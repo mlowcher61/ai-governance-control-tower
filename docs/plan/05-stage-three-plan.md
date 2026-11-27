@@ -87,6 +87,14 @@ flowchart LR
 | `activity_trigger_remediation` | `aap_job_template` — **AI Governance - Trigger Remediation Workflows** | Starts one WF-02 execution per finding through the AO API, skipping findings with an active remediation |
 | `activity_finalize` | `aap_job_template` — **AI Governance - Finalize Audit and Notify** | |
 
+**As built (T3.03):** WF-03 is `ao_workflows/definitions/wf03_targeted_reassessment.yml`: **Assess Agents** (a new job, not Reassess
+Agent in a multi-agent mode) → condition on `new_violation_count` → **Trigger Remediation Workflows**. Assess Agents re-collects
+only the affected agents live with the discovery role and records `assessment` evaluations; it does not rewrite the inventory, so
+agents that were not assessed are never marked missing. `api.complete_targeted_assessment` (V014) computes the new and worsened
+violations in the database and stamps new findings with the change's event time. Trigger Remediation Workflows skips findings that
+are not open, have an active remediation or are in cooldown. No finalize node: the change event, the run and each WF-02 outcome are
+audited, and each WF-02 run finalizes itself.
+
 ### 2.5 EventBridge rule patterns (CloudFormation, `aws/cloudformation/aigov-events.yaml`)
 
 ```json
