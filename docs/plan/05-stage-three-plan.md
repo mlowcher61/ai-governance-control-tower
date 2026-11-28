@@ -140,6 +140,13 @@ Event delivery is not guaranteed to be complete: trails can be misconfigured, an
 | Daily 06:00 | AAP schedule: **AI Governance - Collect Usage and Cost** | CloudWatch metrics and Cost Explorer into `usage_metrics` |
 | Weekly | AAP schedule: **AI Governance - Generate Compliance Report** | Posture and control evidence reports |
 
+**As built (T3.04):** the nightly run is an **AAP schedule** on **AI Governance - Run Nightly Assessment**, which starts WF-01 through
+the AO API. AO's `scheduled_trigger` (`{schedule_type: cron, cron, timezone}`) cannot carry input values, and WF-01 reads
+`${trigger.scope_name}`. The hourly sweep is `api.reconcile_sweep` (V015) in **AI Governance - Reconcile and Sweep**. It verifies the
+chain from a checkpoint (`aigov.audit_checkpoints`) and expires stale remediations: awaiting approval becomes expired; planned or
+approved becomes skipped; stuck executing becomes failed. It confirms agents missing for 24 h and explains drift (changed paths, plus
+attribution to a mapped change event received between the two snapshots). A broken chain or dead letters open a ServiceNow incident.
+
 **Drift detection.** When a snapshot's `content_hash` differs from the previous snapshot, the database function `api.snapshot_diff(agent_id, from, to)` computes a JSON diff over normalized fields. The function writes `agent.config_drift` audit events with the changed paths. If the change was not preceded by a matching change event, it is labelled **unattributed drift**, which signals a coverage gap in event plumbing.
 
 ## 3. EDA rulebook design

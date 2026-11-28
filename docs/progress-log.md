@@ -917,6 +917,58 @@ payments role at its baseline, so no reset was needed.
 
 ---
 
+## 2026-11-28 - T3.04 Reconcile and Sweep, nightly assessment, schedules
+
+**Built.**
+- **V015 `api.reconcile_sweep(stale_minutes, missing_hours)`** (remediator):
+  - verifies the audit hash chain incrementally from the last intact checkpoint (`aigov.audit_checkpoints`), writing
+    `audit.chain_broken` when a row was altered (F-19);
+  - expires remediations nobody acted on: awaiting approval becomes expired (as a rejection); planned or approved
+    becomes skipped; stuck executing becomes failed;
+  - confirms agents missing for more than 24 h (`agent.missing_confirmed`, once per absence);
+  - explains configuration drift since the last sweep. `aigov.jsonb_diff_paths` lists the changed paths between an
+    agent's snapshot and the previous one. The drift counts as attributed when a mapped change event was received
+    between the two snapshots, and unattributed otherwise.
+
+  Everything is audited (`reconcile.sweep_completed`).
+- **Reconcile and Sweep** job: the sweep, plus the change-event dead-letter queue depth. A broken chain or dead letters
+  open or update a ServiceNow incident (one per kind) and are audited; a broken chain also fails the job.
+  Contract `reconcile`.
+- **Run Nightly Assessment** job: starts WF-01 (every scope) through the AO API and waits.
+- **Schedules** as code (`aap_config/group_vars/all/schedules.yml`, `aigov_schedules_enabled`): hourly sweep at :15,
+  nightly assessment at 02:00 UTC.
+
+**Decision (design deviation).** AO's `scheduled_trigger` takes `{schedule_type: interval|cron, cron, timezone}`, found by
+probing `POST /workflows/validate`. It cannot carry input values, and WF-01 reads `${trigger.scope_name}`, which would
+fail to resolve. The nightly run is therefore an AAP schedule on a job that starts WF-01.
+
+**Tests.** V015 SQL tests:
+- the path diff;
+- all four stale states;
+- the missing agent confirmed once;
+- attributed and unattributed drift with the changed paths;
+- a second sweep is idempotent and the checkpoint advances;
+- **F-19**: a superuser alters an audit row after the checkpoint, and the next sweep reports `audit.chain_broken` and
+  audits it.
+
+Also schema examples (193) and the sweep artifacts on ansible-core 2.16.
+
+**Results on mk6hb.**
+- V015 applied (job 962). Schedules created; next runs 17:15 UTC (hourly) and 02:00 UTC.
+- First sweep (job 964):
+  - chain **intact across all 1,508 audit events**;
+  - **1 stale remediation expired** (a Stage 2 test approval nobody decided);
+  - **8 historical drifts** of `quick_helper_bot` explained: 1 attributed (the T3.02 developer tag, captured by EDA)
+    and 7 unattributed (changes before event detection existed, or by governance roles, which EDA drops by design);
+  - no dead letters, no long-missing agents.
+- Second sweep (job 966): verified only the 20 new events (to 1528), nothing repeated.
+
+**Not shown live.** F-19 tampering (altering a live audit row would permanently mark this environment's history; the SQL
+test proves detection and the alert path is the same code) and a long-missing agent (it would require deleting a demo
+runtime).
+
+---
+
 ## Open items (2026-11-23)
 
 | Item | Notes |
@@ -929,7 +981,7 @@ payments role at its baseline, so no reset was needed.
 | Demo profile published on mk6hb | Still on. `quick_helper_bot` IAM-001 was remediated and verified, so the demo is off its baseline and Check Inventory fails (job 331) until Reset Demo Environment runs. Republish with `aigov_policy_profile: default` to turn remediation off |
 | Manual approval recording | WF-02 records decisions from the AO approvals API; the manual source of Record Approval Decision remains for tests outside WF-02 (administrators only) |
 | Quarantine tags on `quick_helper_bot` | Remediation `a308dde1` (TAG-001) was executed and failed verification; its tags stay until a rollback or the next Reset Demo Environment |
-| Stage 2 leftovers | ServiceNow test incidents to close; stale remediation records on reset findings (Stage 3 sweeper); demo profile with a 1-minute cooldown (republish for 60) |
+| Stage 2 leftovers | ServiceNow test incidents to close. Stale remediation records are now expired by the hourly sweep (one expired on 2026-11-28) |
 | F-18 direct launch bypass | T2.11: AAP RBAC so only the AO service account can launch Execute and Rollback, plus the policy-as-code guard |
 | F-10 inline-policy injection | Not run: no governance role may write inline policies; verification failure shown naturally instead |
 | ServiceNow incident INC0011650 | Opened by the T2.10 test for finding `48d2d805` (MDL-001, missing evidence); close it in ServiceNow when no longer needed |
