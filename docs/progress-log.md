@@ -967,6 +967,59 @@ Also schema examples (193) and the sweep artifacts on ansible-core 2.16.
 test proves detection and the alert path is the same code) and a long-missing agent (it would require deleting a demo
 runtime).
 
+## 2026-11-28 - T3.05 Reporting views, daily compliance snapshot, MTTD and MTTR
+
+**Built.** Migration V016 (read by `grafana_ro` and `aigov_auditor`, never by the API roles):
+- **Daily compliance snapshot.** The table `aigov.compliance_snapshots` holds one row per UTC day: agents by compliance
+  status, unregistered agents, open findings by severity, open remediations and pending approvals. The function
+  `api.capture_compliance_snapshot()` (remediator) writes it, and **Reconcile and Sweep** calls it every hour, so each
+  day's row ends up holding its last state of the day. Past rows stay as history even when agents or findings are
+  removed later. Dashboards read the rows through `reporting.compliance_trend`, which adds `compliant_pct`.
+- **Time to detect.** `reporting.findings_event_attributed` lists findings an AWS change led to. Their
+  `source_change_at` is the CloudTrail event time, stamped by `api.complete_targeted_assessment` (T3.03). The view
+  links each finding to its change event through the WF-03 run that opened it. `reporting.mttd_daily` gives the
+  average and maximum minutes from the change to the finding, per day.
+- **Time to remediate.** `reporting.findings_remediated` lists findings closed by a verified remediation (resolution
+  `remediated`) with the route OPA chose: automatic, or after approval. `reporting.mttr_daily` gives the average
+  minutes from first detection to resolution, per day, overall and per route.
+- **Operations views** for the T3.06 Operations dashboard:
+  - `reporting.remediations`: every remediation with a status group (open, verified, failed, closed), route, age,
+    approver, AO execution and AAP jobs;
+  - `reporting.pending_approvals`: remediations awaiting approval and how long they have waited (AO expires them after
+    1 hour);
+  - `reporting.remediation_funnel`: planned → approved or automatic → executed → verified;
+  - `reporting.change_events_daily`: events received, mapped, ignored and suppressed per day, re-assessments started,
+    and the average delivery delay from CloudTrail to the database;
+  - `reporting.drift_events`: drift explained by the sweep, attributed or not, with the changed paths.
+- The Reconcile and Sweep artifacts (contract `reconcile`) gain `snapshot_day`, `snapshot_agents` and
+  `snapshot_compliant`.
+
+**Decision (design deviation).** The plan named the snapshot `reporting.compliance_daily` ("daily snapshot table"). That
+name is already a V005 view, which derives each day from the latest assessment per agent, and the Inventory and
+Findings dashboard uses it. The snapshot is stored in `aigov.compliance_snapshots` instead (only the reporting schema is
+readable by Grafana), and `reporting.compliance_trend` exposes it. The V005 view stays: it covers the days before
+snapshots existed.
+
+**Tests.** V016 SQL tests on seeded history (2001-02-03/04, so other test data cannot change the figures):
+- MTTD of 3.00 minutes from findings detected 2 and 4 minutes after the change, attributed to the change event; a
+  finding without a change time is excluded;
+- MTTR of 75 minutes from 30 (automatic) and 120 (after approval). The failed first attempt of the approved remediation
+  is ignored;
+- the remediation status groups, the approver and route, a pending approval's waiting time, the change-event day
+  counts and delivery delay (20 s), drift with its paths, and the funnel (5, 3, 2, 2);
+- the snapshot run as the remediator: the missing agent and its finding are excluded, a second capture on the same day
+  updates the row, and a past day stays as history (75 % compliant);
+- grants: Grafana and the auditor read every new view but not the snapshot table; only the remediator may capture.
+
+All 16 SQL test files pass, as do the HTTP and contract tests, the panel queries, the schema examples (193), lint, and
+the new artifacts on ansible-core 2.16.
+
+**Results on mk6hb.**
+- V016 applied (job 968, project revision 820a40a).
+- Reconcile and Sweep (job 970) captured the first snapshot: **2026-11-28, 4 agents, 1 compliant**, which matches the
+  demo inventory. The chain was intact to event 1530.
+- The views' figures on live data are checked in T3.06, when the dashboard panels query them through Grafana.
+
 ---
 
 ## Open items (2026-11-23)

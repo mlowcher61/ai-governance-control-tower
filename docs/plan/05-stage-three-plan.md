@@ -288,6 +288,14 @@ Because the GenAI conventions are still in **Development**, attribute names may 
 | Evidence coverage | Gauge | % of agent × policy results that are not `unknown` | (added) |
 | AI usage and cost (30 days) | Time series + stat | `reporting.usage_daily` (tokens, invocations, actual or estimated cost) | ✔ (where available) |
 
+**As built (T3.05, V016):** the daily snapshot is the table `aigov.compliance_snapshots` (one row per UTC day, written by
+`api.capture_compliance_snapshot()` from every hourly Reconcile and Sweep) read through `reporting.compliance_trend`. The V005 view
+`reporting.compliance_daily` keeps its name and derives earlier days from assessments. `reporting.mttd_daily` uses
+`reporting.findings_event_attributed`: findings stamped with `source_change_at` by `api.complete_targeted_assessment`, linked to the
+change event through the WF-03 run. `reporting.mttr_daily` uses `reporting.findings_remediated`: findings resolved by a `verified`
+remediation, split by the route OPA chose (automatic or after approval). The Operations panels read `reporting.remediations`,
+`reporting.pending_approvals`, `reporting.remediation_funnel`, `reporting.change_events_daily` and `reporting.drift_events`.
+
 ### 6.2 Dashboard: AI Governance — Operations
 
 | Panel | Visualization | Basis | Required metric |
