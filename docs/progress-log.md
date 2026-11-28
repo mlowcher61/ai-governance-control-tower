@@ -1113,6 +1113,87 @@ line and layout overflow.
 **A3-3** (all required panels populated with demo data; MTTD and MTTR computed): met on mk6hb. Usage and cost panels
 come with T3.07 (P1).
 
+## 2026-11-28 - T3.07 Usage and cost collection (P1)
+
+**Decisions (user, 2026-11-28).**
+- **Add a demo-traffic job.** The demo agents are never used, so the usage panels would stay empty.
+- **Estimate only.** Cost is usage x unit prices; no Cost Explorer calls (per-request charges, and possible access
+  limits for organization member accounts).
+
+Both are recorded in [13-open-questions §1.2](plan/13-open-questions.md).
+
+**Built.**
+- **AI Governance - Collect Usage and Cost** (daily 06:00 UTC, schedule as code). With the read-only discovery role it:
+  - lists the metrics CloudWatch has in `AWS/Bedrock-AgentCore`, `AWS/Bedrock/Agents` and `AWS/Bedrock`. A metric is
+    listed only with data in the past two weeks, so names the plan could not confirm are found, not assumed;
+  - keeps one daily series per metric and agent (`Resource` or `AgentAliasArn`) or model (`ModelId`). It takes the
+    smallest dimension set and sums its series, so a runtime's endpoint series and account totals are not counted
+    twice;
+  - reads complete UTC days, the last 14 up to yesterday. `aigov_usage_include_today` adds today so far, and
+    re-collecting a day replaces it;
+  - estimates cost as AgentCore vCPU-hours and GB-hours, and model tokens, times the unit prices.
+- New modules:
+  - `cloudwatch_metric_data_info`, read-only (ListMetrics and GetMetricData, paginated);
+  - `agentcore_runtime_invoke`, demo only.
+- New filters `usage_queries`, `usage_api_queries` and `usage_rows` (unit tested).
+- **Migration V018**:
+  - `aigov.usage_metrics` (one row per day, metric and agent or model; source `cloudwatch` or `estimate`, with
+    `cost_explorer` reserved);
+  - `api.record_usage`, discovery role only. It links rows to agents by runtime ARN, or by agent ID inside an alias
+    ARN, reports usage from unknown agents, and is audited as `usage.collected`;
+  - views `reporting.usage_daily` (with `cost_kind`), `usage_agent_daily` and `usage_summary_daily`.
+- **Unit prices**:
+  - `pricing/model_prices.yml` has the structure and **no figures**, as the plan intends;
+  - `aigov_unit_prices` in customer.yml overrides it and goes to the job through config as code;
+  - mk6hb's `customer.yml` uses the AWS list prices for AgentCore Runtime v2 consumption (0.1276 USD per vCPU-hour,
+    0.0169 per GB-hour), with the source and date.
+- **AI Governance - Generate Demo Agent Traffic**:
+  - invokes each demo runtime 5 times in one session, with a harmless prompt;
+  - runs as AIGovDemoResetRole, which gained `bedrock-agentcore:InvokeAgentRuntime` only on runtimes tagged
+    `aigov:demo`. The endpoint resource is also listed, which grants nothing on its own;
+  - has a daily schedule (05:30 UTC) that exists but stays off unless `aigov_demo_traffic_enabled` is true.
+- **Dashboards**:
+  - Executive Overview: AI usage for the period (invocations, sessions, tokens, estimated cost), invocations per day,
+    and estimated cost per day labelled "not a bill";
+  - Agent Detail: invocations per day, and usage and estimated cost per day.
+
+  Both were rendered locally and fixed: a clipped value, and dates shown a day early in Pacific time (now plain text).
+- Artifact contract `usage`.
+
+**Found on the real account.**
+- CloudWatch lists the AgentCore metrics `Invocations`, `Sessions` (the guide says Session Count), `Latency`,
+  `Duration`, `Errors`, `SystemErrors`, `UserErrors`, `Throttles` and `ActiveSessionCount`. The job now collects
+  `Sessions`. It leaves out the `Errors` total, because it would double count the error types it already collects.
+- The resource-usage metrics `CPUUsed-vCPUHours` and `MemoryUsed-GBHours`, which the cost estimate needs, were not yet
+  listed 10 minutes after the traffic. AWS documents a delay of up to 60 minutes.
+- Fixed during testing:
+  - `required_by` made a listing-only call fail, because `queries` defaults to an empty list;
+  - the time window used local time on a naive UTC datetime. The EE runs in UTC so the job was unaffected, but the
+    2.16 simulation caught it on this workstation;
+  - the return key `values` and two DOCUMENTATION strings were flagged by `ansible-test sanity`.
+
+**Tests.**
+- V018 SQL tests:
+  - grants;
+  - linking by runtime ARN and by alias ARN, and unknown agents reported;
+  - re-collection replaces a day;
+  - bad input is refused;
+  - per-agent and per-day sums with the estimate;
+  - the audit event.
+- Unit tests (109): series selection without double counting, sums and averages, pricing (priced, partial, not set,
+  no usage), both modules with the botocore Stubber.
+- All 18 SQL files, HTTP, contract and panel-query tests, `ansible-test sanity`, lint (including cfn-lint), schema
+  examples (197), and the new Jinja on ansible-core 2.16 in two time zones.
+
+**Results on mk6hb.**
+- Governance roles stack updated (job 986), V018 applied (job 989). Config as code created both templates and the
+  schedules: the daily usage run starts 2026-11-29 06:00 UTC, and the demo traffic schedule is off.
+- Deploy Platform Services (job 992): 73 panel queries ran through Grafana.
+- **Generate Demo Agent Traffic (job 995): 20 of 20 invocations succeeded** on the 4 demo runtimes through the
+  restricted role.
+- **Collect Usage and Cost (job 1003)**: 67 series listed, 24 read, **20 invocations recorded for all 4 agents**, no
+  unknown agents. Estimate status `no_usage` until AWS publishes the resource-usage metrics.
+
 ---
 
 ## Open items (2026-11-23)

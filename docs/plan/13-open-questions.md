@@ -55,7 +55,7 @@ Items marked **🔑 DECISION** need your approval before implementation starts. 
 
 The demo agent's role is tagged by the demo CloudFormation stack. The alternative, an IAM path such as `/aigov-agents/`, works similarly, but a role's path cannot be changed after creation, which makes it impractical for existing customer roles.
 
-### 1.2 Decisions made during implementation (2026-11-19 to 2026-11-22)
+### 1.2 Decisions made during implementation (2026-11-19 to 2026-11-28)
 
 Details and evidence are in [../progress-log.md](../progress-log.md).
 
@@ -76,6 +76,8 @@ Details and evidence are in [../progress-log.md](../progress-log.md).
 | WF-02 notification channel | **ServiceNow incidents** (one per finding, certified `servicenow.itsm`), credential AI Governance - ServiceNow | User decision (2026-11-22). Outcomes that need a person open or update the incident; a verified fix resolves it |
 | Stage 2 failure-suite approach (T2.12) | **F-09 through a CloudFormation test switch** (`TestFaultDenyDetach`, default off); **F-04 through a separate AO test credential and probe workflow**; **F-08 with a short-window test copy** (in the end shown on the real 1-hour window); **F-18 deferred to T2.11** | User decisions (2026-11-22) |
 | AAP launch guard placement and enforcement (T2.11) | **Point AAP's policy-as-code connection at the governance OPA** (the configured policy-as-code OPA did not exist); **document now, enable `FEATURE_POLICY_AS_CODE_ENABLED` later** (an AAP installation change) | User decisions (2026-11-23) |
+| Demo usage data (T3.07) | **Add the job Generate Demo Agent Traffic**: it invokes each demo AgentCore runtime a few times through the demo reset role, which may invoke only runtimes tagged `aigov:demo`. Its daily schedule stays off unless `aigov_demo_traffic_enabled` is true | User decision (2026-11-28). The demo agents are never used, so the usage panels would stay empty; a run costs a fraction of a cent |
+| Cost source (T3.07) | **Estimate only**: usage x unit prices (`pricing/model_prices.yml`, which ships without figures; the figures go in `aigov_unit_prices` in customer.yml). No Cost Explorer calls | User decision (2026-11-28). Cost Explorer charges per request and may be closed to member accounts of an organization; the `cost_explorer` source stays reserved in V018 |
 
 ## 2. Assumptions
 

@@ -234,6 +234,16 @@ each found on the live decision environment:
 | Azure Activity Log | Control-plane changes for Foundry agents | Activity Log → Event Grid → Service Bus queue → `ansible.eda.azure_service_bus` (✅ the EDA source exists) | Designed only | P2 |
 | Google Cloud Audit Logs | Admin Activity logs for Vertex AI Agent Engine | Log sink → Pub/Sub push subscription → EDA event stream (webhook) | Designed only; there is no Pub/Sub EDA source in `ansible.eda` 2.13.0 | P2 |
 
+**As built (T3.07):** **AI Governance - Collect Usage and Cost** (daily 06:00 UTC) lists the metrics in `AWS/Bedrock-AgentCore`,
+`AWS/Bedrock/Agents` and `AWS/Bedrock` (ListMetrics), keeps one daily series per metric and agent (dimension `Resource` or
+`AgentAliasArn`) or model (`ModelId`), choosing the smallest dimension set so nothing is counted twice, and reads complete UTC days
+(GetMetricData) with the discovery role (module `cloudwatch_metric_data_info`). Rows go to `aigov.usage_metrics` (V018,
+`api.record_usage`); the views are `reporting.usage_daily`, `usage_agent_daily` and `usage_summary_daily`. On the demo account CloudWatch
+lists the AgentCore metrics `Invocations`, `Sessions` (not `SessionCount`), `Latency`, `Duration`, `Errors`, `SystemErrors`, `UserErrors`,
+`Throttles` and `ActiveSessionCount`. **Cost Explorer is not used** (user decision 2026-11-28): cost is an estimate, usage x unit prices
+(`pricing/model_prices.yml` structure, figures in `aigov_unit_prices`). **AI Governance - Generate Demo Agent Traffic** invokes the demo
+runtimes (module `agentcore_runtime_invoke`, demo reset role limited to `aigov:demo` runtimes) so the demo has usage.
+
 ## 5. OpenTelemetry instrumentation plan
 
 | Signal | Producer | Transport | Backend | Use |
