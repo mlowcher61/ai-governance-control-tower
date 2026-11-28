@@ -38,6 +38,16 @@
     aigov_repo_root: "{{ playbook_dir }}/../.."
     aigov_tpl: "{{ aigov_repo_root }}/platform/templates"
     aigov_dashboard_files: "{{ query('ansible.builtin.fileglob', aigov_repo_root ~ '/dashboards/json/*.json') | sort }}"
+    # Where the dashboards' links point (AAP jobs, automation orchestrator executions, policy commits in Git). Set by config
+    # as code from customer.yml; an empty value leaves those links without a host.
+    aigov_dashboard_aap_url: ""
+    aigov_dashboard_ao_url: ""
+    aigov_dashboard_repo_url: ""
+    aigov_dashboard_texts: >-
+      {{ query('ansible.builtin.file', *aigov_dashboard_files)
+         | map('replace', '__AIGOV_AAP_URL__', aigov_dashboard_aap_url | regex_replace('/+$', ''))
+         | map('replace', '__AIGOV_AO_URL__', aigov_dashboard_ao_url | regex_replace('/+$', ''))
+         | map('replace', '__AIGOV_REPO_URL__', aigov_dashboard_repo_url | regex_replace('/+$', '')) | list }}
   tasks:
     - name: Check the OpenShift credential is attached
       ansible.builtin.assert:
@@ -134,7 +144,7 @@
         aigov_run_suffix: "{{ tower_job_id | default(awx_job_id) | default(now(utc=true, fmt='%Y%m%d%H%M%S'), true) }}"
         aigov_grafana_config_hash: >-
           {{ (lookup('ansible.builtin.file', aigov_tpl ~ '/grafana.yml.j2')
-              ~ (query('ansible.builtin.file', *aigov_dashboard_files) | join('')))
+              ~ (aigov_dashboard_texts | join('')))
              | hash('sha256') | truncate(12, True, '', 0) }}
       no_log: true
 
@@ -220,8 +230,8 @@
         state: present
         definition: "{{ lookup('ansible.builtin.template', aigov_tpl ~ '/governance-api.yml.j2') | ansible.builtin.from_yaml_all | list }}"
 
-    # Dashboards are provisioned from Git (dashboards/json/). force replaces the whole ConfigMap, so a dashboard
-    # removed from Git disappears too. Grafana restarts only when the dashboard set changes (hash annotation).
+    # Dashboards are provisioned from Git (dashboards/json/), with the link hosts filled in. force replaces the whole
+    # ConfigMap, so a dashboard removed from Git disappears too. Grafana restarts only when the dashboards change (hash).
     - name: Publish the Grafana dashboards from dashboards/json/
       kubernetes.core.k8s:
         state: present
@@ -233,7 +243,7 @@
             name: grafana-dashboards
             namespace: "{{ aigov_platform_namespace }}"
             labels: "{{ aigov_platform_labels }}"
-          data: "{{ dict(aigov_dashboard_files | map('basename') | zip(query('ansible.builtin.file', *aigov_dashboard_files))) }}"
+          data: "{{ dict(aigov_dashboard_files | map('basename') | zip(aigov_dashboard_texts)) }}"
 
     - name: Deploy Grafana
       kubernetes.core.k8s:

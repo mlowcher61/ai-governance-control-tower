@@ -1,0 +1,1762 @@
+{
+  "uid": "aigov-operations",
+  "title": "AI Governance - Operations",
+  "description": "Day-to-day work: open findings, remediations in progress, pending approvals, failures, the remediation funnel, the AWS change-event pipeline, drift and recent runs. Provisioned from Git (dashboards/json/).",
+  "tags": [
+    "ai-governance"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "ao_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AO_URL__",
+          "value": "__AIGOV_AO_URL__"
+        }
+      },
+      {
+        "name": "aap_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AAP_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AAP_URL__",
+          "value": "__AIGOV_AAP_URL__"
+        }
+      },
+      {
+        "name": "repo_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_REPO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_REPO_URL__",
+          "value": "__AIGOV_REPO_URL__"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "AI Governance dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ai-governance"
+      ],
+      "asDropdown": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Open findings",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS findings FROM reporting.findings_open"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "In progress",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS remediations FROM reporting.remediations WHERE status IN ('planned', 'approved', 'executing', 'succeeded')"
+        }
+      ],
+      "description": "Remediations planned, approved, executing, or executed and being verified.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pending approvals",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS approvals FROM reporting.remediations WHERE status = 'awaiting_approval'"
+        }
+      ],
+      "description": "Approve or reject in automation orchestrator (Approvals).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "#fbb315",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Verified remediations",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS remediations FROM reporting.remediations WHERE status = 'verified' AND $__timeFilter(updated_at)"
+        }
+      ],
+      "description": "Remediations verified in the selected period.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Failed remediations",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS remediations FROM reporting.remediations WHERE status_group = 'failed' AND $__timeFilter(updated_at)"
+        }
+      ],
+      "description": "Execution, verification or rollback failures in the selected period.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "#dc3c3d",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Dead-letter events",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT dead_letters AS events FROM reporting.audit_chain_status"
+        }
+      ],
+      "description": "AWS change events that failed processing 5 times (queue aigov-change-events-dlq), counted hourly by Reconcile and Sweep. Any opens a ServiceNow incident.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0aac23",
+                "value": null
+              },
+              {
+                "color": "#dc3c3d",
+                "value": 1
+              }
+            ]
+          },
+          "noValue": "Not checked yet"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Pending approvals",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT waiting_minutes AS \"waiting (min)\", agent_name AS agent, policy_id AS policy, severity, action_type AS action, requested_at AS requested, ao_execution_id AS \"AO execution\", remediation_id FROM reporting.pending_approvals ORDER BY waiting_minutes DESC"
+        }
+      ],
+      "description": "automation orchestrator expires an approval after 60 minutes; the remediation is then recorded as expired. Empty when: no remediation is waiting for approval.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "waiting (min)"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "#fbb315",
+                      "value": 45
+                    },
+                    {
+                      "color": "#dc3c3d",
+                      "value": 60
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "#dc3c3d",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "#f18a59",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "#fbb315",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      },
+                      "info": {
+                        "color": "#8e8e8e",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AO execution"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the execution in automation orchestrator",
+                    "url": "${ao_url}/executions/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Remediations in progress",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status, agent_name AS agent, policy_id AS policy, severity, action_type AS action, route, age_hours AS \"age (h)\", ao_execution_id AS \"AO execution\", remediation_id FROM reporting.remediations WHERE status IN ('planned', 'approved', 'executing', 'succeeded') ORDER BY created_at DESC"
+        }
+      ],
+      "description": "Empty when: no remediation in progress.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "verified": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "failed": {
+                        "color": "#dc3c3d",
+                        "index": 1
+                      },
+                      "verification_failed": {
+                        "color": "#dc3c3d",
+                        "index": 2,
+                        "text": "verification failed"
+                      },
+                      "rollback_failed": {
+                        "color": "#dc3c3d",
+                        "index": 3,
+                        "text": "rollback failed"
+                      },
+                      "awaiting_approval": {
+                        "color": "#fbb315",
+                        "index": 4,
+                        "text": "awaiting approval"
+                      },
+                      "succeeded": {
+                        "color": "text",
+                        "index": 5,
+                        "text": "executed, verifying"
+                      },
+                      "executing": {
+                        "color": "text",
+                        "index": 6
+                      },
+                      "approved": {
+                        "color": "text",
+                        "index": 7
+                      },
+                      "planned": {
+                        "color": "text",
+                        "index": 8
+                      },
+                      "rejected": {
+                        "color": "#8e8e8e",
+                        "index": 9
+                      },
+                      "expired": {
+                        "color": "#8e8e8e",
+                        "index": 10
+                      },
+                      "skipped": {
+                        "color": "#8e8e8e",
+                        "index": 11
+                      },
+                      "rolled_back": {
+                        "color": "#8e8e8e",
+                        "index": 12,
+                        "text": "rolled back"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "#dc3c3d",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "#f18a59",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "#fbb315",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      },
+                      "info": {
+                        "color": "#8e8e8e",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AO execution"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the execution in automation orchestrator",
+                    "url": "${ao_url}/executions/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Open findings by severity and age",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT severity, agent_name AS agent, policy_id AS policy, finding_type AS type, status, age_days AS \"age (days)\", deterministic_explanation AS \"policy explanation\", agent_id FROM reporting.findings_open ORDER BY severity_rank, age_days DESC"
+        }
+      ],
+      "description": "Empty when: no open findings.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "#dc3c3d",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "#f18a59",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "#fbb315",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      },
+                      "info": {
+                        "color": "#8e8e8e",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "age (days)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the agent",
+                    "url": "/d/aigov-agent-detail/ai-governance-agent-detail?var-agent=${__data.fields.agent_id}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Verified remediations per day",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', updated_at) AS time, count(*) AS \"verified\" FROM reporting.remediations WHERE status = 'verified' AND $__timeFilter(updated_at) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 85,
+            "pointSize": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          },
+          "noValue": "No verified remediation in this period"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Remediation funnel",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT stage, remediations FROM reporting.remediation_funnel ORDER BY stage_order"
+        }
+      ],
+      "description": "All remediations: planned, then approved or automatic, then executed (the change was applied), then verified.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "text",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "manual",
+        "minVizHeight": 34,
+        "minVizWidth": 8,
+        "maxVizHeight": 38,
+        "text": {
+          "titleSize": 13,
+          "valueSize": 14
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Failed remediations",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT updated_at AS \"when\", status, agent_name AS agent, policy_id AS policy, action_type AS action, aap_job_ids[cardinality(aap_job_ids)] AS \"last AAP job\" FROM reporting.remediations WHERE status_group = 'failed' AND $__timeFilter(updated_at) ORDER BY updated_at DESC"
+        }
+      ],
+      "description": "Empty when: no failed remediation in this period.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "verified": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "failed": {
+                        "color": "#dc3c3d",
+                        "index": 1
+                      },
+                      "verification_failed": {
+                        "color": "#dc3c3d",
+                        "index": 2,
+                        "text": "verification failed"
+                      },
+                      "rollback_failed": {
+                        "color": "#dc3c3d",
+                        "index": 3,
+                        "text": "rollback failed"
+                      },
+                      "awaiting_approval": {
+                        "color": "#fbb315",
+                        "index": 4,
+                        "text": "awaiting approval"
+                      },
+                      "succeeded": {
+                        "color": "text",
+                        "index": 5,
+                        "text": "executed, verifying"
+                      },
+                      "executing": {
+                        "color": "text",
+                        "index": 6
+                      },
+                      "approved": {
+                        "color": "text",
+                        "index": 7
+                      },
+                      "planned": {
+                        "color": "text",
+                        "index": 8
+                      },
+                      "rejected": {
+                        "color": "#8e8e8e",
+                        "index": 9
+                      },
+                      "expired": {
+                        "color": "#8e8e8e",
+                        "index": 10
+                      },
+                      "skipped": {
+                        "color": "#8e8e8e",
+                        "index": 11
+                      },
+                      "rolled_back": {
+                        "color": "#8e8e8e",
+                        "index": 12,
+                        "text": "rolled back"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last AAP job"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the job in Ansible Automation Platform",
+                    "url": "${aap_url}/execution/jobs/playbook/${__value.raw}/output",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "AWS change events per day",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT day AS time, mapped, ignored, suppressed FROM reporting.change_events_daily WHERE $__timeFilter(day) ORDER BY day"
+        }
+      ],
+      "description": "Mapped: the change affected an AI agent and was re-assessed. Ignored: unrelated or failed calls. Suppressed: duplicates within the throttle window.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 85,
+            "pointSize": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          },
+          "noValue": "No change events in this period"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mapped"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#338ced"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ignored"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e76624"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "suppressed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#00a888"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Event pipeline (selected period)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 29,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(received), 0) AS \"received\", coalesce(sum(mapped), 0) AS \"mapped\", coalesce(sum(reassessments_started), 0) AS \"re-assessments started\", round(avg(avg_delivery_seconds)) AS \"delivery delay (s)\" FROM reporting.change_events_daily WHERE $__timeFilter(day)"
+        }
+      ],
+      "description": "Delivery delay: seconds from the CloudTrail event to the governance database (mean of daily means).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 32
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Configuration drift",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT occurred_at AS detected, agent_name AS agent, CASE WHEN attributed THEN 'change event' ELSE 'unattributed' END AS attribution, changed_paths AS \"changed paths\" FROM reporting.drift_events WHERE $__timeFilter(occurred_at) ORDER BY occurred_at DESC LIMIT 100"
+        }
+      ],
+      "description": "Found by the hourly Reconcile and Sweep. Unattributed drift means a change reached the agent without a matching change event. Empty when: no configuration drift in this period.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "attribution"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "change event": {
+                        "color": "text",
+                        "index": 0
+                      },
+                      "unattributed": {
+                        "color": "#fbb315",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "detected"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "attribution"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Recent governance runs",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS started, replace(run_type, '_', ' ') AS \"run type\", trigger_type AS trigger, status, duration_min AS minutes, agents_evaluated AS agents, findings_opened AS opened, findings_closed AS closed, governance_run_id AS \"audit trail\", ao_execution_id AS \"AO execution\" FROM reporting.governance_runs_recent ORDER BY started_at DESC LIMIT 30"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "succeeded": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "completed": {
+                        "color": "#0aac23",
+                        "index": 1
+                      },
+                      "failed": {
+                        "color": "#dc3c3d",
+                        "index": 2
+                      },
+                      "running": {
+                        "color": "text",
+                        "index": 3
+                      },
+                      "completed_with_errors": {
+                        "color": "#f18a59",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "audit trail"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open this run in the Audit Explorer",
+                    "url": "/d/aigov-audit-explorer/ai-governance-audit-explorer?var-run=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AO execution"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the execution in automation orchestrator",
+                    "url": "${ao_url}/executions/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "run type"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "started"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    }
+  ]
+}

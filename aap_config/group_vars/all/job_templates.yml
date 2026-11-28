@@ -418,6 +418,11 @@ aigov_platform_templates:
     extra_vars:
       aigov_platform_namespace: "{{ aigov_platform_namespace }}"
       aigov_platform_trusted_namespaces: "{{ aigov_platform_trusted_namespaces }}"
+      # Dashboard links: AAP jobs, automation orchestrator executions, policy commits
+      aigov_dashboard_aap_url: >-
+        {{ (aigov_aap_hostname if '://' in aigov_aap_hostname else 'https://' ~ aigov_aap_hostname) | regex_replace('/+$', '') }}
+      aigov_dashboard_ao_url: "{{ aigov_ao_url | default('', true) }}"
+      aigov_dashboard_repo_url: "{{ aigov_project_scm_url | regex_replace('\\.git$', '') }}"
     <<: *aigov_jt_defaults
 
   - name: AI Governance - Publish Governance Policies

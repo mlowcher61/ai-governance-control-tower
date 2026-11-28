@@ -8,7 +8,8 @@
 #   * confirms agents missing for more than aigov_sweep_missing_hours;
 #   * explains configuration drift since the last sweep (changed paths; attributed to a change event, or unattributed,
 #     which points to a gap in event coverage).
-# It then captures the day's compliance snapshot (api.capture_compliance_snapshot, task T3.05) for the trend reports.
+# It then captures the day's compliance snapshot (api.capture_compliance_snapshot, task T3.05) for the trend reports,
+# and records the dead-letter count for the Operations dashboard (api.record_dead_letters, task T3.06).
 # The job also checks the change-event dead-letter queue. A broken audit chain or dead letters open (or update) a
 # ServiceNow incident; a broken chain also fails the job so it shows in AAP.
 #
@@ -75,6 +76,16 @@
     - name: Keep the dead-letter count
       ansible.builtin.set_fact:
         aigov_dead_letters: "{{ (aigov_dlq.approximate_messages | default(0)) | int }}"
+
+    - name: Record the dead-letter count for the Operations dashboard (task T3.06)
+      when: aigov_dlq is not skipped
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_dead_letters
+        aigov_api_body:
+          dead_letters: "{{ aigov_dead_letters | int }}"
 
     - name: Audit dead letters
       when: aigov_dead_letters | int > 0

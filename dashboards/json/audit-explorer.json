@@ -1,0 +1,913 @@
+{
+  "uid": "aigov-audit-explorer",
+  "title": "AI Governance - Audit Explorer",
+  "description": "The hash-chained audit trail: chain verification, every event of a governance run in order, human and AI actions, and the policy revisions used. Provisioned from Git (dashboards/json/).",
+  "tags": [
+    "ai-governance"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "label": "Governance run",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "aigov-postgres"
+        },
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "sort": 0,
+        "query": "SELECT to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC · ' || replace(run_type, '_', ' ') || ' · ' || status AS __text, governance_run_id::text AS __value FROM reporting.governance_runs_recent ORDER BY started_at DESC LIMIT 300",
+        "definition": "SELECT to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC · ' || replace(run_type, '_', ' ') || ' · ' || status AS __text, governance_run_id::text AS __value FROM reporting.governance_runs_recent ORDER BY started_at DESC LIMIT 300"
+      },
+      {
+        "name": "ao_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AO_URL__",
+          "value": "__AIGOV_AO_URL__"
+        }
+      },
+      {
+        "name": "aap_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AAP_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AAP_URL__",
+          "value": "__AIGOV_AAP_URL__"
+        }
+      },
+      {
+        "name": "repo_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_REPO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_REPO_URL__",
+          "value": "__AIGOV_REPO_URL__"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "AI Governance dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ai-governance"
+      ],
+      "asDropdown": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Audit hash chain",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT chain_status FROM reporting.audit_chain_status"
+        }
+      ],
+      "description": "The last check by Reconcile and Sweep. Every audit event is hash-chained to the previous one; an altered or removed event breaks the chain, fails the job and opens a ServiceNow incident.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "Not checked yet (hourly)",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "intact": {
+                  "color": "#0aac23",
+                  "index": 0,
+                  "text": "✔ intact"
+                },
+                "broken": {
+                  "color": "#dc3c3d",
+                  "index": 1,
+                  "text": "✖ broken"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Verified through event",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT verified_to_id AS \"event\" FROM reporting.audit_chain_status"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "-",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Events since the last check",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT events_since_check AS events FROM reporting.audit_chain_status"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Last checked",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT extract(epoch FROM last_checked_at) * 1000 AS \"checked\" FROM reporting.audit_chain_status"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "Never"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Selected run",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT replace(run_type, '_', ' ') AS \"run type\", trigger_type AS trigger, status, started_at AS started, finished_at AS finished, duration_min AS minutes, agents_evaluated AS agents, findings_opened AS opened, findings_closed AS closed, ao_execution_id AS \"AO execution\" FROM reporting.governance_runs_recent WHERE governance_run_id = '$run'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "succeeded": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "completed": {
+                        "color": "#0aac23",
+                        "index": 1
+                      },
+                      "failed": {
+                        "color": "#dc3c3d",
+                        "index": 2
+                      },
+                      "running": {
+                        "color": "text",
+                        "index": 3
+                      },
+                      "completed_with_errors": {
+                        "color": "#f18a59",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AO execution"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the execution in automation orchestrator",
+                    "url": "${ao_url}/executions/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Audit timeline (selected run, in chain order)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT event_id AS \"#\", occurred_at AS time, actor_type AS actor, actor_id AS \"actor ID\", event_type AS event, coalesce(agent_name, '') AS agent, subject, source_system AS source, coalesce(source_ref, '') AS \"source ref\", details FROM reporting.audit_timeline WHERE governance_run_id = '$run' ORDER BY event_id"
+        }
+      ],
+      "description": "Actors: ⚙️ service (automation), 📜 policy (OPA), 🤖 AI (advisory), 👤 human. Select a cell in details to inspect the full record. Empty when: no audit events for this run.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actor"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "service": {
+                        "text": "⚙️ service",
+                        "index": 0
+                      },
+                      "policy": {
+                        "text": "📜 policy",
+                        "index": 1
+                      },
+                      "ai": {
+                        "text": "🤖 AI",
+                        "index": 2
+                      },
+                      "human": {
+                        "text": "👤 human",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "#"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actor"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Policy bundle revisions",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT bundle_revision AS revision, CASE WHEN in_use THEN 'in use' ELSE 'history' END AS status, first_used_at AS \"first used\", last_used_at AS \"last used\", evaluations, agents FROM reporting.bundle_revisions ORDER BY last_used_at DESC"
+        }
+      ],
+      "description": "The Git commit of the policies each evaluation used (published by Publish Governance Policies).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "revision"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the policy commit in Git",
+                    "url": "${repo_url}/commit/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Human and AI actions",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT occurred_at AS time, actor_type AS actor, actor_id AS \"actor ID\", event_type AS event, coalesce(agent_name, '') AS agent, subject, governance_run_id AS run FROM reporting.audit_timeline WHERE actor_type IN ('human', 'ai') AND $__timeFilter(occurred_at) ORDER BY event_id DESC LIMIT 100"
+        }
+      ],
+      "description": "Approvals and decisions by people, and advisory AI outputs, across all runs. Empty when: no human or AI actions in this period.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actor"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "service": {
+                        "text": "⚙️ service",
+                        "index": 0
+                      },
+                      "policy": {
+                        "text": "📜 policy",
+                        "index": 1
+                      },
+                      "ai": {
+                        "text": "🤖 AI",
+                        "index": 2
+                      },
+                      "human": {
+                        "text": "👤 human",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "run"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open this run in the Audit Explorer",
+                    "url": "/d/aigov-audit-explorer/ai-governance-audit-explorer?var-run=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Audit chain checks",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT checked_at AS checked, status, verified_from_id AS \"after event\", verified_to_id AS \"through event\", events_checked AS \"events checked\", coalesce(broken_id::text, '') AS \"broken at\", coalesce(reason, '') AS reason FROM reporting.audit_chain_checks ORDER BY check_id DESC LIMIT 48"
+        }
+      ],
+      "description": "Empty when: no chain check yet.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "intact": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "broken": {
+                        "color": "#dc3c3d",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    }
+  ]
+}

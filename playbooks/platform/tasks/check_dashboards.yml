@@ -65,9 +65,30 @@
           rawSql: SELECT agent_id::text AS id FROM reporting.agent_current ORDER BY risk_rank, name LIMIT 1
   register: aigov_grafana_agent
 
+- name: Pick a governance run for the Audit Explorer queries (the latest, as the dashboard's run variable)
+  ansible.builtin.uri:
+    url: "{{ aigov_grafana_api }}/api/ds/query"
+    method: POST
+    url_username: "{{ aigov_grafana_user }}"
+    url_password: "{{ aigov_grafana_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    body_format: json
+    body:
+      from: now-30d
+      to: now
+      queries:
+        - refId: A
+          datasource: {type: grafana-postgresql-datasource, uid: aigov-postgres}
+          format: table
+          rawQuery: true
+          rawSql: SELECT governance_run_id::text AS id FROM reporting.governance_runs_recent ORDER BY started_at DESC LIMIT 1
+  register: aigov_grafana_run
+
 - name: Run every panel query through Grafana
   vars:
     aigov_agent_id: "{{ (aigov_grafana_agent.json.results.A.frames[0].data['values'][0] | default(['00000000-0000-0000-0000-000000000000']))[0] }}"
+    aigov_run_id: "{{ (aigov_grafana_run.json.results.A.frames[0].data['values'][0] | default(['00000000-0000-0000-0000-000000000000']))[0] }}"
   ansible.builtin.uri:
     url: "{{ aigov_grafana_api }}/api/ds/query"
     method: POST
@@ -84,13 +105,27 @@
           datasource: {type: grafana-postgresql-datasource, uid: aigov-postgres}
           format: "{{ item.1.targets[0].format }}"
           rawQuery: true
-          rawSql: "{{ item.1.targets[0].rawSql | replace('$agent', aigov_agent_id) }}"
+          rawSql: "{{ item.1.targets[0].rawSql | replace('$agent', aigov_agent_id) | replace('$run', aigov_run_id) }}"
     status_code: [200, 400, 500]
   # item.0 = dashboard, item.1 = panel
   loop: "{{ aigov_dashboards | subelements('panels') }}"
   loop_control:
     label: "{{ item.0.title }} / {{ item.1.title }}"
   register: aigov_panel_queries
+
+# A panel with no rows shows its "no data" message (for example no pending approvals); listed for the visual review (A3-3)
+- name: List the panels with no data on this platform
+  ansible.builtin.set_fact:
+    aigov_empty_panels: >-
+      {%- set ns = namespace(empty=[]) -%}
+      {%- for r in aigov_panel_queries.results if r.status == 200 -%}
+      {%- set frames = r.json.results.A.frames | default([], true) -%}
+      {%- set cols = ((frames | first).data | default({})).get('values', []) if frames | length > 0 else [] -%}
+      {%- if cols | length == 0 or cols[0] | length == 0 -%}
+      {%- set ns.empty = ns.empty + [r.item.0.title | replace('AI Governance - ', '') ~ ' / ' ~ r.item.1.title] -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ ns.empty }}
 
 - name: Check every panel query succeeded
   ansible.builtin.assert:
@@ -102,4 +137,5 @@
       | map('dict2items') | flatten | map(attribute='value') | map(attribute='error', default='') | list }})
     success_msg: >-
       {{ aigov_dashboards | length }} dashboards loaded once each; {{ aigov_panel_queries.results | length }} panel queries ran
-      through Grafana. Open {{ aigov_grafana_api }}/dashboards/f/ (folder "AI Governance").
+      through Grafana ({{ aigov_empty_panels | length }} with no data here: {{ aigov_empty_panels | join('; ') or 'none' }}).
+      Open {{ aigov_grafana_api }}/dashboards/f/ (folder "AI Governance").

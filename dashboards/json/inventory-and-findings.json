@@ -70,7 +70,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -86,7 +86,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -129,7 +129,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               }
             ]
@@ -145,7 +145,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -188,11 +188,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "#dc3c3d",
                 "value": 1
               }
             ]
@@ -208,7 +208,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -251,11 +251,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "#fbb315",
                 "value": 1
               }
             ]
@@ -271,7 +271,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -314,11 +314,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "#dc3c3d",
                 "value": 1
               }
             ]
@@ -334,7 +334,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -377,11 +377,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "#dc3c3d",
                 "value": 1
               }
             ]
@@ -397,7 +397,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
@@ -439,15 +439,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "#dc3c3d",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "#fbb315",
                 "value": 80
               },
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": 95
               }
             ]
@@ -468,9 +468,8 @@
     },
     {
       "id": 8,
-      "type": "piechart",
+      "type": "bargauge",
       "title": "Compliance status",
-      "description": "Agents by overall compliance status.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "aigov-postgres"
@@ -488,16 +487,20 @@
             "type": "grafana-postgresql-datasource",
             "uid": "aigov-postgres"
           },
+          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "editorMode": "code",
-          "rawSql": "SELECT compliance_status AS status, count(*) AS agents FROM reporting.agent_current GROUP BY compliance_status ORDER BY 1"
+          "rawSql": "SELECT count(*) FILTER (WHERE compliance_status = 'compliant') AS \"compliant\", count(*) FILTER (WHERE compliance_status = 'noncompliant') AS \"noncompliant\", count(*) FILTER (WHERE compliance_status IN ('unknown', 'error')) AS \"unknown or error\", count(*) FILTER (WHERE compliance_status = 'not_evaluated') AS \"not evaluated\" FROM reporting.agent_current"
         }
       ],
+      "description": "Unknown means the policy could not decide because evidence was missing.",
       "fieldConfig": {
         "defaults": {
+          "unit": "none",
+          "min": 0,
           "color": {
-            "mode": "palette-classic"
+            "mode": "fixed",
+            "fixedColor": "#338ced"
           }
         },
         "overrides": [
@@ -511,7 +514,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "#0aac23"
                 }
               }
             ]
@@ -526,7 +529,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "red"
+                  "fixedColor": "#dc3c3d"
                 }
               }
             ]
@@ -534,14 +537,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "unknown"
+              "options": "unknown or error"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "orange"
+                  "fixedColor": "#fbb315"
                 }
               }
             ]
@@ -549,14 +552,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "not_evaluated"
+              "options": "not evaluated"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "text"
+                  "fixedColor": "#8e8e8e"
                 }
               }
             ]
@@ -564,21 +567,28 @@
         ]
       },
       "options": {
-        "pieType": "donut",
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "text",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "manual",
+        "minVizHeight": 34,
+        "minVizWidth": 8,
+        "maxVizHeight": 38,
+        "text": {
+          "titleSize": 13,
+          "valueSize": 14
+        },
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
-          "values": true
+          "values": false
         },
         "legend": {
-          "showLegend": true,
-          "placement": "right",
-          "displayMode": "table",
-          "values": [
-            "value"
-          ]
+          "showLegend": false
         }
       }
     },
@@ -614,7 +624,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "red"
+            "fixedColor": "#338ced"
           }
         },
         "overrides": []
@@ -661,7 +671,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "orange"
+            "fixedColor": "#338ced"
           }
         },
         "overrides": []
@@ -740,19 +750,19 @@
                     "type": "value",
                     "options": {
                       "compliant": {
-                        "color": "green",
+                        "color": "#0aac23",
                         "index": 0
                       },
                       "noncompliant": {
-                        "color": "red",
+                        "color": "#dc3c3d",
                         "index": 1
                       },
                       "unknown": {
-                        "color": "orange",
+                        "color": "#fbb315",
                         "index": 2
                       },
                       "error": {
-                        "color": "purple",
+                        "color": "#f18a59",
                         "index": 3
                       },
                       "not_evaluated": {
@@ -766,7 +776,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
               }
             ]
@@ -784,19 +794,19 @@
                     "type": "value",
                     "options": {
                       "critical": {
-                        "color": "dark-red",
+                        "color": "#dc3c3d",
                         "index": 0
                       },
                       "high": {
-                        "color": "red",
+                        "color": "#f18a59",
                         "index": 1
                       },
                       "medium": {
-                        "color": "orange",
+                        "color": "#fbb315",
                         "index": 2
                       },
                       "low": {
-                        "color": "green",
+                        "color": "#0aac23",
                         "index": 3
                       }
                     }
@@ -806,7 +816,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
               }
             ]
@@ -825,6 +835,18 @@
                     "url": "/d/aigov-agent-detail/ai-governance-agent-detail?var-agent=${__data.fields.agent_id}"
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
               }
             ]
           }
@@ -887,23 +909,23 @@
                     "type": "value",
                     "options": {
                       "critical": {
-                        "color": "dark-red",
+                        "color": "#dc3c3d",
                         "index": 0
                       },
                       "high": {
-                        "color": "red",
+                        "color": "#f18a59",
                         "index": 1
                       },
                       "medium": {
-                        "color": "orange",
+                        "color": "#fbb315",
                         "index": 2
                       },
                       "low": {
-                        "color": "yellow",
+                        "color": "#8e8e8e",
                         "index": 3
                       },
                       "info": {
-                        "color": "blue",
+                        "color": "#8e8e8e",
                         "index": 4
                       }
                     }
@@ -913,7 +935,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
               }
             ]
@@ -944,6 +966,18 @@
                     "url": "/d/aigov-agent-detail/ai-governance-agent-detail?var-agent=${__data.fields.agent_id}"
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
               }
             ]
           }
@@ -1003,7 +1037,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "#0aac23"
                 }
               }
             ]
@@ -1018,7 +1052,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "red"
+                  "fixedColor": "#dc3c3d"
                 }
               }
             ]
@@ -1033,7 +1067,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "orange"
+                  "fixedColor": "#fbb315"
                 }
               }
             ]
@@ -1085,7 +1119,20 @@
             "inspect": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,

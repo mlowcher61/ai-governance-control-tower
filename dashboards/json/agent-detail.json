@@ -1,7 +1,7 @@
 {
   "uid": "aigov-agent-detail",
   "title": "AI Governance - Agent Detail",
-  "description": "Everything about one AI agent: identity, policy results with explanations, risk factors, permissions, history and audit.",
+  "description": "One AI agent: what discovery and the registry know, compliance and risk, policy results with their explanations, permissions, tools and data sources, configuration history and drift, remediations, and the audit timeline. Provisioned from Git (dashboards/json/).",
   "tags": [
     "ai-governance"
   ],
@@ -31,6 +31,39 @@
         "query": "SELECT name AS __text, agent_id::text AS __value FROM reporting.agent_current ORDER BY risk_rank, name",
         "definition": "SELECT name AS __text, agent_id::text AS __value FROM reporting.agent_current ORDER BY risk_rank, name",
         "sort": 0
+      },
+      {
+        "name": "ao_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AO_URL__",
+          "value": "__AIGOV_AO_URL__"
+        }
+      },
+      {
+        "name": "aap_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_AAP_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_AAP_URL__",
+          "value": "__AIGOV_AAP_URL__"
+        }
+      },
+      {
+        "name": "repo_url",
+        "type": "constant",
+        "hide": 2,
+        "query": "__AIGOV_REPO_URL__",
+        "skipUrlSync": true,
+        "current": {
+          "text": "__AIGOV_REPO_URL__",
+          "value": "__AIGOV_REPO_URL__"
+        }
       }
     ]
   },
@@ -49,7 +82,7 @@
   ],
   "panels": [
     {
-      "id": 1,
+      "id": 4,
       "type": "table",
       "title": "Agent",
       "description": "What discovery and the governance registry know about the agent.",
@@ -86,7 +119,20 @@
             "inspect": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
@@ -94,7 +140,7 @@
       }
     },
     {
-      "id": 2,
+      "id": 5,
       "type": "stat",
       "title": "Compliance",
       "description": "Overall result of the latest assessment.",
@@ -131,11 +177,39 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "compliant": {
+                  "color": "#0aac23",
+                  "index": 0
+                },
+                "noncompliant": {
+                  "color": "#dc3c3d",
+                  "index": 1
+                },
+                "unknown": {
+                  "color": "#fbb315",
+                  "index": 2
+                },
+                "error": {
+                  "color": "#f18a59",
+                  "index": 3
+                },
+                "not_evaluated": {
+                  "color": "text",
+                  "index": 4,
+                  "text": "not evaluated"
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -144,16 +218,16 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/^compliance_status$/",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
     },
     {
-      "id": 3,
+      "id": 6,
       "type": "stat",
       "title": "Risk score",
       "description": "Deterministic risk score of the latest assessment (0-100).",
@@ -190,19 +264,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "#fbb315",
                 "value": 21
               },
               {
-                "color": "red",
+                "color": "#f18a59",
                 "value": 45
               },
               {
-                "color": "dark-red",
+                "color": "#dc3c3d",
                 "value": 70
               }
             ]
@@ -218,13 +292,13 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
     },
     {
-      "id": 4,
+      "id": 7,
       "type": "stat",
       "title": "Open findings",
       "description": "Findings not yet resolved.",
@@ -261,11 +335,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#0aac23",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "#dc3c3d",
                 "value": 1
               }
             ]
@@ -281,13 +355,13 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
     },
     {
-      "id": 5,
+      "id": 8,
       "type": "stat",
       "title": "Last evaluated",
       "description": "Time of the latest assessment.",
@@ -311,7 +385,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT last_evaluated_at FROM reporting.agent_current WHERE agent_id = '$agent'"
+          "rawSql": "SELECT extract(epoch FROM last_evaluated_at) * 1000 AS \"last evaluated\" FROM reporting.agent_current WHERE agent_id = '$agent'"
         }
       ],
       "fieldConfig": {
@@ -324,7 +398,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -340,13 +414,13 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value"
       }
     },
     {
-      "id": 6,
+      "id": 9,
       "type": "table",
       "title": "Policy results",
       "description": "Every governance policy's result in the latest assessment, with the controls it provides evidence for.",
@@ -397,15 +471,15 @@
                     "type": "value",
                     "options": {
                       "pass": {
-                        "color": "green",
+                        "color": "#0aac23",
                         "index": 0
                       },
                       "fail": {
-                        "color": "red",
+                        "color": "#dc3c3d",
                         "index": 1
                       },
                       "unknown": {
-                        "color": "orange",
+                        "color": "#fbb315",
                         "index": 2
                       },
                       "not_applicable": {
@@ -413,7 +487,7 @@
                         "index": 3
                       },
                       "error": {
-                        "color": "purple",
+                        "color": "#f18a59",
                         "index": 4
                       }
                     }
@@ -423,7 +497,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
               }
             ]
@@ -441,23 +515,23 @@
                     "type": "value",
                     "options": {
                       "critical": {
-                        "color": "dark-red",
+                        "color": "#dc3c3d",
                         "index": 0
                       },
                       "high": {
-                        "color": "red",
+                        "color": "#f18a59",
                         "index": 1
                       },
                       "medium": {
-                        "color": "orange",
+                        "color": "#fbb315",
                         "index": 2
                       },
                       "low": {
-                        "color": "yellow",
+                        "color": "#8e8e8e",
                         "index": 3
                       },
                       "info": {
-                        "color": "blue",
+                        "color": "#8e8e8e",
                         "index": 4
                       }
                     }
@@ -467,8 +541,20 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
               }
             ]
           }
@@ -480,7 +566,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 10,
       "type": "barchart",
       "title": "Risk factors",
       "description": "What adds up to the risk score.",
@@ -511,7 +597,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "red"
+            "fixedColor": "#338ced"
           }
         },
         "overrides": []
@@ -527,7 +613,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 11,
       "type": "table",
       "title": "Execution role permissions",
       "description": "Policies attached to the agent's execution role. Flags show which ones the latest assessment cited.",
@@ -564,7 +650,20 @@
             "inspect": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
@@ -572,7 +671,201 @@
       }
     },
     {
-      "id": 9,
+      "id": 14,
+      "type": "table",
+      "title": "Tools and data sources",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT kind, type, name, coalesce(state, '-') AS state, coalesce(classification, '-') AS classification, CASE approved WHEN true THEN 'approved' WHEN false THEN 'not approved' ELSE '-' END AS \"high-risk tool approval\", last_seen_at AS \"last seen\" FROM reporting.agent_resources WHERE agent_id = '$agent' ORDER BY kind DESC, name"
+        }
+      ],
+      "description": "Empty when: no tools or data sources are linked to this agent in its platform (AgentCore runtimes do not link them).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high-risk tool approval"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "approved": {
+                        "color": "text",
+                        "index": 0
+                      },
+                      "not approved": {
+                        "color": "#dc3c3d",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Configuration drift",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT occurred_at AS detected, CASE WHEN attributed THEN 'change event' ELSE 'unattributed' END AS attribution, changed_paths AS \"changed paths\" FROM reporting.drift_events WHERE agent_id = '$agent' ORDER BY occurred_at DESC LIMIT 50"
+        }
+      ],
+      "description": "Found by the hourly Reconcile and Sweep. Unattributed: no change event explains it (a gap in event coverage). Empty when: no drift found for this agent.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "attribution"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "change event": {
+                        "color": "text",
+                        "index": 0
+                      },
+                      "unattributed": {
+                        "color": "#fbb315",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 12,
       "type": "table",
       "title": "Configuration history",
       "description": "A snapshot is recorded only when discovery sees a change.",
@@ -582,7 +875,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 33,
         "w": 24,
         "h": 6
       },
@@ -609,7 +902,20 @@
             "inspect": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
@@ -617,7 +923,233 @@
       }
     },
     {
-      "id": 10,
+      "id": 16,
+      "type": "table",
+      "title": "Remediations",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT created_at AS created, status, action_type AS action, policy_id AS policy, severity, route, coalesce(decided_by, '-') AS \"decided by\", aap_job_ids[cardinality(aap_job_ids)] AS \"last AAP job\", ao_execution_id AS \"AO execution\" FROM reporting.remediations WHERE agent_id = '$agent' ORDER BY created_at DESC LIMIT 50"
+        }
+      ],
+      "description": "Empty when: no remediation for this agent.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "verified": {
+                        "color": "#0aac23",
+                        "index": 0
+                      },
+                      "failed": {
+                        "color": "#dc3c3d",
+                        "index": 1
+                      },
+                      "verification_failed": {
+                        "color": "#dc3c3d",
+                        "index": 2,
+                        "text": "verification failed"
+                      },
+                      "rollback_failed": {
+                        "color": "#dc3c3d",
+                        "index": 3,
+                        "text": "rollback failed"
+                      },
+                      "awaiting_approval": {
+                        "color": "#fbb315",
+                        "index": 4,
+                        "text": "awaiting approval"
+                      },
+                      "succeeded": {
+                        "color": "text",
+                        "index": 5,
+                        "text": "executed, verifying"
+                      },
+                      "executing": {
+                        "color": "text",
+                        "index": 6
+                      },
+                      "approved": {
+                        "color": "text",
+                        "index": 7
+                      },
+                      "planned": {
+                        "color": "text",
+                        "index": 8
+                      },
+                      "rejected": {
+                        "color": "#8e8e8e",
+                        "index": 9
+                      },
+                      "expired": {
+                        "color": "#8e8e8e",
+                        "index": 10
+                      },
+                      "skipped": {
+                        "color": "#8e8e8e",
+                        "index": 11
+                      },
+                      "rolled_back": {
+                        "color": "#8e8e8e",
+                        "index": 12,
+                        "text": "rolled back"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {
+                        "color": "#dc3c3d",
+                        "index": 0
+                      },
+                      "high": {
+                        "color": "#f18a59",
+                        "index": 1
+                      },
+                      "medium": {
+                        "color": "#fbb315",
+                        "index": 2
+                      },
+                      "low": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      },
+                      "info": {
+                        "color": "#8e8e8e",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last AAP job"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the job in Ansible Automation Platform",
+                    "url": "${aap_url}/execution/jobs/playbook/${__value.raw}/output",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AO execution"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the execution in automation orchestrator",
+                    "url": "${ao_url}/executions/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 13,
       "type": "table",
       "title": "Audit timeline",
       "description": "Everything recorded about this agent in the hash-chained audit log.",
@@ -627,7 +1159,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 46,
         "w": 24,
         "h": 10
       },
@@ -654,7 +1186,71 @@
             "inspect": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "governance_run_id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open this run in the Audit Explorer",
+                    "url": "/d/aigov-audit-explorer/ai-governance-audit-explorer?var-run=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actor"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "service": {
+                        "text": "⚙️ service",
+                        "index": 0
+                      },
+                      "policy": {
+                        "text": "📜 policy",
+                        "index": 1
+                      },
+                      "ai": {
+                        "text": "🤖 AI",
+                        "index": 2
+                      },
+                      "human": {
+                        "text": "👤 human",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
