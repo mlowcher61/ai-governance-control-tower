@@ -127,6 +127,17 @@
       {%- endfor -%}
       {{ ns.empty }}
 
+- name: Read the Executive Overview headline figures (agents, compliance, time to detect and to remediate)
+  ansible.builtin.set_fact:
+    aigov_headline: >-
+      {%- set ns = namespace(f={}) -%}
+      {%- for r in aigov_panel_queries.results if r.status == 200 and r.item.0.uid == 'aigov-executive' and r.item.1.type == 'stat' -%}
+      {%- set frames = r.json.results.A.frames | default([], true) -%}
+      {%- set cols = ((frames | first).data | default({})).get('values', []) if frames | length > 0 else [] -%}
+      {%- set ns.f = ns.f | combine({r.item.1.title: (cols[0][0] if cols | length > 0 and cols[0] | length > 0 else 'no data')}) -%}
+      {%- endfor -%}
+      {{ ns.f }}
+
 - name: Check every panel query succeeded
   ansible.builtin.assert:
     that: aigov_panel_queries.results | rejectattr('status', 'equalto', 200) | list | length == 0
@@ -138,4 +149,6 @@
     success_msg: >-
       {{ aigov_dashboards | length }} dashboards loaded once each; {{ aigov_panel_queries.results | length }} panel queries ran
       through Grafana ({{ aigov_empty_panels | length }} with no data here: {{ aigov_empty_panels | join('; ') or 'none' }}).
+      Executive Overview (last 90 days): {{ aigov_headline | dict2items | map(attribute='key') | zip(aigov_headline | dict2items
+      | map(attribute='value')) | map('join', ': ') | join('; ') }}.
       Open {{ aigov_grafana_api }}/dashboards/f/ (folder "AI Governance").
