@@ -63,14 +63,13 @@
         label: "{{ item | regex_replace('^.*runtime/', '') }}"
       register: aigov_invoked
 
-    - name: Summarize
+    - name: Summarize (one expression, so the counts stay numbers on ansible-core 2.16)
       ansible.builtin.set_fact:
-        aigov_out:
-          runtimes: "{{ aigov_demo_runtimes | length }}"
-          invocations: "{{ aigov_invoked.results | map(attribute='invocations') | map('length') | sum }}"
-          succeeded: "{{ aigov_invoked.results | map(attribute='succeeded') | sum }}"
-          errors: >-
-            {{ aigov_invoked.results | map(attribute='invocations') | flatten | map(attribute='error') | select | unique | list }}
+        aigov_out: >-
+          {{ {'runtimes': aigov_demo_runtimes | length,
+              'invocations': aigov_invoked.results | map(attribute='invocations') | map('length') | sum,
+              'succeeded': aigov_invoked.results | map(attribute='succeeded') | sum,
+              'errors': aigov_invoked.results | map(attribute='invocations') | flatten | map(attribute='error') | select | unique | list} }}
 
     - name: Show the result
       ansible.builtin.debug:

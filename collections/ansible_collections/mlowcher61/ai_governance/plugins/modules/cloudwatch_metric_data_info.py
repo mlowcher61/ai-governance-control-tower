@@ -218,7 +218,6 @@ def main():
             start_time=dict(type="str"),
             end_time=dict(type="str"),
         ),
-        required_by=dict(queries=("start_time", "end_time")),
         supports_check_mode=True,
     )
     p = module.params
