@@ -291,8 +291,8 @@ Because the GenAI conventions are still in **Development**, attribute names may 
 **As built (T3.05, V016):** the daily snapshot is the table `aigov.compliance_snapshots` (one row per UTC day, written by
 `api.capture_compliance_snapshot()` from every hourly Reconcile and Sweep) read through `reporting.compliance_trend`. The V005 view
 `reporting.compliance_daily` keeps its name and derives earlier days from assessments. `reporting.mttd_daily` uses
-`reporting.findings_event_attributed`: findings stamped with `source_change_at` by `api.complete_targeted_assessment`, linked to the
-change event through the WF-03 run. `reporting.mttr_daily` uses `reporting.findings_remediated`: findings resolved by a `verified`
+`reporting.findings_event_attributed`: findings opened by an event-triggered WF-03 run, measured from that change event's CloudTrail
+time (V017; every finding carries `source_change_at`, which V002 sets to the agent's last update time, so it cannot identify them). `reporting.mttr_daily` uses `reporting.findings_remediated`: findings resolved by a `verified`
 remediation, split by the route OPA chose (automatic or after approval). The Operations panels read `reporting.remediations`,
 `reporting.pending_approvals`, `reporting.remediation_funnel`, `reporting.change_events_daily` and `reporting.drift_events`.
 
@@ -330,6 +330,12 @@ The audit explorer has these panels:
 - **Ordered audit timeline:** actor type icons (service, policy, ai, human).
 - **Hash-chain verification status:** the result of the last sweep.
 - **Policy bundle revisions in use:** links to GitHub commits.
+
+**As built (T3.06):** the four dashboards are `dashboards/json/executive-overview.json`, `operations.json`, `agent-detail.json` and
+`audit-explorer.json` (Inventory and Findings from Stage 1 stays). Extra views (V017): `audit_chain_status`, `audit_chain_checks`,
+`audit_timeline`, `bundle_revisions`, `compliance_history`, `agent_resources`. The dead-letter depth comes from the hourly sweep
+(`api.record_dead_letters`). The compliance status split uses bars instead of a donut. Links to AO executions, AAP jobs and policy commits
+use hosts that Deploy Platform Services fills in from config as code. Usage and cost panels are added with T3.07.
 
 ## 7. Compliance evidence architecture
 

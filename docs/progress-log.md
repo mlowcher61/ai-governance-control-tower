@@ -975,7 +975,8 @@ runtime).
   `api.capture_compliance_snapshot()` (remediator) writes it, and **Reconcile and Sweep** calls it every hour, so each
   day's row ends up holding its last state of the day. Past rows stay as history even when agents or findings are
   removed later. Dashboards read the rows through `reporting.compliance_trend`, which adds `compliant_pct`.
-- **Time to detect.** `reporting.findings_event_attributed` lists findings an AWS change led to. Their
+- **Time to detect.** (Corrected in T3.06/V017: the first version counted every finding, see that entry.)
+  `reporting.findings_event_attributed` lists findings an AWS change led to. Their
   `source_change_at` is the CloudTrail event time, stamped by `api.complete_targeted_assessment` (T3.03). The view
   links each finding to its change event through the WF-03 run that opened it. `reporting.mttd_daily` gives the
   average and maximum minutes from the change to the finding, per day.
@@ -1020,13 +1021,105 @@ the new artifacts on ansible-core 2.16.
   demo inventory. The chain was intact to event 1530.
 - The views' figures on live data are checked in T3.06, when the dashboard panels query them through Grafana.
 
+## 2026-11-28 - T3.06 Grafana dashboards: Executive, Operations, Agent Detail, Audit Explorer
+
+**Built.**
+- **AI Governance - Executive Overview** (section 6.1):
+  - headline tiles: agents, % compliant, noncompliant, unregistered, **mean time to detect** (target line at 5 minutes),
+    **mean time to remediate**;
+  - compliance status, agents by risk and by platform, violations by policy, open findings by severity, evidence
+    coverage;
+  - trends: % compliant, noncompliant agents with open critical or high findings, time to detect per day, time to
+    remediate per day (automatic and after approval).
+- **AI Governance - Operations** (section 6.2):
+  - tiles: open findings, in progress, pending approvals, verified, failed, dead-letter events;
+  - pending approvals with minutes waited (yellow from 45, red from 60, when automation orchestrator expires them);
+  - remediations in progress, open findings by severity and age, verified remediations per day, the funnel, failed
+    remediations;
+  - AWS change events per day (mapped, ignored, suppressed) and the event pipeline, configuration drift, recent runs.
+- **AI Governance - Agent Detail** (section 6.3) gains tools and data sources (with high-risk tool approval),
+  configuration drift and remediations. The audit timeline links each run to the Audit Explorer.
+- **AI Governance - Audit Explorer** (section 6.4):
+  - hash-chain status from the last sweep, the event it verified to, events since, when;
+  - one governance run (selector) with every audit event in chain order, actors shown as ⚙️ service, 📜 policy,
+    🤖 AI, 👤 human;
+  - human and AI actions across runs, the policy bundle revisions (linked to their Git commits), every chain check.
+- **Links** to automation orchestrator executions (`/executions/<id>`, found in the AO web app), AAP jobs and policy
+  commits. The dashboards hold placeholders that **Deploy Platform Services** fills in from config as code
+  (`aigov_aap_hostname`, `aigov_ao_url`, `aigov_project_scm_url`).
+- **Migration V017**:
+  - `reporting.audit_chain_status`, `audit_chain_checks`, `audit_timeline`, `bundle_revisions`, `compliance_history`
+    (snapshots, or assessments before them) and `agent_resources`;
+  - `api.record_dead_letters`, which Reconcile and Sweep now calls every hour so Grafana can show the dead-letter depth.
+- **One palette** for all five dashboards, checked with a color-blind validator on Grafana's dark and light themes:
+  - status colors have one meaning everywhere and are always written as text too;
+  - series are blue, orange and aqua;
+  - colored text instead of solid blocks, and thin bars.
+
+  The Stage 1 dashboards were brought onto the same palette, and the Inventory donut became bars.
+- The live check in Deploy Platform Services:
+  - substitutes the run variable;
+  - lists the panels that have no data on the platform;
+  - prints the Executive headline figures.
+
+  CI substitutes Grafana's time macro and the run variable. It names the 13 panels the CI demo data cannot fill;
+  every other panel must return rows.
+
+**Found and fixed.**
+- **Time to detect counted every finding (T3.05 bug).**
+  - V002 stamps every new finding with `source_change_at` = the agent's last update time (the Stage 1 fallback), so
+    V016's "has a change time" test included ordinary assessment findings. The first render showed MTTD of 5 days.
+  - V017 replaces `reporting.findings_event_attributed`: only findings opened by an event-triggered targeted
+    re-assessment count, measured from that change event's CloudTrail time. A regression test reproduces V002's
+    behavior.
+  - V016's own test had missed it, because its seeded findings had no change time, which real assessments never
+    produce.
+- **Two Stage 1 Agent Detail tiles always showed "No data"** (since T1.12): Compliance (a text value) and Last
+  evaluated (a timestamp). A Grafana stat reads only numeric fields unless told otherwise. The Audit Explorer's chain
+  status tile had the same problem. The live check had only verified that queries succeed, so a visual review caught
+  it.
+- **A table's "no data" text also fills empty cells**. Empty-table explanations moved to the panel descriptions.
+
+**How it was reviewed.** The dashboards were rendered locally with the production Grafana image (13.3.1):
+- PostgreSQL with the CI demo data plus 12 days of seeded Stage 2/3 history;
+- headless Chrome screenshots, dark and light themes.
+
+Four rounds fixed clipped labels, hairline bars, misleading lines between sparse days (now points), a hidden target
+line and layout overflow.
+
+**Tests.**
+- V017 SQL tests:
+  - chain status and checks, with event IDs that are not contiguous (the hash trigger draws the sequence twice);
+  - the timeline of a run in chain order;
+  - bundle revisions in use;
+  - compliance history (the snapshot wins over assessments);
+  - tool approval;
+  - dead letters (the remediator only, no negatives);
+  - the MTTD regression.
+- All 17 SQL files, HTTP, contract and panel-query tests, lint, schema examples (193), and the new Jinja on
+  ansible-core 2.16.
+
+**Results on mk6hb.**
+- V017 applied (job 976). Config as code set the link hosts on Deploy Platform Services. The sweep recorded the
+  dead-letter count (job 979).
+- **Deploy Platform Services (job 983)**: 5 dashboards loaded once each; **68 panel queries ran through Grafana, 65
+  with data**. The 3 without data are correct: nothing is waiting for approval, nothing is in progress, and AgentCore
+  runtimes link no tools.
+- Executive headline (last 90 days): 4 agents, 25 % compliant, 2 noncompliant, 1 unregistered, **mean time to detect
+  3.2 minutes** (event-detected findings from T3.02-T3.03, under the 5-minute target), mean time to remediate 1,166
+  minutes. That is high because most verified fixes so far were Stage 2 tests on findings open since the Stage 1
+  assessments days earlier; the per-day chart splits it by day and route.
+
+**A3-3** (all required panels populated with demo data; MTTD and MTTR computed): met on mk6hb. Usage and cost panels
+come with T3.07 (P1).
+
 ---
 
 ## Open items (2026-11-23)
 
 | Item | Notes |
 |---|---|
-| Visual review of the Grafana dashboards | `https://grafana-ai-governance.apps.cluster-mk6hb.dyn.redhatworkshops.io`, folder *AI Governance* |
+| Visual review of the Grafana dashboards | Rendered and reviewed locally in T3.06 (production Grafana image, seeded data). Worth a look on the live data: `https://grafana-ai-governance.apps.cluster-mk6hb.dyn.redhatworkshops.io`, folder *AI Governance* |
 | Regal (Rego linter) | Blocked locally by the permission checker; could run as a CI-only step if wanted |
 | Live demonstration of finding auto-close | Covered by SQL tests; not shown live yet (the reset resolves findings as `demo_reset`). A good Stage 2 demo moment: renew HR's risk assessment and re-run WF-01 |
 | Bedrock Agents Classic live test | Needs an AWS account with Bedrock Agents activity in the past 12 months |
