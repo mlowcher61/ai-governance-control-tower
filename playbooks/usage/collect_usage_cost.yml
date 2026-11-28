@@ -1,0 +1,162 @@
+---
+# AI Governance - Collect Usage and Cost (task T3.07; docs/plan/05 sections 4 and 9; runs daily at 06:00 UTC)
+#
+# Reads the daily AI usage from Amazon CloudWatch with the read-only discovery role and records it in the inventory:
+#   * AgentCore runtimes (AWS/Bedrock-AgentCore): invocations, sessions, errors, latency, vCPU-hours, GB-hours;
+#   * Bedrock Agents (AWS/Bedrock/Agents): invocations, tokens, errors;
+#   * foundation models (AWS/Bedrock): invocations and tokens per model.
+# CloudWatch lists only metrics with data in the past two weeks, so the job first lists what exists and then reads
+# complete UTC days (the last aigov_usage_days days, up to yesterday; aigov_usage_include_today adds today so far);
+# re-collecting a day replaces it.
+# Cost is an ESTIMATE: usage x the unit prices in pricing/model_prices.yml, overridden by aigov_unit_prices from
+# aap_config/vars/customer.yml (no figures ship in this repository). Actual cost from Cost Explorer is not collected
+# (decision 2026-11-28).
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Discovery Role", "AI Governance - Inventory API
+# (discovery)". Artifacts: schemas/artifacts.v1.json#/$defs/usage.
+- name: AI Governance - collect usage and cost
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_aws_region: us-west-1
+    aigov_aws_account_id: ""
+    aigov_usage_days: 14
+    # true also reads today so far (a partial day, replaced by the next run); the daily schedule reads complete days
+    aigov_usage_include_today: false
+    aigov_unit_prices: {}
+    # Namespace -> metric -> statistic. Names CloudWatch does not list are simply not collected.
+    aigov_usage_metrics:
+      AWS/Bedrock-AgentCore:
+        Invocations: Sum
+        SessionCount: Sum
+        SystemErrors: Sum
+        UserErrors: Sum
+        Throttles: Sum
+        Latency: Average
+        CPUUsed-vCPUHours: Sum
+        MemoryUsed-GBHours: Sum
+      AWS/Bedrock/Agents:
+        InvocationCount: Sum
+        InvocationServerErrors: Sum
+        InvocationClientErrors: Sum
+        InputTokenCount: Sum
+        OutputTokenCount: Sum
+        ModelInvocationCount: Sum
+      AWS/Bedrock:
+        Invocations: Sum
+        InputTokenCount: Sum
+        OutputTokenCount: Sum
+  tasks:
+    - name: Check the inputs and the discovery role credential
+      ansible.builtin.assert:
+        that:
+          - aigov_aws_account_id | string is match('^[0-9]{12}$')
+          - aigov_usage_days | int >= 1 and aigov_usage_days | int <= 90
+          - aigov_discovery_role_arn | default('') | length > 0
+        fail_msg: >-
+          Set aigov_aws_account_id (12 digits) and aigov_usage_days (1-90), and attach "AI Governance - AWS Discovery Role".
+        quiet: true
+
+    - name: Check the Inventory API credential (discovery)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Assume the read-only discovery role
+      ansible.builtin.include_tasks: ../evaluation/tasks/assume_discovery.yml
+      vars:
+        aigov_assume_region: "{{ aigov_aws_region }}"
+        aigov_assume_session: "aigov-usage-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+
+    - name: List the usage metrics CloudWatch has
+      mlowcher61.ai_governance.cloudwatch_metric_data_info:
+        access_key: "{{ aigov_session.access_key }}"
+        secret_key: "{{ aigov_session.secret_key }}"
+        session_token: "{{ aigov_session.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        namespaces: "{{ aigov_usage_metrics.keys() | list }}"
+      register: aigov_listed
+
+    - name: Plan one daily query per metric and agent or model, over complete UTC days
+      ansible.builtin.set_fact:
+        aigov_usage_queries: "{{ aigov_listed.metrics | mlowcher61.ai_governance.usage_queries(aigov_usage_metrics) }}"
+        aigov_window_end: >-
+          {{ now(utc=true, fmt='%Y-%m-%dT%H:%M:00Z') if aigov_usage_include_today | bool else now(utc=true, fmt='%Y-%m-%dT00:00:00Z') }}
+        aigov_window_start: >-
+          {{ '%Y-%m-%dT00:00:00Z' | strftime((now().timestamp() | int) - (aigov_usage_days | int) * 86400, utc=true) }}
+
+    - name: Show what CloudWatch has
+      ansible.builtin.debug:
+        msg: >-
+          {{ aigov_listed.metrics | length }} metric series listed
+          ({{ aigov_listed.metrics | map(attribute='namespace') | zip(aigov_listed.metrics | map(attribute='metric_name'))
+              | map('join', ' ') | unique | join(', ') or 'none' }}); {{ aigov_usage_queries | length }} to read,
+          {{ aigov_window_start }} to {{ aigov_window_end }}
+
+    - name: Read the daily data points
+      when: aigov_usage_queries | length > 0
+      mlowcher61.ai_governance.cloudwatch_metric_data_info:
+        access_key: "{{ aigov_session.access_key }}"
+        secret_key: "{{ aigov_session.secret_key }}"
+        session_token: "{{ aigov_session.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        queries: "{{ aigov_usage_queries | mlowcher61.ai_governance.usage_api_queries }}"
+        start_time: "{{ aigov_window_start }}"
+        end_time: "{{ aigov_window_end }}"
+      register: aigov_data
+
+    - name: Read the unit prices (pricing/model_prices.yml, overridden by aigov_unit_prices)
+      ansible.builtin.set_fact:
+        aigov_prices: >-
+          {{ lookup('ansible.builtin.file', aigov_repo_root ~ '/pricing/model_prices.yml') | from_yaml
+             | combine(aigov_unit_prices | default({}, true), recursive=true) }}
+
+    - name: Build the daily rows and the estimated cost
+      ansible.builtin.set_fact:
+        aigov_usage: >-
+          {{ aigov_usage_queries | mlowcher61.ai_governance.usage_rows(aigov_data.results | default([]), aigov_prices) }}
+
+    - name: Record the usage
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: record_usage
+        aigov_api_body:
+          account_ref: "{{ aigov_aws_account_id | string }}"
+          rows: "{{ aigov_usage.rows }}"
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out: >-
+          {{ {'window_start': aigov_window_start, 'window_end': aigov_window_end,
+              'series_listed': aigov_listed.metrics | length, 'series_read': aigov_usage_queries | length,
+              'rows_recorded': aigov_api_response.recorded | int, 'agents_with_usage': aigov_api_response.agents_matched | int,
+              'unmatched_refs': aigov_api_response.unmatched_refs | length,
+              'invocations': (aigov_usage.rows | selectattr('measure', 'equalto', 'invocations')
+                              | selectattr('scope', 'equalto', 'agent') | map(attribute='value') | sum) | round(0) | int,
+              'estimated_cost': (aigov_usage.rows | selectattr('source', 'equalto', 'estimate') | map(attribute='value') | sum)
+                                | round(4) | float,
+              'currency': aigov_prices.currency | default('USD', true),
+              'estimate_status': aigov_usage.estimate_status} }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/usage'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/usage: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: >-
+          {{ aigov_out }}{{ (' Not priced (set aigov_unit_prices): ' ~ (aigov_usage.unpriced | join(', ')))
+                            if aigov_usage.unpriced | length > 0 else '' }}
+
+    - name: Publish the result
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

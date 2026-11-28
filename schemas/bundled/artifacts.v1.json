@@ -1184,6 +1184,73 @@
         }
       }
     },
+    "usage": {
+      "title": "AI Governance - Collect Usage and Cost",
+      "type": "object",
+      "required": [
+        "window_start",
+        "window_end",
+        "series_listed",
+        "series_read",
+        "rows_recorded",
+        "agents_with_usage",
+        "unmatched_refs",
+        "invocations",
+        "estimated_cost",
+        "currency",
+        "estimate_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "window_start": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start of the complete UTC days read"
+        },
+        "window_end": {
+          "type": "string",
+          "format": "date-time",
+          "description": "End of the window (today 00:00 UTC)"
+        },
+        "series_listed": {
+          "$ref": "#/$defs/count"
+        },
+        "series_read": {
+          "$ref": "#/$defs/count"
+        },
+        "rows_recorded": {
+          "$ref": "#/$defs/count"
+        },
+        "agents_with_usage": {
+          "$ref": "#/$defs/count"
+        },
+        "unmatched_refs": {
+          "$ref": "#/$defs/count",
+          "description": "Agents or aliases with usage that the inventory does not know"
+        },
+        "invocations": {
+          "$ref": "#/$defs/count",
+          "description": "Agent invocations in the window"
+        },
+        "estimated_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated cost in the window: usage x unit prices (not a bill)"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "estimate_status": {
+          "enum": [
+            "priced",
+            "partial",
+            "prices_not_set",
+            "no_usage"
+          ]
+        }
+      }
+    },
     "verify": {
       "title": "AI Governance - Verify Remediation",
       "type": "object",

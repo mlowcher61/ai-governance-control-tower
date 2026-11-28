@@ -6,9 +6,9 @@ printed by that job; the admin password is in the Kubernetes Secret `<namespace>
 
 | Dashboard | Who it is for | What it shows |
 |---|---|---|
-| **AI Governance - Executive Overview** | Leadership, risk owners | Agents discovered, % compliant, noncompliant and unregistered agents, **mean time to detect** (AWS change to finding) and **mean time to remediate** (finding to verified fix); compliance status; agents by risk and by platform; violations by policy; open findings by severity; evidence coverage; the compliance trend; time to detect and to remediate per day (automatic and after approval) |
+| **AI Governance - Executive Overview** | Leadership, risk owners | Agents discovered, % compliant, noncompliant and unregistered agents, **mean time to detect** (AWS change to finding) and **mean time to remediate** (finding to verified fix); compliance status; agents by risk and by platform; violations by policy; open findings by severity; evidence coverage; the compliance trend; time to detect and to remediate per day (automatic and after approval); AI usage (invocations, sessions, tokens) and the **estimated** cost per day |
 | **AI Governance - Operations** | The governance team | Open findings, remediations in progress, pending approvals (with how long they have waited; automation orchestrator expires them after 60 minutes), verified and failed remediations, dead-letter events; open findings by severity and age; verified remediations per day; the remediation funnel; AWS change events per day and the event pipeline; configuration drift; recent governance runs |
-| **AI Governance - Agent Detail** | Anyone looking at one agent | One agent (choose it at the top): what discovery and the registry know, compliance and risk, every policy result with its explanation and the controls it covers, risk factors, the execution role's policies, tools and data sources, configuration history and drift, remediations, and the audit timeline |
+| **AI Governance - Agent Detail** | Anyone looking at one agent | One agent (choose it at the top): what discovery and the registry know, compliance and risk, every policy result with its explanation and the controls it covers, risk factors, the execution role's policies, tools and data sources, configuration history and drift, remediations, invocations and the estimated cost per day, and the audit timeline |
 | **AI Governance - Audit Explorer** | Auditors | Audit hash-chain status (last check by Reconcile and Sweep); one governance run (choose it at the top) with every audit event in chain order, actors shown as ⚙️ service, 📜 policy, 🤖 AI, 👤 human; human and AI actions; the policy bundle revisions in use (linked to their Git commits); every chain check |
 | **AI Governance - Inventory and Findings** | Analysts (Stage 1) | The agent list (select an agent to drill down), open findings with the policy and AI explanations, the compliance trend, recent assessment runs |
 
@@ -22,7 +22,7 @@ warning (unknown, awaiting approval, medium), orange serious (high), red critica
 failed), gray neutral. Status is always written as text too, never color alone. Series use blue, orange and aqua, a
 palette checked for color-blind separation on Grafana's dark and light themes.
 
-Reporting views added for Stage 3 (V016 and V017):
+Reporting views added for Stage 3 (V016, V017 and V018):
 
 | View | What it gives |
 |---|---|
@@ -39,6 +39,7 @@ Reporting views added for Stage 3 (V016 and V017):
 | `reporting.audit_timeline` | Every audit event with agent, finding and a short subject (Audit Explorer) |
 | `reporting.bundle_revisions` | Policy bundle revisions evaluations used, and which are in use |
 | `reporting.agent_resources` | Tools and data sources per agent, with approval of high-risk tools |
+| `reporting.usage_daily` / `usage_agent_daily` / `usage_summary_daily` | AI usage from CloudWatch per day (invocations, sessions, errors, tokens, vCPU-hours, GB-hours) and the estimated cost (usage x unit prices; `cost_kind` estimate) |
 
 Rules:
 

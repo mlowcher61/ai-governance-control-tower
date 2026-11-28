@@ -209,6 +209,22 @@ aigov_discovery_templates:
       aigov_grafana_url: "{{ aigov_grafana_url | default('') }}"
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Collect Usage and Cost
+    description: "T3.07 - daily: AI usage from CloudWatch (AgentCore, Bedrock Agents, models) and its estimated cost (unit prices)"
+    playbook: playbooks/usage/collect_usage_cost.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Discovery Role
+      - AI Governance - Inventory API (discovery)
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_aws_account_id: "{{ aigov_aws_account_id | string }}"
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_usage_days: 14
+      aigov_usage_include_today: false
+      aigov_unit_prices: "{{ aigov_unit_prices | default({}, true) }}"
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Check Inventory
     description: "T1.06 acceptance - read-only checks of the inventory and the policy inputs (evaluator role)"
     playbook: playbooks/discovery/check_inventory.yml
@@ -219,6 +235,18 @@ aigov_discovery_templates:
 
 # T1.13: demo reset and the Stage 1 end-to-end test (need the AWS account and the platform).
 aigov_demo_templates:
+  - name: AI Governance - Generate Demo Agent Traffic
+    description: "T3.07 - invoke each demo AgentCore runtime a few times (demo reset role, aigov:demo runtimes only) so usage has data"
+    playbook: playbooks/demo/generate_agent_traffic.yml
+    credentials:
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - AWS Demo Reset Role
+    ask_variables_on_launch: true
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_demo_traffic_invocations: 5
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Reset Demo Agents
     description: "T1.13 - restore the demo agents' AWS baseline (demo reset role) and reset their findings (audited)"
     playbook: playbooks/demo/reset_demo_agents.yml

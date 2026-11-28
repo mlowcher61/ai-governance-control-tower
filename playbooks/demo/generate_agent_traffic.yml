@@ -1,0 +1,87 @@
+---
+# AI Governance - Generate Demo Agent Traffic (task T3.07)
+#
+# The demo agents are never used, so they have no usage for Collect Usage and Cost to show. This job invokes each
+# demo AgentCore runtime aigov_demo_traffic_invocations times (one runtime session per agent per run) with a harmless
+# prompt, as the restricted AIGovDemoResetRole, which may invoke only runtimes tagged aigov:demo=true. The demo agent
+# does not call a model; a run costs a fraction of a cent in AgentCore runtime charges. A daily schedule exists when
+# aigov_demo_traffic_enabled is true in customer.yml.
+#
+# Credentials: the AWS bootstrap credential, "AI Governance - AWS Demo Reset Role".
+- name: AI Governance - generate demo agent traffic
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_aws_region: us-west-1
+    aigov_demo_stack_name: aigov-demo-agents
+    aigov_demo_traffic_invocations: 5
+  tasks:
+    - name: Check the inputs and the demo reset role credential
+      ansible.builtin.assert:
+        that:
+          - aigov_demo_reset_role_arn | default('') | length > 0
+          - aigov_demo_reset_external_id | default('') | length > 0
+          - aigov_demo_traffic_invocations | int >= 1 and aigov_demo_traffic_invocations | int <= 20
+        fail_msg: >-
+          Attach the credential "AI Governance - AWS Demo Reset Role" and set aigov_demo_traffic_invocations to 1-20.
+        quiet: true
+
+    - name: Read the demo stack outputs (the runtime ARNs)
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ aigov_demo_stack_name }}"
+        region: "{{ aigov_aws_region }}"
+      register: aigov_demo_stack
+
+    - name: Keep the demo runtime ARNs
+      ansible.builtin.set_fact:
+        aigov_demo_runtimes: >-
+          {{ aigov_demo_stack.cloudformation[aigov_demo_stack_name].stack_outputs | dict2items
+             | selectattr('key', 'match', '.*RuntimeArn$') | map(attribute='value') | sort }}
+
+    - name: Assume the demo reset role (demo-tagged runtimes only)
+      amazon.aws.sts_assume_role:
+        role_arn: "{{ aigov_demo_reset_role_arn }}"
+        external_id: "{{ aigov_demo_reset_external_id }}"
+        role_session_name: "aigov-demo-traffic-{{ tower_job_id | default(awx_job_id) | default('local') }}"
+        duration_seconds: 900
+        region: "{{ aigov_aws_region }}"
+      register: aigov_traffic_session
+      no_log: true
+
+    - name: Invoke each demo runtime
+      mlowcher61.ai_governance.agentcore_runtime_invoke:
+        access_key: "{{ aigov_traffic_session.sts_creds.access_key }}"
+        secret_key: "{{ aigov_traffic_session.sts_creds.secret_key }}"
+        session_token: "{{ aigov_traffic_session.sts_creds.session_token }}"
+        region: "{{ aigov_aws_region }}"
+        agent_runtime_arn: "{{ item }}"
+        count: "{{ aigov_demo_traffic_invocations | int }}"
+        prompt: "AI governance demo traffic: summarize your purpose in one sentence."
+      loop: "{{ aigov_demo_runtimes }}"
+      loop_control:
+        label: "{{ item | regex_replace('^.*runtime/', '') }}"
+      register: aigov_invoked
+
+    - name: Summarize
+      ansible.builtin.set_fact:
+        aigov_out:
+          runtimes: "{{ aigov_demo_runtimes | length }}"
+          invocations: "{{ aigov_invoked.results | map(attribute='invocations') | map('length') | sum }}"
+          succeeded: "{{ aigov_invoked.results | map(attribute='succeeded') | sum }}"
+          errors: >-
+            {{ aigov_invoked.results | map(attribute='invocations') | flatten | map(attribute='error') | select | unique | list }}
+
+    - name: Show the result
+      ansible.builtin.debug:
+        msg: "{{ aigov_out }}"
+
+    - name: Fail when no invocation succeeded
+      ansible.builtin.fail:
+        msg: "No demo runtime answered: {{ aigov_out.errors | join('; ') }}"
+      when: aigov_out.succeeded | int == 0
+
+    - name: Publish the result
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false

@@ -80,3 +80,17 @@ aigov_eda_enabled: false
 
 # Schedules (T3.04): hourly Reconcile and Sweep, nightly assessment at 02:00 UTC. Set to false for a quiet lab.
 aigov_schedules_enabled: true
+
+# Usage and cost (T3.07). Collect Usage and Cost runs daily at 06:00 UTC (with the schedules above) and estimates cost
+# as usage x these unit prices (same structure as pricing/model_prices.yml, which ships without figures). Fill them in
+# from your AWS price list or contract; leave a price null to skip that estimate.
+aigov_unit_prices: {}
+#  currency: USD
+#  source: "AWS AgentCore pricing page, <date>"
+#  agentcore_runtime: {vcpu_hour: <price>, memory_gb_hour: <price>}
+#  models:
+#    amazon.nova-lite-v1:0: {input_per_million_tokens: <price>, output_per_million_tokens: <price>}
+
+# Demo traffic (T3.07): true adds a daily schedule (05:30 UTC) that invokes each demo agent a few times, so the usage
+# dashboards have data. Each run costs a fraction of a cent in AgentCore runtime charges.
+aigov_demo_traffic_enabled: false

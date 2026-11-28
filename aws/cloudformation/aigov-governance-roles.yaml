@@ -403,6 +403,19 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:ResourceTag/aigov:demo: "true"
+              # Demo traffic (T3.07): invoke demo-tagged runtimes only. The runtime must carry the tag; the endpoint
+              # resource is also authorized when it is evaluated, which grants nothing on its own.
+              - Sid: InvokeDemoRuntimes
+                Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:*:${AWS::AccountId}:runtime/*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/aigov:demo: "true"
+              - Sid: InvokeDemoRuntimeEndpoints
+                Effect: Allow
+                Action: bedrock-agentcore:InvokeAgentRuntime
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:*:${AWS::AccountId}:runtime/*/runtime-endpoint/*"
               - Sid: ReadDemoState
                 Effect: Allow
                 Action:

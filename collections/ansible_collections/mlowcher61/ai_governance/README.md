@@ -11,6 +11,8 @@ verified content gap that justifies it (see `docs/plan/06-technical-dependencies
 | `bedrock_agent_details_info` | read-only | Bedrock Agents Classic details missing from `amazon.ai` 1.0.1: tags, guardrail, KMS key, knowledge bases with their S3 data sources and bucket classification, collaborators. Never returns the agent instruction |
 | `iam_policy_simulation_info` | read-only | `iam:SimulatePrincipalPolicy` checks with expected outcomes (negative tests, remediation verification), and the contract `simulation` map for discovery |
 | `agentcore_runtime_info` | read-only | Amazon Bedrock AgentCore runtimes with role, status, network mode, protocol, authorizer, endpoints and tags. Never returns environment variables. Temporary until a certified `amazon.ai` 2.x is on the hub |
+| `cloudwatch_metric_data_info` | read-only | Lists Amazon CloudWatch metrics and reads their data points (GetMetricData), for AI usage (T3.07). No certified module returns metric data |
+| `agentcore_runtime_invoke` | action (demo) | Invokes an AgentCore runtime a few times in one session, only to give the demo agents usage (T3.07) |
 | `jwt_hs256` | utility | Signs the Inventory API tokens (HS256, standard library only) |
 
 **Evidence, not failure.** The read modules never treat a permission problem as "nothing found". Each
@@ -32,6 +34,7 @@ Tests: unit tests use the botocore Stubber, so they run without AWS
 | `discover_aws_agentcore` | Adapter for AgentCore runtimes (platform `aws.bedrock_agentcore_runtime`) |
 | `inventory_api` | Calls the Inventory API (`rpc` and `view` task files) without ever printing the token |
 | filter `agentcore_discovery_record` | Module outputs to a discovery record (`schemas/discovery-record.v1.json`) |
+| filters `usage_queries`, `usage_api_queries`, `usage_rows` | CloudWatch metrics to one daily query per metric and agent or model (no double counting), and data points to daily usage rows with the estimated cost (usage x unit prices) |
 
 Planned: `bedrock_agent_alias_state` and `bedrock_agent_tags` (Stage 2).
 

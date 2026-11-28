@@ -37,6 +37,11 @@ EMPTY_IN_DEMO_DATA = {
     "AI Governance - Audit Explorer / Audit chain checks",
     # Approvals and AI explanations are not recorded by the CI data load
     "AI Governance - Audit Explorer / Human and AI actions",
+    # Usage (T3.07) comes from CloudWatch by the daily Collect Usage and Cost job
+    "AI Governance - Executive Overview / Agent invocations per day",
+    "AI Governance - Executive Overview / Estimated cost per day (not a bill)",
+    "AI Governance - Agent Detail / Invocations per day",
+    "AI Governance - Agent Detail / Usage and estimated cost per day",
     # The demo agents are AgentCore runtimes, which do not link tools or data sources
     "AI Governance - Agent Detail / Tools and data sources",
 }

@@ -82,7 +82,7 @@
   ],
   "panels": [
     {
-      "id": 4,
+      "id": 6,
       "type": "table",
       "title": "Agent",
       "description": "What discovery and the governance registry know about the agent.",
@@ -140,7 +140,7 @@
       }
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "stat",
       "title": "Compliance",
       "description": "Overall result of the latest assessment.",
@@ -227,7 +227,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 8,
       "type": "stat",
       "title": "Risk score",
       "description": "Deterministic risk score of the latest assessment (0-100).",
@@ -298,7 +298,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 9,
       "type": "stat",
       "title": "Open findings",
       "description": "Findings not yet resolved.",
@@ -361,7 +361,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 10,
       "type": "stat",
       "title": "Last evaluated",
       "description": "Time of the latest assessment.",
@@ -420,7 +420,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 11,
       "type": "table",
       "title": "Policy results",
       "description": "Every governance policy's result in the latest assessment, with the controls it provides evidence for.",
@@ -566,7 +566,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "barchart",
       "title": "Risk factors",
       "description": "What adds up to the risk score.",
@@ -613,7 +613,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 13,
       "type": "table",
       "title": "Execution role permissions",
       "description": "Policies attached to the agent's execution role. Flags show which ones the latest assessment cited.",
@@ -671,7 +671,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 16,
       "type": "table",
       "title": "Tools and data sources",
       "datasource": {
@@ -768,7 +768,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 17,
       "type": "table",
       "title": "Configuration drift",
       "datasource": {
@@ -865,7 +865,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 14,
       "type": "table",
       "title": "Configuration history",
       "description": "A snapshot is recorded only when discovery sees a change.",
@@ -923,7 +923,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "table",
       "title": "Remediations",
       "datasource": {
@@ -1149,7 +1149,143 @@
       }
     },
     {
-      "id": 13,
+      "id": 19,
+      "type": "timeseries",
+      "title": "Invocations per day",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT day::timestamptz AS time, invocations FROM reporting.usage_agent_daily WHERE agent_id = '$agent' AND $__timeFilter(day::timestamptz) ORDER BY day"
+        }
+      ],
+      "description": "From CloudWatch (Collect Usage and Cost, daily).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 85,
+            "pointSize": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          },
+          "noValue": "No usage collected for this agent in this period"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Usage and estimated cost per day",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(day, 'YYYY-MM-DD') AS day, invocations, sessions, errors, round(vcpu_hours, 5) AS \"vCPU-hours\", round(memory_gb_hours, 5) AS \"GB-hours\", coalesce(input_tokens, 0) + coalesce(output_tokens, 0) AS tokens, round(estimated_cost, 4) AS \"estimated cost\", currency FROM reporting.usage_agent_daily WHERE agent_id = '$agent' ORDER BY day DESC LIMIT 30"
+        }
+      ],
+      "description": "An ESTIMATE: usage (AgentCore vCPU-hours and GB-hours, model tokens) x the unit prices in pricing/model_prices.yml or aigov_unit_prices in customer.yml. AWS bills metered usage, which can differ. Empty when: no usage collected for this agent.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 15,
       "type": "table",
       "title": "Audit timeline",
       "description": "Everything recorded about this agent in the hash-chained audit log.",
@@ -1159,7 +1295,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 53,
         "w": 24,
         "h": 10
       },

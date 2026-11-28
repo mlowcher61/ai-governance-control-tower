@@ -1,5 +1,5 @@
 ---
-# Schedules (task T3.04; docs/plan/05 section 2.6). Reconciliation is the source of completeness: events can be missed.
+# Schedules (tasks T3.04 and T3.07; docs/plan/05 section 2.6). Reconciliation is the source of completeness: events can be missed.
 # Set aigov_schedules_enabled: false in customer.yml for a lab that should stay quiet. Times are UTC.
 aigov_schedules_enabled: true
 
@@ -16,6 +16,19 @@ aigov_schedules:
     organization: "{{ aigov_organization }}"
     rrule: "DTSTART:20261128T020000Z RRULE:FREQ=DAILY;INTERVAL=1"
     enabled: "{{ aigov_schedules_enabled | bool }}"
+
+  - name: AI Governance - Daily Usage and Cost
+    description: AI usage from CloudWatch for the previous days and its estimated cost (T3.07)
+    unified_job_template: AI Governance - Collect Usage and Cost
+    organization: "{{ aigov_organization }}"
+    rrule: "DTSTART:20261129T060000Z RRULE:FREQ=DAILY;INTERVAL=1"
+    enabled: "{{ aigov_schedules_enabled | bool }}"
+  - name: AI Governance - Daily Demo Agent Traffic
+    description: A few invocations of each demo agent so the usage dashboards have data (aigov_demo_traffic_enabled)
+    unified_job_template: AI Governance - Generate Demo Agent Traffic
+    organization: "{{ aigov_organization }}"
+    rrule: "DTSTART:20261129T053000Z RRULE:FREQ=DAILY;INTERVAL=1"
+    enabled: "{{ (aigov_schedules_enabled | bool) and (aigov_demo_traffic_enabled | default(false) | bool) }}"
 
 # The templates exist only when the AWS account, the OpenShift credential and automation orchestrator are configured
 controller_schedules: >-

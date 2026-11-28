@@ -67,7 +67,7 @@
   ],
   "panels": [
     {
-      "id": 1,
+      "id": 2,
       "type": "stat",
       "title": "AI agents discovered",
       "datasource": {
@@ -129,7 +129,7 @@
       }
     },
     {
-      "id": 2,
+      "id": 3,
       "type": "stat",
       "title": "Compliant agents",
       "datasource": {
@@ -193,7 +193,7 @@
       }
     },
     {
-      "id": 3,
+      "id": 4,
       "type": "stat",
       "title": "Noncompliant agents",
       "datasource": {
@@ -259,7 +259,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 5,
       "type": "stat",
       "title": "Unregistered agents",
       "datasource": {
@@ -326,7 +326,7 @@
       }
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "stat",
       "title": "Mean time to detect",
       "datasource": {
@@ -395,7 +395,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "stat",
       "title": "Mean time to remediate",
       "datasource": {
@@ -460,7 +460,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 8,
       "type": "bargauge",
       "title": "Compliance status",
       "datasource": {
@@ -586,7 +586,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 9,
       "type": "bargauge",
       "title": "Agents by risk category",
       "datasource": {
@@ -726,7 +726,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 10,
       "type": "barchart",
       "title": "Agents by cloud provider and platform",
       "datasource": {
@@ -792,7 +792,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 11,
       "type": "bargauge",
       "title": "Policy violations by policy",
       "datasource": {
@@ -857,7 +857,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 12,
       "type": "bargauge",
       "title": "Open findings by severity",
       "datasource": {
@@ -982,7 +982,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 13,
       "type": "bargauge",
       "title": "Evidence coverage",
       "datasource": {
@@ -1064,7 +1064,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 14,
       "type": "timeseries",
       "title": "Compliant agents (%)",
       "datasource": {
@@ -1136,7 +1136,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 15,
       "type": "timeseries",
       "title": "Noncompliant agents and open critical or high findings",
       "datasource": {
@@ -1238,7 +1238,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 16,
       "type": "timeseries",
       "title": "Time to detect per day",
       "datasource": {
@@ -1326,7 +1326,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 17,
       "type": "timeseries",
       "title": "Time to remediate per day, by route",
       "datasource": {
@@ -1417,6 +1417,232 @@
       "options": {
         "legend": {
           "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "AI usage (selected period)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(agent_invocations), 0) AS \"agent invocations\", coalesce(sum(agent_sessions), 0) AS \"sessions\", coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) AS \"model tokens\", coalesce(sum(estimated_cost), 0) AS \"estimated cost\" FROM reporting.usage_summary_daily WHERE $__timeFilter(day::timestamptz)"
+        }
+      ],
+      "description": "From CloudWatch, collected daily. An ESTIMATE: usage (AgentCore vCPU-hours and GB-hours, model tokens) x the unit prices in pricing/model_prices.yml or aigov_unit_prices in customer.yml. AWS bills metered usage, which can differ.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "estimated cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 22
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Agent invocations per day",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT day::timestamptz AS time, agent_invocations AS \"invocations\" FROM reporting.usage_summary_daily WHERE $__timeFilter(day::timestamptz) ORDER BY day"
+        }
+      ],
+      "description": "Invocations of AgentCore runtimes and Bedrock agents, from CloudWatch (Collect Usage and Cost, daily).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 85,
+            "pointSize": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          },
+          "noValue": "No usage collected in this period"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Estimated cost per day (not a bill)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aigov-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aigov-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT day::timestamptz AS time, estimated_cost AS \"estimated cost\" FROM reporting.usage_summary_daily WHERE $__timeFilter(day::timestamptz) ORDER BY day"
+        }
+      ],
+      "description": "An ESTIMATE: usage (AgentCore vCPU-hours and GB-hours, model tokens) x the unit prices in pricing/model_prices.yml or aigov_unit_prices in customer.yml. AWS bills metered usage, which can differ.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 85,
+            "pointSize": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#338ced"
+          },
+          "noValue": "No priced usage in this period"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": []
