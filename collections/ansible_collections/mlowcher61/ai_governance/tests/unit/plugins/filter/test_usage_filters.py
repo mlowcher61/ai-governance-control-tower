@@ -93,3 +93,9 @@ def test_api_queries_keep_module_fields_only():
     api = usage_api_queries(qs)
     assert len(api) == len(qs) and set(api[2]) == {"id", "namespace", "metric_name", "dimensions", "stat", "period"}
     assert api[2]["dimensions"] == qs[2]["dimensions"] and usage_api_queries(None) == []
+
+
+def test_measure_names():
+    from ansible_collections.mlowcher61.ai_governance.plugins.filter.usage import measure_of
+    assert measure_of("Sessions") == "sessions" and measure_of("SessionCount") == "sessions"
+    assert measure_of("Invocations") == "invocations" and measure_of("Unknown") == "Unknown"

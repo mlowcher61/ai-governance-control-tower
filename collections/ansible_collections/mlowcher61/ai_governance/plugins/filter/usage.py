@@ -55,7 +55,7 @@ _SCOPE_DIMENSION = {
 # Common names for the measures the dashboards show
 _MEASURE = {
     "Invocations": "invocations", "InvocationCount": "invocations",
-    "SessionCount": "sessions",
+    "SessionCount": "sessions", "Sessions": "sessions",
     "SystemErrors": "errors", "UserErrors": "errors", "Throttles": "errors",
     "InvocationServerErrors": "errors", "InvocationClientErrors": "errors", "InvocationThrottles": "errors",
     "InputTokenCount": "input_tokens", "OutputTokenCount": "output_tokens",

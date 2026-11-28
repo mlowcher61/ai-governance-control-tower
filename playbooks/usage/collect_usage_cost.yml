@@ -30,7 +30,7 @@
     aigov_usage_metrics:
       AWS/Bedrock-AgentCore:
         Invocations: Sum
-        SessionCount: Sum
+        Sessions: Sum          # the name CloudWatch lists (the AgentCore guide calls it Session Count)
         SystemErrors: Sum
         UserErrors: Sum
         Throttles: Sum
