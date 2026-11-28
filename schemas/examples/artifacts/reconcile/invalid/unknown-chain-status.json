@@ -1,1 +1,1 @@
-{"chain_status": "unknown", "chain_verified_to_id": "12345", "expired_remediations": 2, "skipped_remediations": 1, "failed_remediations": 0, "missing_confirmed": 0, "drift_attributed": 1, "drift_unattributed": 1, "dead_letters": 0}
+{"chain_status": "unknown", "chain_verified_to_id": "12345", "expired_remediations": 2, "skipped_remediations": 1, "failed_remediations": 0, "missing_confirmed": 0, "drift_attributed": 1, "drift_unattributed": 1, "dead_letters": 0, "snapshot_day": "2026-11-28", "snapshot_agents": 7, "snapshot_compliant": 2}

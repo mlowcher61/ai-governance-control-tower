@@ -8,6 +8,7 @@
 #   * confirms agents missing for more than aigov_sweep_missing_hours;
 #   * explains configuration drift since the last sweep (changed paths; attributed to a change event, or unattributed,
 #     which points to a gap in event coverage).
+# It then captures the day's compliance snapshot (api.capture_compliance_snapshot, task T3.05) for the trend reports.
 # The job also checks the change-event dead-letter queue. A broken audit chain or dead letters open (or update) a
 # ServiceNow incident; a broken chain also fails the job so it shows in AAP.
 #
@@ -42,6 +43,18 @@
     - name: Keep the sweep result
       ansible.builtin.set_fact:
         aigov_sweep: "{{ aigov_api_response }}"
+
+    - name: Capture today's compliance snapshot (one row per UTC day; the last sweep of a day holds its end-of-day state)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: capture_compliance_snapshot
+        aigov_api_body: {}
+
+    - name: Keep the snapshot
+      ansible.builtin.set_fact:
+        aigov_snapshot: "{{ aigov_api_response }}"
 
     - name: Read the event plumbing stack (the dead-letter queue)
       amazon.aws.cloudformation_info:
@@ -107,7 +120,10 @@
               'missing_confirmed': aigov_sweep.missing_confirmed | length,
               'drift_attributed': aigov_sweep.drift | selectattr('attributed') | list | length,
               'drift_unattributed': aigov_sweep.drift | rejectattr('attributed') | list | length,
-              'dead_letters': aigov_dead_letters | int} }}
+              'dead_letters': aigov_dead_letters | int,
+              'snapshot_day': aigov_snapshot.day | string,
+              'snapshot_agents': aigov_snapshot.agents | int,
+              'snapshot_compliant': aigov_snapshot.compliant | int} }}
 
     - name: Check the artifacts against their contract
       ansible.builtin.assert:

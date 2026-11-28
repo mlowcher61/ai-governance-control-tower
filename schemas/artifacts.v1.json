@@ -904,7 +904,10 @@
         "missing_confirmed",
         "drift_attributed",
         "drift_unattributed",
-        "dead_letters"
+        "dead_letters",
+        "snapshot_day",
+        "snapshot_agents",
+        "snapshot_compliant"
       ],
       "additionalProperties": false,
       "properties": {
@@ -936,6 +939,17 @@
           "$ref": "#/$defs/count"
         },
         "dead_letters": {
+          "$ref": "#/$defs/count"
+        },
+        "snapshot_day": {
+          "type": "string",
+          "format": "date",
+          "description": "UTC day of the compliance snapshot this sweep captured (api.capture_compliance_snapshot)"
+        },
+        "snapshot_agents": {
+          "$ref": "#/$defs/count"
+        },
+        "snapshot_compliant": {
           "$ref": "#/$defs/count"
         }
       }
