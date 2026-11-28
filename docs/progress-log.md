@@ -1165,7 +1165,7 @@ Both are recorded in [13-open-questions §1.2](plan/13-open-questions.md).
   `Duration`, `Errors`, `SystemErrors`, `UserErrors`, `Throttles` and `ActiveSessionCount`. The job now collects
   `Sessions`. It leaves out the `Errors` total, because it would double count the error types it already collects.
 - The resource-usage metrics `CPUUsed-vCPUHours` and `MemoryUsed-GBHours`, which the cost estimate needs, were not yet
-  listed 10 minutes after the traffic. AWS documents a delay of up to 60 minutes.
+  listed 10 minutes after the traffic. They appeared within an hour, as AWS documents (up to 60 minutes).
 - Fixed during testing:
   - `required_by` made a listing-only call fail, because `queries` defaults to an empty list;
   - the time window used local time on a naive UTC datetime. The EE runs in UTC so the job was unaffected, but the
@@ -1192,7 +1192,10 @@ Both are recorded in [13-open-questions §1.2](plan/13-open-questions.md).
 - **Generate Demo Agent Traffic (job 995): 20 of 20 invocations succeeded** on the 4 demo runtimes through the
   restricted role.
 - **Collect Usage and Cost (job 1003)**: 67 series listed, 24 read, **20 invocations recorded for all 4 agents**, no
-  unknown agents. Estimate status `no_usage` until AWS publishes the resource-usage metrics.
+  unknown agents. Estimate status `no_usage`, because AWS had not yet published the resource-usage metrics.
+- **An hour later (job 1009)**: 85 series listed, now including vCPU-hours and GB-hours. 32 series read, 36 rows
+  recorded (32 usage, 4 estimates), all 4 agents matched. **Estimated cost 0.0143 USD** for the 20 demo invocations,
+  status `priced`, labelled an estimate everywhere.
 
 ---
 
