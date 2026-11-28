@@ -891,6 +891,54 @@
           "type": "string"
         }
       }
+    },
+    "reconcile": {
+      "title": "AI Governance - Reconcile and Sweep",
+      "type": "object",
+      "required": [
+        "chain_status",
+        "chain_verified_to_id",
+        "expired_remediations",
+        "skipped_remediations",
+        "failed_remediations",
+        "missing_confirmed",
+        "drift_attributed",
+        "drift_unattributed",
+        "dead_letters"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "chain_status": {
+          "enum": [
+            "intact",
+            "broken"
+          ]
+        },
+        "chain_verified_to_id": {
+          "type": "string"
+        },
+        "expired_remediations": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped_remediations": {
+          "$ref": "#/$defs/count"
+        },
+        "failed_remediations": {
+          "$ref": "#/$defs/count"
+        },
+        "missing_confirmed": {
+          "$ref": "#/$defs/count"
+        },
+        "drift_attributed": {
+          "$ref": "#/$defs/count"
+        },
+        "drift_unattributed": {
+          "$ref": "#/$defs/count"
+        },
+        "dead_letters": {
+          "$ref": "#/$defs/count"
+        }
+      }
     }
   }
 }

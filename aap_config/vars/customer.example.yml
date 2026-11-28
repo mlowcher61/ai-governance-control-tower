@@ -77,3 +77,6 @@ aigov_grafana_url: ""
 # Event-Driven Ansible (T3.02). Set to true after "AI Governance - Issue EDA Credentials" has created the EDA
 # credentials; configure_aap.yml then creates the rulebook activation "AI Governance - AWS Change Events".
 aigov_eda_enabled: false
+
+# Schedules (T3.04): hourly Reconcile and Sweep, nightly assessment at 02:00 UTC. Set to false for a quiet lab.
+aigov_schedules_enabled: true

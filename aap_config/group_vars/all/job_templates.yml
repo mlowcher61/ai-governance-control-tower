@@ -82,6 +82,34 @@ aigov_aws_templates:
       aigov_finding_ids: ""
     <<: *aigov_jt_defaults
 
+  - name: AI Governance - Reconcile and Sweep
+    description: "T3.04 - hourly: audit chain check, stale remediations expired, missing agents, drift explained, dead-letter queue"
+    playbook: playbooks/reconcile/sweep.yml
+    credentials:
+      - AI Governance - Inventory API (remediator)
+      - "{{ aigov_aws_bootstrap_credential }}"
+      - AI Governance - ServiceNow
+    ask_variables_on_launch: true
+    timeout: 900
+    extra_vars:
+      aigov_aws_region: "{{ aigov_aws_region }}"
+      aigov_sweep_stale_minutes: 120
+      aigov_sweep_missing_hours: 24
+    <<: *aigov_jt_defaults
+
+  - name: AI Governance - Run Nightly Assessment
+    description: "T3.04 - start WF-01 (every scope) in automation orchestrator and wait; scheduled nightly"
+    playbook: ao_workflows/run_workflow.yml
+    credentials:
+      - AI Governance - Automation Orchestrator
+    timeout: 3600
+    extra_vars:
+      aigov_ao_workflow_name: AI Governance - WF-01 Governance Assessment
+      aigov_ao_input: {scope_name: ""}
+      aigov_ao_wait: true
+      aigov_ao_wait_retries: 330
+    <<: *aigov_jt_defaults
+
   - name: AI Governance - Issue EDA Credentials
     description: "T3.02 - new access key for aigov-eda-reader and password for svc-aigov-eda, written into the EDA credentials"
     playbook: playbooks/events/issue_eda_credentials.yml

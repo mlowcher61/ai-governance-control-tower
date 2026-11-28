@@ -1,0 +1,47 @@
+---
+# Open (or add a work note to) one ServiceNow incident per alert kind, and audit it. Never fails: when ServiceNow is not
+# configured or unreachable the alert is still audited and the job result shows it.
+# Inputs: aigov_alert_key, aigov_alert_title, aigov_alert_text.
+- name: "Raise the alert in ServiceNow - {{ aigov_alert_key }}"
+  when: lookup('ansible.builtin.env', 'SN_HOST') | length > 0
+  block:
+    - name: "Find the open incident - {{ aigov_alert_key }}"
+      servicenow.itsm.incident_info:
+        sysparm_query: "correlation_id=aigov-{{ aigov_alert_key }}^active=true"
+      register: aigov_alert_existing
+
+    - name: "Open an incident - {{ aigov_alert_key }}"
+      when: aigov_alert_existing.records | length == 0
+      servicenow.itsm.incident:
+        state: new
+        short_description: "{{ aigov_alert_title }}"
+        description: "{{ aigov_alert_text }}"
+        urgency: high
+        impact: high
+        other: >-
+          {{ {'correlation_id': 'aigov-' ~ aigov_alert_key, 'correlation_display': 'AI Governance Control Tower'}
+             | combine({'assignment_group': aigov_servicenow_assignment_group}
+                       if aigov_servicenow_assignment_group | default('', true) | length > 0 else {}) }}
+
+    - name: "Add a work note to the open incident - {{ aigov_alert_key }}"
+      when: aigov_alert_existing.records | length > 0
+      servicenow.itsm.incident:
+        number: "{{ aigov_alert_existing.records[0].number }}"
+        other:
+          work_notes: "{{ aigov_alert_title }}: {{ aigov_alert_text }}"
+  rescue:
+    - name: "Report the ServiceNow problem - {{ aigov_alert_key }}"
+      ansible.builtin.debug:
+        msg: "ServiceNow could not be updated for {{ aigov_alert_key }}: {{ ansible_failed_result.msg | default('error') }}"
+
+- name: "Audit the alert - {{ aigov_alert_key }}"
+  ansible.builtin.include_role:
+    name: mlowcher61.ai_governance.inventory_api
+    tasks_from: rpc
+  vars:
+    aigov_api_rpc: append_audit_event
+    aigov_api_body:
+      event:
+        event_type: "reconcile.alert_{{ aigov_alert_key | replace('-', '_') }}"
+        source_ref: "{{ tower_job_id | default(awx_job_id) | default('local') | string }}"
+        details: {title: "{{ aigov_alert_title }}"}

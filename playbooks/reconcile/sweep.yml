@@ -1,0 +1,136 @@
+---
+# AI Governance - Reconcile and Sweep (task T3.04; docs/plan/05 section 2.6; runs hourly by schedule)
+#
+# Events are the source of speed; this sweep is the source of completeness. api.reconcile_sweep:
+#   * verifies the audit hash chain incrementally from the last checkpoint (failure case F-19);
+#   * expires remediations nobody acted on (awaiting approval -> expired, planned/approved -> skipped, stuck executing
+#     -> failed);
+#   * confirms agents missing for more than aigov_sweep_missing_hours;
+#   * explains configuration drift since the last sweep (changed paths; attributed to a change event, or unattributed,
+#     which points to a gap in event coverage).
+# The job also checks the change-event dead-letter queue. A broken audit chain or dead letters open (or update) a
+# ServiceNow incident; a broken chain also fails the job so it shows in AAP.
+#
+# Credentials: "AI Governance - Inventory API (remediator)", the AWS bootstrap credential, "AI Governance - ServiceNow".
+# Artifacts: schemas/artifacts.v1.json#/$defs/reconcile.
+- name: AI Governance - reconcile and sweep
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aigov_repo_root: "{{ playbook_dir }}/../.."
+    aigov_aws_region: us-west-1
+    aigov_events_stack_name: aigov-events
+    aigov_sweep_stale_minutes: 120
+    aigov_sweep_missing_hours: 24
+    aigov_servicenow_assignment_group: ""
+  tasks:
+    - name: Check the Inventory API credential (remediator)
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+
+    - name: Sweep
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: reconcile_sweep
+        aigov_api_body:
+          stale_minutes: "{{ aigov_sweep_stale_minutes | int }}"
+          missing_hours: "{{ aigov_sweep_missing_hours | int }}"
+
+    - name: Keep the sweep result
+      ansible.builtin.set_fact:
+        aigov_sweep: "{{ aigov_api_response }}"
+
+    - name: Read the event plumbing stack (the dead-letter queue)
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ aigov_events_stack_name }}"
+        region: "{{ aigov_aws_region }}"
+      register: aigov_events_stack
+
+    - name: Count the dead-letter messages
+      when: aigov_events_stack.cloudformation[aigov_events_stack_name] is defined
+      mlowcher61.ai_governance.sqs_messages_info:
+        region: "{{ aigov_aws_region }}"
+        queue_url: "{{ aigov_events_stack.cloudformation[aigov_events_stack_name].stack_outputs.DeadLetterQueueUrl }}"
+        max_messages: 1
+        wait_seconds: 0
+        visibility_timeout: 1
+      register: aigov_dlq
+
+    - name: Keep the dead-letter count
+      ansible.builtin.set_fact:
+        aigov_dead_letters: "{{ (aigov_dlq.approximate_messages | default(0)) | int }}"
+
+    - name: Audit dead letters
+      when: aigov_dead_letters | int > 0
+      ansible.builtin.include_role:
+        name: mlowcher61.ai_governance.inventory_api
+        tasks_from: rpc
+      vars:
+        aigov_api_rpc: append_audit_event
+        aigov_api_body:
+          event:
+            event_type: events.dead_letters
+            source_ref: "{{ tower_job_id | default(awx_job_id) | default('local') | string }}"
+            details: {count: "{{ aigov_dead_letters | int }}", queue: "{{ aigov_events_stack_name }}-dlq"}
+
+    - name: Alert on a broken audit chain
+      when: aigov_sweep.chain.status == 'broken'
+      ansible.builtin.include_tasks: tasks/alert.yml
+      vars:
+        aigov_alert_key: audit-chain
+        aigov_alert_title: "AI governance: the audit hash chain is broken at event {{ aigov_sweep.chain.broken_id }}"
+        aigov_alert_text: >-
+          Reconcile and Sweep found audit event {{ aigov_sweep.chain.broken_id }} altered or out of sequence
+          ({{ aigov_sweep.chain.reason }}). Audit events are append-only; investigate database access immediately.
+
+    - name: Alert on dead letters
+      when: aigov_dead_letters | int > 0
+      ansible.builtin.include_tasks: tasks/alert.yml
+      vars:
+        aigov_alert_key: dead-letters
+        aigov_alert_title: "AI governance: {{ aigov_dead_letters }} change event(s) could not be processed"
+        aigov_alert_text: >-
+          The queue {{ aigov_events_stack_name }}-dlq holds {{ aigov_dead_letters }} change event(s) that failed 5 times. Inspect
+          them with AI Governance - Capture Change Events and the EDA activation log.
+
+    - name: Build the artifacts
+      ansible.builtin.set_fact:
+        aigov_out: >-
+          {{ {'chain_status': aigov_sweep.chain.status,
+              'chain_verified_to_id': aigov_sweep.chain.verified_to_id | string,
+              'expired_remediations': aigov_sweep.expired_remediations | length,
+              'skipped_remediations': aigov_sweep.skipped_remediations | length,
+              'failed_remediations': aigov_sweep.failed_remediations | length,
+              'missing_confirmed': aigov_sweep.missing_confirmed | length,
+              'drift_attributed': aigov_sweep.drift | selectattr('attributed') | list | length,
+              'drift_unattributed': aigov_sweep.drift | rejectattr('attributed') | list | length,
+              'dead_letters': aigov_dead_letters | int} }}
+
+    - name: Check the artifacts against their contract
+      ansible.builtin.assert:
+        that: >-
+          aigov_out | ansible.utils.validate(
+            lookup('ansible.builtin.file', aigov_repo_root ~ '/schemas/bundled/artifacts.v1.json') | from_json
+            | combine({'$ref': '#/$defs/reconcile'}), engine='ansible.utils.jsonschema', draft='2020-12') | length == 0
+        fail_msg: "The result does not match schemas/artifacts.v1.json#/$defs/reconcile: {{ aigov_out }}"
+        quiet: true
+
+    - name: Show the sweep
+      ansible.builtin.debug:
+        msg: >-
+          {{ aigov_out | combine({'drift': aigov_sweep.drift | map(attribute='agent')
+                                           | zip(aigov_sweep.drift | map(attribute='changed_paths'),
+                                                 aigov_sweep.drift | map(attribute='attributed')) | list}) }}
+
+    - name: Publish the sweep
+      ansible.builtin.set_stats:
+        data: "{{ aigov_out }}"
+        per_host: false
+
+    - name: Fail when the audit chain is broken
+      ansible.builtin.fail:
+        msg: "The audit hash chain is broken at event {{ aigov_sweep.chain.broken_id }}: {{ aigov_sweep.chain.reason }}"
+      when: aigov_sweep.chain.status == 'broken'

@@ -1,0 +1,24 @@
+---
+# Schedules (task T3.04; docs/plan/05 section 2.6). Reconciliation is the source of completeness: events can be missed.
+# Set aigov_schedules_enabled: false in customer.yml for a lab that should stay quiet. Times are UTC.
+aigov_schedules_enabled: true
+
+aigov_schedules:
+  - name: AI Governance - Hourly Reconcile and Sweep
+    description: Audit chain check, stale remediations expired, missing agents confirmed, drift explained, dead letters
+    unified_job_template: AI Governance - Reconcile and Sweep
+    organization: "{{ aigov_organization }}"
+    rrule: "DTSTART:20261128T001500Z RRULE:FREQ=HOURLY;INTERVAL=1"
+    enabled: "{{ aigov_schedules_enabled | bool }}"
+  - name: AI Governance - Nightly Assessment
+    description: Full discovery and evaluation of every scope (WF-01 in automation orchestrator)
+    unified_job_template: AI Governance - Run Nightly Assessment
+    organization: "{{ aigov_organization }}"
+    rrule: "DTSTART:20261128T020000Z RRULE:FREQ=DAILY;INTERVAL=1"
+    enabled: "{{ aigov_schedules_enabled | bool }}"
+
+# The templates exist only when the AWS account, the OpenShift credential and automation orchestrator are configured
+controller_schedules: >-
+  {{ aigov_schedules if (aigov_aws_account_id | string | length) == 12
+                        and (aigov_openshift_credential | default('') | string | length) > 0
+                        and (aigov_ao_url | default('') | length) > 0 else [] }}
